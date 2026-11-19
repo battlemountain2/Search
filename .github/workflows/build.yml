@@ -1,0 +1,28 @@
+name: Build Search
+
+on:
+  push:
+    branches: [ ci-build ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Build Search.app
+        run: ./build.sh
+
+      - name: Zip Bundle
+        run: ditto -c -k --keepParent build/Search.app Search.app.zip
+
+      - name: Upload Search.app
+        uses: actions/upload-artifact@v4
+        with:
+          name: Search-app
+          path: Search.app.zip
