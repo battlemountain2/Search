@@ -1513,11 +1513,18 @@ struct LiveMatch: ViewModifier {
     }
 }
 
+private struct InSpaceMapKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
     /// Drawn in the map of every space's rows beside the column
     /// (SideBar.pages), out of sight until a space comes in: not the
     /// column's own rows, for what glides and what the bench counts.
-    @Entry var inSpaceMap = false
+    var inSpaceMap: Bool {
+        get { self[InSpaceMapKey.self] }
+        set { self[InSpaceMapKey.self] = newValue }
+    }
 }
 
 /// A pinned tab as a cell in the block at the top of the column — as wide as

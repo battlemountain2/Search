@@ -848,11 +848,3 @@ struct SiteSecurityPopoverView: View {
         }
     }
 }
-
-    private func certify() {
-        guard let trust = tab.built?.serverTrust else { return }
-        DispatchQueue.global(qos: .userInitiated).async {
-            _ = SecTrustEvaluateWithError(trust, nil)
-        }
-    }
-}
