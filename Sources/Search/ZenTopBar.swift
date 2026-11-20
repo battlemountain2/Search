@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import SecurityInterface
 
 /// A compact, Zen-style floating navigation bar positioned above the web card.
 /// Provides visible Back / Forward / Reload controls, an address capsule showing the domain,
@@ -30,21 +32,7 @@ struct ZenTopBar: View {
         }
         .padding(.horizontal, 8)
         .frame(height: ZenTopBar.height)
-        .background(
-            ZStack {
-                VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
-                (prefs.cards ? Palette.frame : Palette.ground).opacity(prefs.zenDarkGlass ? 0.28 : 0.18)
-            }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(
-            Group {
-                if !prefs.zenBorderless {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
-                }
-            }
-        )
+        .background(WindowDragBar())
     }
 
     // MARK: - Navigation Controls
@@ -131,10 +119,9 @@ struct ZenTopBar: View {
                 .focusEffectDisabled()
                 .help("View site security, certificate & permissions")
                 .popover(isPresented: $showSiteCard, arrowEdge: .bottom) {
-                    SiteCard(browser: browser, tab: tab) {
+                    SiteSecurityPopoverView(browser: browser, tab: tab) {
                         showSiteCard = false
                     }
-                    .padding(4)
                 }
 
                 // Domain text button (expands to fill capsule center)
@@ -498,5 +485,274 @@ private struct ToolboxSettingRow: View {
         .focusable(false)
         .focusEffectDisabled()
         .onHover { hovered = $0 }
+    }
+}
+
+// MARK: - Native macOS Window Drag & Double-Click Zoom
+
+struct WindowDragBar: NSViewRepresentable {
+    func makeNSView(context: Context) -> WindowDragNSView {
+        WindowDragNSView()
+    }
+    func updateNSView(_ nsView: WindowDragNSView, context: Context) {}
+}
+
+final class WindowDragNSView: NSView {
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 {
+            window?.performZoom(nil)
+        } else {
+            window?.performDrag(with: event)
+        }
+    }
+}
+
+// MARK: - Modern Site Security & Permissions Popover (Clean Zen / Safari Style)
+
+struct SiteSecurityPopoverView: View {
+    @ObservedObject var browser: Browser
+    @ObservedObject var tab: Tab
+    let close: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header: Status Badge + Domain + Certificate action
+            headerSection
+
+            Divider().opacity(0.3)
+
+            // Permissions Group
+            permissionsSection
+
+            Divider().opacity(0.3)
+
+            // Protection & Page Controls Group
+            controlsSection
+        }
+        .padding(14)
+        .frame(width: 290)
+        .focusable(false)
+        .focusEffectDisabled()
+        .onAppear(perform: certify)
+    }
+
+    private var isSecure: Bool {
+        tab.address?.scheme == "https"
+    }
+
+    private var headerSection: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: isSecure ? "lock.fill" : "lock.open.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(isSecure ? Palette.safe : Palette.unsafe)
+                .frame(width: 28, height: 28)
+                .background((isSecure ? Palette.safe : Palette.unsafe).opacity(0.12), in: Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(isSecure ? "Connection is secure" : "Connection is not secure")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+
+                Text(isSecure
+                     ? "Your information (passwords, messages, cards) is private when sent to this site."
+                     : "Don't enter sensitive info or passwords on this site.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let trust = tab.built?.serverTrust {
+                    Button {
+                        close()
+                        DispatchQueue.main.async {
+                            if let window = Links.window {
+                                SFCertificatePanel.shared().beginSheet(
+                                    for: window, modalDelegate: nil, didEnd: nil, contextInfo: nil, trust: trust, showGroup: false
+                                )
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text("Certificate Details")
+                                .font(.system(size: 10.5, weight: .medium))
+                            Image(systemName: "arrow.up.forward.app")
+                                .font(.system(size: 8.5))
+                        }
+                        .foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .focusEffectDisabled()
+                    .padding(.top, 2)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var permissionsSection: some View {
+        if let url = tab.pageAddress, let scheme = url.scheme, let host = url.host() {
+            let origin = Browser.origin(scheme, host, url.port ?? 0)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("PERMISSIONS")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+
+                VStack(spacing: 5) {
+                    permissionRow(title: "Camera", icon: "video", kind: .camera, origin: origin)
+                    permissionRow(title: "Microphone", icon: "mic", kind: .microphone, origin: origin)
+                    permissionRow(title: "Location", icon: "location", kind: .location, origin: origin)
+                    permissionRow(title: "Notifications", icon: "bell", kind: .notifications, origin: origin)
+                }
+                .padding(8)
+                .background(Palette.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+        }
+    }
+
+    private func permissionRow(title: String, icon: String, kind: CaptureChoices.Kind, origin: String) -> some View {
+        HStack {
+            Image(systemName: icon)
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.muted)
+                .frame(width: 16)
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Palette.ink)
+            Spacer()
+            Menu {
+                Button("Ask") { browser.setSitePermission(nil, kind: kind, origin: origin) }
+                Button("Allow") { browser.setSitePermission(true, kind: kind, origin: origin) }
+                    .disabled(kind == .notifications && !browser.prefs.siteNotifications)
+                Button("Block") { browser.setSitePermission(false, kind: kind, origin: origin) }
+            } label: {
+                Text(CaptureChoices.choice(kind, origin: origin).title)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Palette.ink)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .focusable(false)
+            .focusEffectDisabled()
+        }
+    }
+
+    @ViewBuilder
+    private var controlsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("PROTECTION & CONTROLS")
+                .font(.system(size: 9.5, weight: .semibold))
+                .foregroundStyle(Palette.muted)
+
+            VStack(spacing: 6) {
+                // Shield / Ad blocker toggle
+                if let url = tab.pageAddress, let host = browser.curtain.host(of: url) {
+                    HStack {
+                        Image(systemName: "shield.lefthalf.filled")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Shield.shared.isPaused(on: host) ? Palette.muted : Palette.safe)
+                            .frame(width: 16)
+                        Text("Block Ads & Trackers")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Palette.ink)
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { !Shield.shared.isPaused(on: host) },
+                            set: { on in
+                                Shield.shared.pause(host, !on)
+                                tab.reload()
+                            }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .scaleEffect(0.7)
+                        .focusable(false)
+                        .focusEffectDisabled()
+                    }
+                }
+
+                // Dark mode toggle for this site
+                if browser.canDusk(tab) {
+                    HStack {
+                        Image(systemName: "moon")
+                            .font(.system(size: 11))
+                            .foregroundStyle(tab.dusked ? Palette.safe : Palette.muted)
+                            .frame(width: 16)
+                        Text("Darken this site")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Palette.ink)
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { tab.dusked },
+                            set: { browser.dusk($0, tab) }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .scaleEffect(0.7)
+                        .focusable(false)
+                        .focusEffectDisabled()
+                    }
+                }
+
+                // Zoom control row
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.muted)
+                        .frame(width: 16)
+                    Text("Zoom")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Palette.ink)
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Button {
+                            browser.zoom(by: 1 / 1.1)
+                        } label: {
+                            Image(systemName: "minus")
+                                .font(.system(size: 10, weight: .semibold))
+                                .frame(width: 20, height: 20)
+                                .background(Palette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 4))
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                        .focusEffectDisabled()
+
+                        Button {
+                            browser.resetZoom()
+                        } label: {
+                            Text("\(Int((tab.zoom * 100).rounded()))%")
+                                .font(.system(size: 10.5, weight: .medium))
+                                .monospacedDigit()
+                                .frame(width: 38)
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                        .focusEffectDisabled()
+
+                        Button {
+                            browser.zoom(by: 1.1)
+                        } label: {
+                            Image(systemName: "plus")
+                                .font(.system(size: 10, weight: .semibold))
+                                .frame(width: 20, height: 20)
+                                .background(Palette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 4))
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                        .focusEffectDisabled()
+                    }
+                }
+            }
+            .padding(8)
+            .background(Palette.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
+
+    private func certify() {
+        guard let trust = tab.built?.serverTrust else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            _ = SecTrustEvaluateWithError(trust, nil)
+        }
     }
 }

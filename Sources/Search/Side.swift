@@ -217,7 +217,7 @@ struct SideBar: View {
                 if !onFrame {
                     VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
                 }
-                (onFrame ? Palette.frame : Palette.ground).opacity(prefs.zenDarkGlass ? 0.15 : 0.10)
+                (onFrame ? Palette.frame : Palette.ground).opacity(prefs.zenDarkGlass ? 0.12 : 0.08)
                 if landing { greys.hover }
                 // Soft space wash tint over the frosted glass
                 SpaceWash(look: browser.wash).opacity(0.35)

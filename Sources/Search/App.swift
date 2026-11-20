@@ -544,8 +544,8 @@ struct ContentView: View {
             } else {
                 ZStack {
                     VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
-                    Color.black.opacity(browser.prefs.zenDarkGlass ? 0.38 : 0.12)
-                    (cards ? Palette.frame : Palette.ground).opacity(browser.prefs.zenDarkGlass ? 0.32 : 0.20)
+                    Color.black.opacity(browser.prefs.zenDarkGlass ? 0.16 : 0.08)
+                    (cards ? Palette.frame : Palette.ground).opacity(browser.prefs.zenDarkGlass ? 0.16 : 0.12)
                 }
             }
             // As cards, the column, the bookmarks bar and the gaps around the
