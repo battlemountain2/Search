@@ -170,6 +170,9 @@ if xcrun actool "$PWD/$ICONDOC" --compile "$PWD/$ICONCAR" --platform macosx \
    && [ -f "$ICONCAR/Assets.car" ]; then
   cp "$ICONCAR/Assets.car" "$APP/Contents/Resources/Assets.car"
   ICONNAME="<key>CFBundleIconName</key><string>AppIcon</string>"
+elif [ -f "Resources/Assets.car" ]; then
+  cp "Resources/Assets.car" "$APP/Contents/Resources/Assets.car"
+  ICONNAME="<key>CFBundleIconName</key><string>AppIcon</string>"
 else
   echo "note: actool from Xcode 26 didn't compile the icon — no Dark or Tinted style this time" >&2
 fi

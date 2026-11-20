@@ -338,7 +338,12 @@ struct SiteCard: View {
     /// paused, and the frame dark. It takes effect on the page at once.
     @ViewBuilder private var darken: some View {
         if browser.canDusk(tab) {
-            Darken(on: Binding(get: { tab.dusked }, set: { browser.dusk($0, tab) }))
+            Darken(on: Binding(get: { tab.dusked }, set: { on in
+                browser.dusk(on, tab)
+                if !on {
+                    tab.built?.evaluateInSearch("if (window.__officeDusk) { window.__officeDusk.force(false); window.__officeDusk.update({on:false}); }")
+                }
+            }))
         }
     }
 

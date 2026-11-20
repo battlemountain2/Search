@@ -310,11 +310,11 @@ struct Command: Identifiable {
         // square, and so is the row's.
         Command("tabs.pin", "Pin Tab", .tabs, nil) { browser in
             guard let tab = browser.active else { return }
-            if tab.pin != nil { browser.unpin(tab) } else if tab.isWeb { browser.pin(tab) }
+            if tab.pin != nil { browser.unpin(tab) } else if tab.isWeb { browser.pin(tab, listed: true) }
         },
         Command("tabs.pinRow", "Pin Tab as Row", .tabs, nil) { browser in
             guard let tab = browser.active else { return }
-            if tab.pin != nil { browser.unpin(tab) } else if tab.isWeb { browser.pin(tab, listed: browser.prefs.showsPinRows) }
+            if tab.pin != nil { browser.unpin(tab) } else if tab.isWeb { browser.pin(tab, listed: true) }
         },
         Command("tabs.rename", "Rename Tab", .tabs, nil) { browser in
             if let tab = browser.active { browser.beginTabRename(tab) }

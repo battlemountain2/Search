@@ -923,7 +923,7 @@ final class Preferences: ObservableObject {
     @Published var pinNumberGoesBack = true
     /// Whether the pinned rows are drawn as rows: asked for, and with the
     /// tabs down the side. Across the top every pin is a square.
-    var showsPinRows: Bool { (listsPins || pinAsRow) && sidebar }
+    var showsPinRows: Bool { sidebar }
     /// Whether the pinned rows are drawn in their folders.
     var showsPinFolders: Bool { pinFolders && showsPinRows }
     /// Pins every space shows above its own, as Arc's favourites sit above

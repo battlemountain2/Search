@@ -9,14 +9,14 @@ struct ZenTopBar: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
 
-    static let height: CGFloat = 34
+    static let height: CGFloat = 30
 
     @State private var capsuleHovered = false
     @State private var showToolbox = false
     @State private var showSiteCard = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             // Navigation Cluster (Back, Forward, Reload)
             navigationControls
 
@@ -30,7 +30,7 @@ struct ZenTopBar: View {
             // Pinned Extensions cluster aligned to the right (like Zen)
             pinnedExtensionsCluster
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 6)
         .frame(height: ZenTopBar.height)
         .background(WindowDragBar())
     }
@@ -50,12 +50,14 @@ struct ZenTopBar: View {
                     browser.back()
                 } label: {
                     Image(systemName: "chevron.backward")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(back ? Palette.ink : Palette.muted.opacity(0.35))
-                        .frame(width: 26, height: 26)
+                        .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .focusable(false)
+                .focusEffectDisabled()
                 .disabled(!back)
                 .help("Back   ⌘[")
 
@@ -65,12 +67,14 @@ struct ZenTopBar: View {
                     browser.forward()
                 } label: {
                     Image(systemName: "chevron.forward")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(forward ? Palette.ink : Palette.muted.opacity(0.35))
-                        .frame(width: 26, height: 26)
+                        .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .focusable(false)
+                .focusEffectDisabled()
                 .disabled(!forward)
                 .help("Forward   ⌘]")
 
@@ -84,16 +88,18 @@ struct ZenTopBar: View {
                     }
                 } label: {
                     Image(systemName: tab.loading ? "xmark" : "arrow.clockwise")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Palette.ink)
-                        .frame(width: 26, height: 26)
+                        .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .focusable(false)
+                .focusEffectDisabled()
                 .help(tab.loading ? "Stop Loading   esc" : "Reload Page   ⌘R")
             }
         } else {
-            Color.clear.frame(width: 80, height: 26)
+            Color.clear.frame(width: 70, height: 22)
         }
     }
 
@@ -102,16 +108,16 @@ struct ZenTopBar: View {
     @ViewBuilder
     private var addressCapsule: some View {
         if let tab = browser.active {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 // Security / Scheme Icon & Site Permissions Popover (Like Zen & Safari)
                 Button {
                     Haptics.tap()
                     showSiteCard.toggle()
                 } label: {
                     Image(systemName: tab.address?.scheme == "https" ? "lock.fill" : "globe")
-                        .font(.system(size: 9.5, weight: .semibold))
+                        .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(tab.address?.scheme == "https" ? Palette.safe : Palette.muted)
-                        .frame(width: 18, height: 18)
+                        .frame(width: 16, height: 16)
                         .background(showSiteCard ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
                 }
                 .buttonStyle(.plain)
@@ -130,7 +136,7 @@ struct ZenTopBar: View {
                     browser.edit()
                 } label: {
                     Text(displayDomain(for: tab))
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(Palette.ink)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -146,9 +152,9 @@ struct ZenTopBar: View {
                     showToolbox.toggle()
                 } label: {
                     Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(showToolbox ? Color.accentColor : Palette.muted)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 20, height: 20)
                         .background(showToolbox ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
                         .contentShape(Rectangle())
                 }
@@ -162,11 +168,11 @@ struct ZenTopBar: View {
                     }
                 }
             }
-            .padding(.leading, 10)
-            .padding(.trailing, 4)
-            .frame(minWidth: 220, maxWidth: 380, maxHeight: 26)
+            .padding(.leading, 8)
+            .padding(.trailing, 3)
+            .frame(minWidth: 180, maxWidth: 340, maxHeight: 24)
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(capsuleHovered || showToolbox ? Color.white.opacity(0.08) : Color.white.opacity(0.04))
             )
             .onHover { capsuleHovered = $0 }
@@ -235,13 +241,18 @@ struct UrlToolboxView: View {
                     }
 
                     // Pin Tab
+                    let isPinnedRow = tab.pin != nil && tab.listed
                     ToolboxPillButton(
-                        icon: tab.pin != nil ? "pin.fill" : "pin",
-                        label: tab.pin != nil ? "Pinned" : "Pin",
-                        iconColor: tab.pin != nil ? Color.accentColor : nil
+                        icon: isPinnedRow ? "pin.fill" : "pin",
+                        label: isPinnedRow ? "Pinned" : "Pin",
+                        iconColor: isPinnedRow ? Color.accentColor : nil
                     ) {
                         Haptics.tap()
-                        browser.pins.toggle(tab)
+                        if isPinnedRow {
+                            browser.unpin(tab)
+                        } else {
+                            browser.pin(tab, listed: true)
+                        }
                     }
 
                     // Bookmark
@@ -681,7 +692,12 @@ struct SiteSecurityPopoverView: View {
 
                         Switch(on: Binding(
                             get: { tab.dusked },
-                            set: { browser.dusk($0, tab) }
+                            set: { on in
+                                browser.dusk(on, tab)
+                                if !on {
+                                    tab.built?.evaluateInSearch("if (window.__officeDusk) { window.__officeDusk.force(false); window.__officeDusk.update({on:false}); }")
+                                }
+                            }
                         ))
                     }
                 }

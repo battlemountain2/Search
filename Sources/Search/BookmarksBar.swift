@@ -16,7 +16,7 @@ struct BookmarksBar: View {
     /// being the line (see CardEdge).
     var onFrame = false
 
-    static let height: CGFloat = 30
+    static let height: CGFloat = 24
 
     var body: some View {
         let _ = Bench.count("bar")
@@ -149,17 +149,17 @@ struct BookmarksBar: View {
         @State private var hovering = false
 
         var body: some View {
-            HStack(spacing: 5.5) {
+            HStack(spacing: 4.5) {
                 if node.isFolder {
                     Image(systemName: "folder.fill")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Palette.ink.opacity(0.60))
                 } else {
-                    Mark(icon: Favicons.shared.cached(for: node.address), letter: String((node.host ?? "•").prefix(1)).uppercased(), size: 13)
+                    Mark(icon: Favicons.shared.cached(for: node.address), letter: String((node.host ?? "•").prefix(1)).uppercased(), size: 11.5)
                 }
                 if !node.unnamed {
                     Text(node.title)
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Palette.ink.opacity(0.85))
                         .lineLimit(1)
                         .frame(maxWidth: 150, alignment: .leading)
@@ -167,19 +167,19 @@ struct BookmarksBar: View {
                 }
                 if node.isFolder {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 7, weight: .bold))
+                        .font(.system(size: 6.5, weight: .bold))
                         .foregroundStyle(Palette.ink.opacity(0.35))
                 }
             }
-            .padding(.horizontal, node.unnamed ? 5 : 7)
-            .frame(minWidth: node.unnamed ? 24 : nil)
-            .frame(height: 24)
+            .padding(.horizontal, node.unnamed ? 4 : 6)
+            .frame(minWidth: node.unnamed ? 20 : nil)
+            .frame(height: 20)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .fill(hovering ? Palette.ink.opacity(0.08) : Color.white.opacity(0.02))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .strokeBorder(Color.white.opacity(hovering ? 0.08 : 0.0), lineWidth: 0.5)
             )
             .contentShape(Rectangle())

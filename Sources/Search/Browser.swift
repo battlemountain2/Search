@@ -2098,7 +2098,7 @@ final class Browser: NSObject, ObservableObject {
     /// The pins drawn as squares: those not kept as rows, and every pin
     /// while the rows are off. They come first among the pins, so a
     /// square's place in the grid is its place in the row.
-    var squarePins: [Tab] { tabs.filter { $0.pin != nil && !($0.listed && prefs.showsPinRows) } }
+    var squarePins: [Tab] { tabs.filter { $0.pin != nil && !$0.listed } }
     /// The pins kept as rows, under the squares (see Tab.listed). None
     /// while the rows are off: they are drawn as squares then.
     var listedPins: [Tab] { prefs.showsPinRows ? tabs.filter { $0.pin != nil && $0.listed } : [] }
@@ -2108,7 +2108,7 @@ final class Browser: NSObject, ObservableObject {
         if tab.pin != nil {
             unpin(tab)
         } else {
-            pin(tab)
+            pin(tab, listed: true)
         }
     }
 
@@ -2139,7 +2139,7 @@ final class Browser: NSObject, ObservableObject {
             // Pinned tabs live at the head of the row, in the order they were
             // pinned, so their letters never move under your hand: a square
             // after the squares, a row after the rows.
-            let shouldBeListed = listed ?? (prefs.pinAsRow || prefs.listsPins)
+            let shouldBeListed = listed ?? true
             tab.listed = shouldBeListed
             if shouldBeListed && !prefs.listsPins {
                 prefs.listsPins = true

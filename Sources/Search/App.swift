@@ -317,21 +317,19 @@ struct SearchApp: App {
                     Divider()
                 }
                 if let tab = browser.active {
-                    let rows = browser.prefs.showsPinRows
                     if tab.pin == nil {
-                        Button("Pin Tab") { browser.pin(tab) }
+                        Button("Pin Tab") { browser.pin(tab, listed: true) }
                             .shortcut("tabs.pin")
                             .disabled(!tab.isWeb || tab.shy)
-                        Button("Pin Tab as Row") { browser.pin(tab, listed: true) }
-                            .shortcut("tabs.pinRow")
+                        Button("Add to Essentials") { browser.pin(tab, listed: false) }
                             .disabled(!tab.isWeb || tab.shy)
                     } else {
-                        Button(tab.listed ? "Show Pin in Essentials" : "Show Pin as Row") { browser.setListed(tab, !tab.listed) }
-                        if !(rows && tab.listed) {
+                        Button(tab.listed ? "Move to Essentials" : "Move to Pinned Tabs") { browser.setListed(tab, !tab.listed) }
+                        if !tab.listed {
                             Button("Change Letter") { browser.editLetter(tab) }
                         }
-                        Button("Unpin Tab") { browser.unpin(tab) }
-                            .shortcut(rows && tab.listed ? "tabs.pinRow" : "tabs.pin")
+                        Button(tab.listed ? "Unpin Tab" : "Remove from Essentials") { browser.unpin(tab) }
+                            .shortcut("tabs.pin")
                     }
                 }
                 Button("Rename Tab") { if let tab = browser.active { browser.beginTabRename(tab) } }
@@ -604,7 +602,7 @@ struct ContentView: View {
                 BookmarksBar(browser: browser, bookmarks: browser.bookmarks, onFrame: cards)
                     .padding(.leading, sideOnRight ? farGap : (showZenTopBar ? (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap) : chrome.width))
                     .padding(.trailing, sideOnRight ? (showZenTopBar ? (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap) : chrome.width) : farGap)
-                    .padding(.top, showZenTopBar ? (Metrics.cardGap + ZenTopBar.height + 4) : (cards ? Metrics.cardGap : band))
+                    .padding(.top, showZenTopBar ? (6 + ZenTopBar.height + 2) : (cards ? 6 : band))
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
@@ -613,7 +611,7 @@ struct ContentView: View {
                 ZenTopBar(browser: browser, prefs: browser.prefs)
                     .padding(.leading, sideOnRight ? farGap : (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap))
                     .padding(.trailing, sideOnRight ? (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap) : farGap)
-                    .padding(.top, Metrics.cardGap)
+                    .padding(.top, 6)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
@@ -694,20 +692,21 @@ struct ContentView: View {
     /// bar is there.
     private var chrome: CGSize {
         let barHeight: CGFloat = BookmarksBar.height
-        let cardGap = Metrics.cardGap
-        let zenHeight = ZenTopBar.height
+        let topGap: CGFloat = 6
+        let zenHeight: CGFloat = ZenTopBar.height
+        let bottomGap: CGFloat = Metrics.cardGap
 
         if cards {
-            let width = sidebar ? sideWidth + cardGap : cardGap
+            let width = sidebar ? sideWidth + bottomGap : bottomGap
             let height: CGFloat
             if showZenTopBar && barShown {
-                height = cardGap + zenHeight + 4 + barHeight + cardGap
+                height = topGap + zenHeight + 2 + barHeight + bottomGap
             } else if showZenTopBar {
-                height = cardGap + zenHeight + cardGap
+                height = topGap + zenHeight + bottomGap
             } else if barShown {
-                height = cardGap + barHeight + cardGap
+                height = topGap + barHeight + bottomGap
             } else {
-                height = cardGap
+                height = bottomGap
             }
             return CGSize(width: width, height: height)
         }
@@ -1478,6 +1477,7 @@ struct ContentView: View {
     /// passing them on left them dead for going back and forward (#324).
     private func pageFirst(_ event: NSEvent, key: String, shifted: Bool) -> Bool {
         let reserved = (key == "t") || (key == "w") || (key == "n" && shifted)
+            || (key == "b" && shifted)
             || ((key == "[" || key == "]" || key == "{" || key == "}") && shifted)
             || (key == "z" && browser.veiling)
             || (key == "k")
@@ -1908,6 +1908,17 @@ struct ContentView: View {
             if !event.isARepeat { browser.launch() }
         case "t" where shifted:
             browser.reopen()
+        case "b" where shifted:
+            withAnimation(Motion.glide) {
+                if browser.prefs.bookmarksBar || browser.prefs.bookmarksBarOnNewTab {
+                    browser.prefs.bookmarksBar = false
+                    browser.prefs.bookmarksBarOnNewTab = false
+                } else {
+                    browser.prefs.bookmarksBar = true
+                    browser.prefs.bookmarksBarOnNewTab = false
+                }
+            }
+            return true
         case "c" where shifted:
             browser.copyAddress()
         case "d" where !shifted:

@@ -1661,19 +1661,10 @@ struct TabMenu: View {
         }
         let rows = browser.prefs.showsPinRows
         if tab.pin == nil {
-            if browser.prefs.pinAsRow {
-                Button("Pin as Tab") { browser.pin(tab, listed: true) }
-                    .disabled(!tab.isWeb || tab.shy)
-                Button("Pin to Essentials") { browser.pin(tab, listed: false) }
-                    .disabled(!tab.isWeb || tab.shy)
-            } else {
-                Button("Pin Tab") { browser.pin(tab) }
-                    .disabled(!tab.isWeb || tab.shy)
-                if rows {
-                    Button("Pin as Row") { browser.pin(tab, listed: true) }
-                        .disabled(!tab.isWeb || tab.shy)
-                }
-            }
+            Button("Pin Tab") { browser.pin(tab, listed: true) }
+                .disabled(!tab.isWeb || tab.shy)
+            Button("Add to Essentials") { browser.pin(tab, listed: false) }
+                .disabled(!tab.isWeb || tab.shy)
         } else {
             Button(tab.listed ? "Move to Essentials" : "Move to Pinned Tabs") {
                 browser.setListed(tab, !tab.listed)
@@ -1718,7 +1709,7 @@ struct TabMenu: View {
                     if tab.everywhere { browser.keepHere(tab) } else { browser.shareEverywhere(tab) }
                 }
             }
-            Button("Unpin") { browser.unpin(tab) }
+            Button(tab.listed ? "Unpin Tab" : "Remove from Essentials") { browser.unpin(tab) }
             // Away for good in one go, where Unpin, finding the row and its
             // × took three (#834); ⇧⌘T brings it back as a tab.
             Button("Delete") {
