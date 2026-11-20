@@ -2449,7 +2449,7 @@ private struct ExtensionButtons: View {
 
 /// An extension's icon with its badge in the corner.
 @available(macOS 15.4, *)
-private struct ExtensionIcon: View {
+struct ExtensionIcon: View {
     let button: Extensions.Button
     let size: CGFloat
 

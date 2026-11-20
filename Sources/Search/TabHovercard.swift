@@ -269,7 +269,7 @@ struct TabHovercard: View {
             }
 
             // ◫ Split View Pill (ALWAYS present on every tab!)
-            let isCurrentTabSplit = browser.prefs.splitView && (browser.active?.id == tab.id || browser.splitPair?.left.id == tab.id || browser.splitPair?.right.id == tab.id)
+            let isCurrentTabSplit = browser.prefs.splitView && browser.split(for: tab) != nil
             HovercardPill(
                 icon: "rectangle.split.2x1",
                 label: isCurrentTabSplit ? "Unsplit" : "Split",
