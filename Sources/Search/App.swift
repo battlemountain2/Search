@@ -370,10 +370,24 @@ struct SearchApp: App {
                 Button("Show Bookmarks…") { browser.bookmarking = true }
                     .shortcut("bookmarks.show")
                 Toggle("Show Bookmarks Bar", isOn: Binding(
-                    get: { browser.prefs.bookmarksBar },
-                    set: { on in withAnimation(Motion.glide) { browser.prefs.bookmarksBar = on } }
+                    get: { browser.prefs.bookmarksBar && !browser.prefs.bookmarksBarOnNewTab },
+                    set: { on in
+                        withAnimation(Motion.glide) {
+                            browser.prefs.bookmarksBar = on
+                            if on { browser.prefs.bookmarksBarOnNewTab = false }
+                        }
+                    }
                 ))
                 .shortcut("bookmarks.bar")
+                Toggle("Show on New Tab Only", isOn: Binding(
+                    get: { browser.prefs.bookmarksBarOnNewTab },
+                    set: { on in
+                        withAnimation(Motion.glide) {
+                            browser.prefs.bookmarksBarOnNewTab = on
+                            if on { browser.prefs.bookmarksBar = false }
+                        }
+                    }
+                ))
                 // The bookmarks themselves follow, put in by AppKit (see
                 // BookmarkMenu in Bookmarks.swift).
             }
@@ -540,8 +554,7 @@ struct ContentView: View {
             } else {
                 ZStack {
                     VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
-                    Color.black.opacity(browser.prefs.zenDarkGlass ? 0.16 : 0.08)
-                    (cards ? Palette.frame : Palette.ground).opacity(browser.prefs.zenDarkGlass ? 0.16 : 0.12)
+                    Color.black.opacity(browser.prefs.zenDarkGlass ? 0.18 : 0.08)
                 }
             }
             // As cards, the column, the bookmarks bar and the gaps around the
@@ -755,9 +768,11 @@ struct ContentView: View {
     /// The bookmarks bar is up: asked for (or on new tab if enabled),
     /// there are bookmarks, and the tabs aren't folded away or under a video filling the screen.
     private var barShown: Bool {
-        let onNewTab = browser.prefs.bookmarksBarOnNewTab && (browser.active?.isBlank ?? false)
-        return (browser.prefs.bookmarksBar || onNewTab) && !browser.bookmarks.isEmpty && !browser.folded
-            && fullscreenTab == nil
+        guard !browser.bookmarks.isEmpty, !browser.folded, fullscreenTab == nil else { return false }
+        if browser.prefs.bookmarksBarOnNewTab {
+            return browser.active?.isBlank ?? false
+        }
+        return browser.prefs.bookmarksBar
     }
 
     /// The room the page is laid out to leave them, which is not animated.

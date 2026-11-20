@@ -331,7 +331,15 @@ struct Command: Identifiable {
         Command("bookmarks.add", "Add This Page", .bookmarks, KeyCombo("b", option: true)) { $0.bookmarkCurrent() },
         Command("bookmarks.show", "Show Bookmarks…", .bookmarks, nil) { $0.bookmarking = true },
         Command("bookmarks.bar", "Show Bookmarks Bar", .bookmarks, KeyCombo("b", shift: true)) { browser in
-            withAnimation(Motion.glide) { browser.prefs.bookmarksBar.toggle() }
+            withAnimation(Motion.glide) {
+                if browser.prefs.bookmarksBar || browser.prefs.bookmarksBarOnNewTab {
+                    browser.prefs.bookmarksBar = false
+                    browser.prefs.bookmarksBarOnNewTab = false
+                } else {
+                    browser.prefs.bookmarksBar = true
+                    browser.prefs.bookmarksBarOnNewTab = false
+                }
+            }
         },
 
         Command("history.show", "Show History…", .history, KeyCombo("y")) { $0.recalling = true },

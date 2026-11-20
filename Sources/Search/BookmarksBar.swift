@@ -55,11 +55,19 @@ struct BookmarksBar: View {
             Button("Show Bookmarks…") { browser.bookmarking = true }
             Toggle("Show on New Tab Only", isOn: Binding(
                 get: { browser.prefs.bookmarksBarOnNewTab },
-                set: { browser.prefs.bookmarksBarOnNewTab = $0 }
+                set: { on in
+                    withAnimation(Motion.glide) {
+                        browser.prefs.bookmarksBarOnNewTab = on
+                        if on { browser.prefs.bookmarksBar = false }
+                    }
+                }
             ))
             Divider()
             Button("Hide Bookmarks Bar") {
-                withAnimation(Motion.glide) { browser.prefs.bookmarksBar = false }
+                withAnimation(Motion.glide) {
+                    browser.prefs.bookmarksBar = false
+                    browser.prefs.bookmarksBarOnNewTab = false
+                }
             }
         }
         .background {
@@ -139,7 +147,6 @@ struct BookmarksBar: View {
         let node: Bookmark
         let act: () -> Void
         @State private var hovering = false
-        @State private var pressed = false
 
         var body: some View {
             HStack(spacing: 5.5) {
@@ -175,17 +182,8 @@ struct BookmarksBar: View {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .strokeBorder(Color.white.opacity(hovering ? 0.08 : 0.0), lineWidth: 0.5)
             )
-            .scaleEffect(pressed ? 0.96 : 1.0)
             .contentShape(Rectangle())
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in if !pressed { pressed = true } }
-                    .onEnded { _ in pressed = false }
-            )
-            .onTapGesture {
-                Haptics.click()
-                act()
-            }
+            .onTapGesture(perform: act)
             .onHover { h in
                 withAnimation(Motion.quick) { hovering = h }
             }

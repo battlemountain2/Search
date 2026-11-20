@@ -214,10 +214,9 @@ struct SideBar: View {
         .onAppear { SpaceSwipe.shared.start(for: browser) }
         .background {
             ZStack {
-                if onFrame {
+                if !onFrame {
                     VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
-                    Palette.frame.opacity(prefs.zenDarkGlass ? 0.16 : 0.12)
-                    SpaceWash(look: browser.wash).opacity(0.35)
+                    Color.black.opacity(prefs.zenDarkGlass ? 0.18 : 0.08)
                 }
                 if landing { greys.hover }
                 if prefs.splitView {
