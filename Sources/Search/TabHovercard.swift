@@ -31,7 +31,7 @@ struct TabHovercard: View {
             quickActionsSection
         }
         .padding(10)
-        .frame(width: 270)
+        .frame(width: 280)
         .background(
             ZStack {
                 VisualEffectView(material: .popover, blendingMode: .withinWindow)
@@ -235,7 +235,7 @@ struct TabHovercard: View {
             let bookmarked = tab.address.map { browser.bookmarks.contains($0) } ?? false
             HovercardPill(
                 icon: bookmarked ? "star.fill" : "star",
-                label: bookmarked ? "Saved" : "Bookmark",
+                label: bookmarked ? "Saved" : "Save",
                 iconColor: bookmarked ? Color.yellow : nil
             ) {
                 browser.bookmarks.toggle(tab)
@@ -280,17 +280,18 @@ private struct HovercardPill: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
+            HStack(spacing: 3.5) {
                 Image(systemName: icon)
                     .font(.system(size: 8.5, weight: .semibold))
                     .foregroundStyle(iconColor ?? (disabled ? Palette.muted.opacity(0.4) : Palette.ink))
                 Text(label)
                     .font(.system(size: 9.5, weight: .medium))
+                    .lineLimit(1)
                     .foregroundStyle(disabled ? Palette.muted.opacity(0.5) : Palette.ink)
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 5)
             .padding(.vertical, 4)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 22)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(hovering && !disabled ? Palette.ink.opacity(0.08) : Palette.ink.opacity(0.03))
