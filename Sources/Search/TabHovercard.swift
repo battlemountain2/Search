@@ -136,21 +136,24 @@ struct TabHovercard: View {
                 .padding(.vertical, 2)
                 .background(Color.purple.opacity(0.12), in: Capsule())
         } else if tab.noisy {
-            Text("Playing")
+            let memStr = tab.activeMemoryMB.map { " (\($0) MB)" } ?? ""
+            Text("Playing\(memStr)")
                 .font(.system(size: 9.5, weight: .medium))
                 .foregroundStyle(Palette.safe)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
                 .background(Palette.safe.opacity(0.12), in: Capsule())
         } else if tab.throttled {
-            Text("Throttled")
+            let memStr = tab.activeMemoryMB.map { " (\($0) MB)" } ?? ""
+            Text("Throttled\(memStr)")
                 .font(.system(size: 9.5, weight: .medium))
                 .foregroundStyle(Palette.unsafe)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
                 .background(Palette.unsafe.opacity(0.12), in: Capsule())
         } else {
-            Text("Active")
+            let memText = tab.activeMemoryMB.map { "\($0) MB" } ?? "Active"
+            Text(memText)
                 .font(.system(size: 9.5, weight: .medium))
                 .foregroundStyle(Palette.muted)
                 .padding(.horizontal, 6)
@@ -173,6 +176,8 @@ struct TabHovercard: View {
                     .background(Palette.ink.opacity(0.08), in: Circle())
             }
             .buttonStyle(.plain)
+            .focusable(false)
+            .focusEffectDisabled()
             .help(tab.stilled ? "Play" : "Pause")
 
             // Mute / Unmute Toggle
@@ -184,6 +189,8 @@ struct TabHovercard: View {
                     .background(Palette.ink.opacity(0.08), in: Circle())
             }
             .buttonStyle(.plain)
+            .focusable(false)
+            .focusEffectDisabled()
             .help(tab.muted ? "Unmute" : "Mute")
 
             // Track title ticker
@@ -294,6 +301,8 @@ private struct HovercardPill: View {
             )
         }
         .buttonStyle(.plain)
+        .focusable(false)
+        .focusEffectDisabled()
         .disabled(disabled)
         .onHover { hovering = $0 }
         .animation(Motion.quick, value: hovering)

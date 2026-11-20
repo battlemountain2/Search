@@ -531,19 +531,13 @@ struct ContentView: View {
             // Black while a page has the screen, so the frame of our own window
             // that survives the transition is not a white band across the top.
             // With the tabs down the side, the ground the page's card sits on.
-            // When the sidebar is visible, leave its strip transparent for frosted glass.
             if fullscreenTab != nil {
                 Color.black
-            } else if cards {
-                Palette.frame
-                    .padding(.leading, (!sideOnRight && browser.prefs.sidebar && !browser.folded) ? chrome.width : 0)
-                    .padding(.trailing, (sideOnRight && browser.prefs.sidebar && !browser.folded) ? chrome.width : 0)
-            } else if !browser.prefs.sidebar || browser.folded {
-                Palette.ground
             } else {
-                Palette.ground
-                    .padding(.leading, (!sideOnRight && browser.prefs.sidebar && !browser.folded) ? chrome.width : 0)
-                    .padding(.trailing, (sideOnRight && browser.prefs.sidebar && !browser.folded) ? chrome.width : 0)
+                ZStack {
+                    VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
+                    (cards ? Palette.frame : Palette.ground).opacity(0.82)
+                }
             }
             // As cards, the column, the bookmarks bar and the gaps around the
             // page share that ground, so the space's colour washes all of it
@@ -670,7 +664,7 @@ struct ContentView: View {
     private var chrome: CGSize {
         let bar = barShown ? BookmarksBar.height : 0
         if cards {
-            return CGSize(width: sidebar ? sideWidth : Metrics.cardGap,
+            return CGSize(width: sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap,
                           height: barShown ? bar : Metrics.cardGap)
         }
         return CGSize(width: sidebar ? sideWidth : 0, height: band + bar)

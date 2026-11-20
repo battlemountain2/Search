@@ -24,6 +24,8 @@ struct AudioWaveformPill: View {
                             .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
+                    .focusable(false)
+                    .focusEffectDisabled()
                     .onHover { playHovering = $0 }
                     .help(tab.stilled ? "Play" : "Pause")
 
@@ -37,6 +39,8 @@ struct AudioWaveformPill: View {
                             .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
+                    .focusable(false)
+                    .focusEffectDisabled()
                     .onHover { muteHovering = $0 }
                     .help(tab.muted ? "Unmute Tab" : "Mute Tab")
                 }

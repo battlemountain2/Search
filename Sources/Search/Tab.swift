@@ -1,4 +1,5 @@
 import Combine
+import Darwin
 import ImageIO
 import SwiftUI
 import WebKit
@@ -664,6 +665,18 @@ final class Tab: ObservableObject, Identifiable {
         } else {
             still()
         }
+    }
+
+    /// Real-time resident memory of this tab's WebContent process in megabytes.
+    var activeMemoryMB: Int? {
+        guard let built, !asleep else { return nil }
+        let pid = built.processIdentifier
+        guard pid > 0 else { return nil }
+        var info = proc_taskinfo()
+        let size = MemoryLayout<proc_taskinfo>.stride
+        let res = proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &info, Int32(size))
+        guard res == size else { return nil }
+        return Int(info.pti_resident_size / (1024 * 1024))
     }
 
     /// What the page hands back when you point at something and click it.
