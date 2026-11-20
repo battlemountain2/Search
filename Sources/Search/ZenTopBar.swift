@@ -158,7 +158,7 @@ struct ZenTopBar: View {
             } label: {
                 Image(systemName: "rectangle.split.2x1")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(browser.prefs.splitView ? Palette.accent : Palette.ink)
+                    .foregroundStyle(browser.prefs.splitView ? Color.accentColor : Palette.ink)
                     .frame(width: 26, height: 26)
                     .contentShape(Rectangle())
             }
@@ -175,7 +175,7 @@ struct ZenTopBar: View {
                 } label: {
                     Image(systemName: tab.reading ? "doc.plaintext.fill" : "doc.plaintext")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(tab.reading ? Palette.accent : Palette.ink)
+                        .foregroundStyle(tab.reading ? Color.accentColor : Palette.ink)
                         .frame(width: 26, height: 26)
                         .contentShape(Rectangle())
                 }
