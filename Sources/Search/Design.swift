@@ -539,7 +539,7 @@ struct CardEdge: ViewModifier {
             }
             .overlay {
                 CardShape(on: on)
-                    .strokeBorder(Color.primary.opacity(on ? CardEdge.edge : 0), lineWidth: 1)
+                    .strokeBorder(Color.white.opacity(on ? 0.10 : 0), lineWidth: 0.5)
                     .allowsHitTesting(false)
             }
     }

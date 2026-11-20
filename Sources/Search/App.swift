@@ -144,6 +144,14 @@ struct SearchApp: App {
                     set: { _ in browser.toggleSidebar() }
                 ))
                 .shortcut("view.sidebar")
+                Toggle("Show Top Navigation Bar", isOn: Binding(
+                    get: { browser.prefs.zenTopBar },
+                    set: { _ in
+                        Haptics.tap()
+                        withAnimation(Motion.glide) { browser.prefs.zenTopBar.toggle() }
+                    }
+                ))
+                .shortcut("view.topBar")
                 // Folded away, not moved (see Fold.swift) — the column, or the
                 // strip across the top.
                 Button(browser.prefs.shrinks && !browser.folded
@@ -536,7 +544,7 @@ struct ContentView: View {
             } else {
                 ZStack {
                     VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
-                    (cards ? Palette.frame : Palette.ground).opacity(0.82)
+                    (cards ? Palette.frame : Palette.ground).opacity(0.26)
                 }
             }
             // As cards, the column, the bookmarks bar and the gaps around the
@@ -588,6 +596,15 @@ struct ContentView: View {
                     .padding(.trailing, sideOnRight ? chrome.width : farGap)
                     .padding(.top, band)
                     .transition(.opacity)
+            }
+
+            // Zen-style dynamic top navigation bar above the web card
+            if showZenTopBar {
+                ZenTopBar(browser: browser, prefs: browser.prefs)
+                    .padding(.leading, sideOnRight ? farGap : (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap))
+                    .padding(.trailing, sideOnRight ? (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap) : farGap)
+                    .padding(.top, (barShown ? BookmarksBar.height + Metrics.cardGap : Metrics.cardGap))
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .ignoresSafeArea()
@@ -657,15 +674,20 @@ struct ContentView: View {
         }
     }
 
+    private var showZenTopBar: Bool {
+        browser.prefs.sidebar && browser.prefs.zenTopBar && fullscreenTab == nil
+    }
+
     /// What the column and the strip take from the page right now: animated
     /// as they come and go. With the page as a card, the column folded away
     /// still leaves the card's gap, and so does the top, unless the bookmarks
     /// bar is there.
     private var chrome: CGSize {
         let bar = barShown ? BookmarksBar.height : 0
+        let topBar = showZenTopBar ? ZenTopBar.height + Metrics.cardGap : 0
         if cards {
             return CGSize(width: sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap,
-                          height: barShown ? bar : Metrics.cardGap)
+                          height: (barShown ? bar : Metrics.cardGap) + topBar)
         }
         return CGSize(width: sidebar ? sideWidth : 0, height: band + bar)
     }

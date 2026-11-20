@@ -31,7 +31,7 @@ struct TabHovercard: View {
             quickActionsSection
         }
         .padding(10)
-        .frame(width: 280)
+        .frame(width: (browser.active?.id != tab.id ? 305 : 280))
         .background(
             ZStack {
                 VisualEffectView(material: .popover, blendingMode: .withinWindow)
@@ -168,7 +168,10 @@ struct TabHovercard: View {
     private var mediaBarSection: some View {
         HStack(spacing: 8) {
             // Play / Pause Toggle
-            Button(action: { tab.togglePlayback() }) {
+            Button(action: {
+                Haptics.tap()
+                tab.togglePlayback()
+            }) {
                 Image(systemName: tab.stilled ? "play.fill" : (tab.noisy || tab.playingVideo ? "pause.fill" : "play.fill"))
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(Palette.ink)
@@ -181,7 +184,10 @@ struct TabHovercard: View {
             .help(tab.stilled ? "Play" : "Pause")
 
             // Mute / Unmute Toggle
-            Button(action: { tab.toggleMute() }) {
+            Button(action: {
+                Haptics.tap()
+                tab.toggleMute()
+            }) {
                 Image(systemName: tab.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(tab.muted ? Palette.unsafe : Palette.ink)
@@ -256,6 +262,20 @@ struct TabHovercard: View {
                 }
             }
 
+            // ◫ Split View Pill (pairs background tab side-by-side with active)
+            if let activeTab = browser.active, activeTab.id != tab.id {
+                HovercardPill(
+                    icon: "rectangle.split.2x1",
+                    label: "Split"
+                ) {
+                    Haptics.click()
+                    if !browser.prefs.splitView {
+                        browser.prefs.splitView = true
+                    }
+                    browser.pair(tab, with: activeTab, onLeft: false)
+                }
+            }
+
             // 💤 Sleep Now Pill
             HovercardPill(
                 icon: "moon.zzz.fill",
@@ -279,7 +299,10 @@ private struct HovercardPill: View {
     @State private var hovering = false
 
     var body: some View {
-        Button(action: action) {
+        Button(action: {
+            Haptics.tap()
+            action()
+        }) {
             HStack(spacing: 3.5) {
                 Image(systemName: icon)
                     .font(.system(size: 8.5, weight: .semibold))

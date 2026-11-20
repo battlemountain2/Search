@@ -210,9 +210,7 @@ struct SideBar: View {
         .onAppear { SpaceSwipe.shared.start(for: browser) }
         .background {
             ZStack {
-                // Dark base tint prevents background windows from bleeding harsh text through
-                (onFrame ? Palette.frame : Palette.ground).opacity(0.82)
-                VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
+                (onFrame ? Palette.frame : Palette.ground).opacity(0.18)
                 if landing { greys.hover }
                 // Soft space wash tint over the frosted glass
                 SpaceWash(look: browser.wash).opacity(0.35)
@@ -223,7 +221,7 @@ struct SideBar: View {
         }
         .clipped()
         .overlay(alignment: innerEdge) {
-            Rectangle().fill(Palette.hairline.opacity(0.6)).frame(width: 1)
+            Rectangle().fill(Color.white.opacity(0.08)).frame(width: 0.5)
         }
         // A fixed width with icons only: nothing to pull.
         .overlay(alignment: innerEdge) { if !icons { edge } }

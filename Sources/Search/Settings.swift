@@ -578,6 +578,7 @@ struct SettingsPanel: View {
                         set: { layout in withAnimation(Motion.glide) { prefs.tabsLayout = layout } }
                      ))
         case "sidebar.hides": Switch(on: $prefs.sideHides)
+        case "sidebar.topbar": Switch(on: $prefs.zenTopBar)
         case "sidebar.slides": Switch(on: $prefs.slidesColumn)
         case "sidebar.foldIcons": Switch(on: $prefs.foldsToIcons)
         case "layout.cards":

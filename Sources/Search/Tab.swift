@@ -598,6 +598,9 @@ final class Tab: ObservableObject, Identifiable {
             if noisy && throttled {
                 throttle(false)
             }
+            if noisy && !oldValue {
+                NotificationCenter.default.post(name: .searchTabStartedAudio, object: self)
+            }
         }
     }
     /// A video of the page's own document is playing, as the page last
@@ -3683,4 +3686,8 @@ enum Armed {
         made[place] = (source, script)
         return script
     }
+}
+
+extension Notification.Name {
+    static let searchTabStartedAudio = Notification.Name("SearchTabStartedAudioNotification")
 }

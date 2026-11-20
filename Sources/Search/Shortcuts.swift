@@ -243,6 +243,10 @@ struct Command: Identifiable {
         Command("view.reader", "Reading Mode", .view, KeyCombo("r", shift: true)) { $0.toggleReader() },
         Command("view.float", "Float Video", .view, KeyCombo("p", shift: true)) { $0.toggleFloat() },
         Command("view.cinema", "Cinema Mode", .view, KeyCombo("l", shift: true)) { $0.toggleCinema() },
+        Command("view.topBar", "Toggle Top Bar", .view, KeyCombo("t", option: true)) { browser in
+            Haptics.tap()
+            withAnimation(Motion.glide) { browser.prefs.zenTopBar.toggle() }
+        },
         Command("view.sitePanel", "Show Side Panel", .view, nil) { $0.toggleSitePanel() },
         Command("view.dusk", "Darken This Site", .view, KeyCombo("d", shift: true)) { $0.toggleDusk() },
         Command("view.duskPause", "Pause Darkening", .view, KeyCombo("d", shift: true, option: true)) { $0.pauseDusk() },

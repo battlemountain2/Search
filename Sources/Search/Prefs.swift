@@ -218,6 +218,10 @@ final class Preferences: ObservableObject {
     @Published var sideHides: Bool {
         didSet { store.set(sideHides, forKey: "sidebar.hides") }
     }
+    /// Shows the Zen-style compact navigation top bar above the web card.
+    @Published var zenTopBar: Bool {
+        didSet { store.set(zenTopBar, forKey: "zen.topbar") }
+    }
     /// The column slides out and back in a longer, eased slide (Motion.slidesColumn),
     /// where it otherwise snaps out on a short spring. Off unless asked for.
     @Published var slidesColumn: Bool {
@@ -1024,6 +1028,7 @@ final class Preferences: ObservableObject {
             ?? SidebarDefault.fresh(testing: Store.testing)
         sidePosition = store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init) ?? .left
         sideHides = store.bool(forKey: "sidebar.hides")
+        zenTopBar = store.object(forKey: "zen.topbar") as? Bool ?? true
         slidesColumn = store.bool(forKey: Motion.slidesKey)
         roomyTabs = store.bool(forKey: "sidebar.roomy")
         sideIcons = store.bool(forKey: "sidebar.icons")

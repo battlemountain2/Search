@@ -2863,6 +2863,14 @@ final class Browser: NSObject, ObservableObject {
             ? loaded.first?.id ?? Space.firstID
             : (profile == Profile.personalID ? Space.firstID : Profiles.shared.profile(profile).home)
         super.init()
+        NotificationCenter.default.addObserver(forName: .searchTabStartedAudio, object: nil, queue: .main) { [weak self] note in
+            guard let self, let activeTab = note.object as? Tab else { return }
+            if self.activeID == activeTab.id {
+                for other in self.tabs where other.id != activeTab.id && other.noisy {
+                    other.still()
+                }
+            }
+        }
         let first = !Browser.booted
         Browser.booted = true
         // The session files of a profile are its oldest window's: the first

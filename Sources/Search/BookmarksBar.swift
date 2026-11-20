@@ -59,7 +59,7 @@ struct BookmarksBar: View {
         }
         .background {
             ZStack {
-                (onFrame ? Palette.frame : Palette.ground).opacity(0.82)
+                (onFrame ? Palette.frame : Palette.ground).opacity(0.24)
                 // The tabs' wash carried on under them, or the colour
                 // stopped at the bar's edge.
                 SpaceWash(look: browser.wash)

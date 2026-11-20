@@ -15,7 +15,10 @@ struct AudioWaveformPill: View {
                 // Expanded 1-click media control bar
                 HStack(spacing: 2) {
                     // 1-Click Play / Pause toggle
-                    Button(action: { tab.togglePlayback() }) {
+                    Button(action: {
+                        Haptics.tap()
+                        tab.togglePlayback()
+                    }) {
                         Image(systemName: tab.stilled ? "play.fill" : (tab.noisy || tab.playingVideo ? "pause.fill" : "play.fill"))
                             .font(.system(size: 7.5, weight: .bold))
                             .foregroundStyle(Palette.ink)
@@ -30,7 +33,10 @@ struct AudioWaveformPill: View {
                     .help(tab.stilled ? "Play" : "Pause")
 
                     // 1-Click Mute / Unmute toggle
-                    Button(action: { tab.toggleMute() }) {
+                    Button(action: {
+                        Haptics.tap()
+                        tab.toggleMute()
+                    }) {
                         Image(systemName: tab.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                             .font(.system(size: 7.5, weight: .bold))
                             .foregroundStyle(tab.muted ? Palette.unsafe : Palette.muted)
