@@ -670,8 +670,9 @@ final class Tab: ObservableObject, Identifiable {
     /// Real-time resident memory of this tab's WebContent process in megabytes.
     var activeMemoryMB: Int? {
         guard let built, !asleep else { return nil }
-        let pid = built.processIdentifier
-        guard pid > 0 else { return nil }
+        let sel = NSSelectorFromString("_webProcessIdentifier")
+        guard built.responds(to: sel) else { return nil }
+        guard let pid = (built.value(forKey: "_webProcessIdentifier") as? NSNumber)?.int32Value, pid > 0 else { return nil }
         var info = proc_taskinfo()
         let size = MemoryLayout<proc_taskinfo>.stride
         let res = proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &info, Int32(size))
