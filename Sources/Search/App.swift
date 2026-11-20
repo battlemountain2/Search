@@ -536,6 +536,8 @@ struct ContentView: View {
                 Color.black
             } else if cards {
                 Palette.frame
+                    .padding(.leading, (!sideOnRight && browser.prefs.sidebar && !browser.folded) ? chrome.width : 0)
+                    .padding(.trailing, (sideOnRight && browser.prefs.sidebar && !browser.folded) ? chrome.width : 0)
             } else if !browser.prefs.sidebar || browser.folded {
                 Palette.ground
             } else {

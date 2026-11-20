@@ -207,11 +207,11 @@ struct SideBar: View {
             grabbed = nil
             onDrag(nil)
         }
-        // Rows on their way to or from another space stay in the column.
-        .clipped()
         .onAppear { SpaceSwipe.shared.start(for: browser) }
         .background {
             ZStack {
+                // Dark base tint prevents background windows from bleeding harsh text through
+                (onFrame ? Palette.frame : Palette.ground).opacity(0.82)
                 VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
                 if landing { greys.hover }
                 // Soft space wash tint over the frosted glass
@@ -221,8 +221,9 @@ struct SideBar: View {
                 }
             }
         }
+        .clipped()
         .overlay(alignment: innerEdge) {
-            if !onFrame { Rectangle().fill(Palette.hairline).frame(width: 1) }
+            Rectangle().fill(Palette.hairline.opacity(0.6)).frame(width: 1)
         }
         // A fixed width with icons only: nothing to pull.
         .overlay(alignment: innerEdge) { if !icons { edge } }
