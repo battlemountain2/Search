@@ -176,7 +176,7 @@ struct ZenTopBar: View {
     @ViewBuilder
     private var pinnedExtensionsCluster: some View {
         HStack(spacing: 2) {
-            ExtensionSlot(browser: browser, edge: .bottom, room: 4)
+            ExtensionSlot(browser: browser, edge: .bottom, room: 4, showDoor: false)
         }
         .frame(minWidth: 80, alignment: .trailing)
     }
@@ -280,6 +280,8 @@ struct UrlToolboxView: View {
                                         }
                                     }
                                     .buttonStyle(.plain)
+                                    .focusable(false)
+                                    .focusEffectDisabled()
                                 }
 
                                 // Manage Extensions (+) button
@@ -301,6 +303,8 @@ struct UrlToolboxView: View {
                                     }
                                 }
                                 .buttonStyle(.plain)
+                                .focusable(false)
+                                .focusEffectDisabled()
                             }
                         }
                     }
@@ -379,6 +383,8 @@ struct UrlToolboxView: View {
                         .foregroundStyle(Color.accentColor)
                 }
                 .buttonStyle(.plain)
+                .focusable(false)
+                .focusEffectDisabled()
             }
         }
         .padding(12)
@@ -422,6 +428,8 @@ private struct ToolboxPillButton: View {
             )
         }
         .buttonStyle(.plain)
+        .focusable(false)
+        .focusEffectDisabled()
         .onHover { hovered = $0 }
     }
 }
@@ -469,6 +477,8 @@ private struct ToolboxSettingRow: View {
             .background(hovered ? Palette.ink.opacity(0.05) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
+        .focusable(false)
+        .focusEffectDisabled()
         .onHover { hovered = $0 }
     }
 }

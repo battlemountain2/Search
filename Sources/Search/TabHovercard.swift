@@ -70,7 +70,7 @@ struct TabHovercard: View {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .frame(width: 250, height: 140)
+                    .frame(width: 275, height: 154)
                     .clipped()
             } else if loadingPreview {
                 ProgressView()
@@ -86,7 +86,7 @@ struct TabHovercard: View {
                 .padding(12)
             }
         }
-        .frame(width: 250, height: 140)
+        .frame(width: 275, height: 154)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -95,7 +95,7 @@ struct TabHovercard: View {
     }
 
     private func fetchPreview() {
-        tab.preview(width: 250) { image in
+        tab.preview(width: 275) { image in
             self.previewImage = image
             self.loadingPreview = false
         }
@@ -268,23 +268,25 @@ struct TabHovercard: View {
                 browser.bookmarks.toggle(tab)
             }
 
-            // ◫ Split View Pill (ALWAYS present on every tab!)
-            let isCurrentTabSplit = browser.prefs.splitView && browser.split(for: tab) != nil
-            HovercardPill(
-                icon: "rectangle.split.2x1",
-                label: isCurrentTabSplit ? "Unsplit" : "Split",
-                iconColor: isCurrentTabSplit ? Color.accentColor : nil
-            ) {
-                Haptics.click()
-                if let activeTab = browser.active, activeTab.id != tab.id {
-                    // Hovering a background tab: pair it side-by-side with active
-                    if !browser.prefs.splitView {
-                        browser.prefs.splitView = true
+            // ◫ Split View Pill (available for regular tabs in the tray)
+            if tab.pin == nil {
+                let isCurrentTabSplit = browser.prefs.splitView && browser.split(for: tab) != nil
+                HovercardPill(
+                    icon: "rectangle.split.2x1",
+                    label: isCurrentTabSplit ? "Unsplit" : "Split",
+                    iconColor: isCurrentTabSplit ? Color.accentColor : nil
+                ) {
+                    Haptics.click()
+                    if let activeTab = browser.active, activeTab.id != tab.id {
+                        // Hovering a background tab: pair it side-by-side with active
+                        if !browser.prefs.splitView {
+                            browser.prefs.splitView = true
+                        }
+                        browser.pair(tab, with: activeTab, onLeft: false)
+                    } else {
+                        // Hovering the active tab: toggle split view on/off
+                        browser.splitKey()
                     }
-                    browser.pair(tab, with: activeTab, onLeft: false)
-                } else {
-                    // Hovering the active tab: toggle split view on/off
-                    browser.splitKey()
                 }
             }
 

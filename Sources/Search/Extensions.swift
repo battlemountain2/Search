@@ -2370,10 +2370,12 @@ struct ExtensionSlot: View {
     /// How many pinned ones the row has room for; the rest are only in the
     /// list. Nil: all of them.
     var room: Int? = nil
+    /// Whether to show the trailing puzzle piece extension menu door.
+    var showDoor: Bool = true
 
     var body: some View {
         if #available(macOS 15.4, *) {
-            ExtensionButtons(browser: browser, extensions: .shared, edge: edge, room: room)
+            ExtensionButtons(browser: browser, extensions: .shared, edge: edge, room: room, showDoor: showDoor)
         }
     }
 }
@@ -2384,6 +2386,7 @@ private struct ExtensionButtons: View {
     @ObservedObject var extensions: Extensions
     let edge: Edge
     var room: Int?
+    var showDoor: Bool = true
 
     var body: some View {
         if !extensions.installed.isEmpty {
@@ -2393,17 +2396,19 @@ private struct ExtensionButtons: View {
                         .background(Anchor(id: button.id, browser: browser))
                         .contextMenu { ExtensionActions(id: button.id, name: button.name, browser: browser, extensions: extensions) }
                 }
-                let key = Extensions.menuKey(browser)
-                Door(icon: "puzzlepiece.extension", on: extensions.menuOwner == key, help: "Extensions") {
-                    extensions.menuOwner = extensions.menuOwner == key ? nil : key
-                }
-                .background(Anchor(id: Extensions.menuAnchor, browser: browser))
-                // This window's list only: closing, it lets go of the flag
-                // only if the flag is still its own.
-                .popover(isPresented: Binding(get: { extensions.menuOwner == key },
-                                              set: { if !$0, extensions.menuOwner == key { extensions.menuOwner = nil } }),
-                         hangingFrom: edge) {
-                    ExtensionMenu(browser: browser, extensions: extensions)
+                if showDoor {
+                    let key = Extensions.menuKey(browser)
+                    Door(icon: "puzzlepiece.extension", on: extensions.menuOwner == key, help: "Extensions") {
+                        extensions.menuOwner = extensions.menuOwner == key ? nil : key
+                    }
+                    .background(Anchor(id: Extensions.menuAnchor, browser: browser))
+                    // This window's list only: closing, it lets go of the flag
+                    // only if the flag is still its own.
+                    .popover(isPresented: Binding(get: { extensions.menuOwner == key },
+                                                  set: { if !$0, extensions.menuOwner == key { extensions.menuOwner = nil } }),
+                             hangingFrom: edge) {
+                        ExtensionMenu(browser: browser, extensions: extensions)
+                    }
                 }
             }
         }
