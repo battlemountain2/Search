@@ -242,6 +242,10 @@ final class Preferences: ObservableObject {
     @Published var hovercardSplit: Bool {
         didSet { store.set(hovercardSplit, forKey: "hovercard.split") }
     }
+    /// Automatically strip tracking parameters (utm_*, fbclid, si) on copy.
+    @Published var autoCleanUrl: Bool {
+        didSet { store.set(autoCleanUrl, forKey: "copy.autoClean") }
+    }
     /// The column slides out and back in a longer, eased slide (Motion.slidesColumn),
     /// where it otherwise snaps out on a short spring. Off unless asked for.
     @Published var slidesColumn: Bool {
@@ -1054,6 +1058,7 @@ final class Preferences: ObservableObject {
         zenBorderless = store.object(forKey: "zen.borderless") as? Bool ?? true
         audioExclusivity = store.object(forKey: "audio.exclusivity") as? Bool ?? true
         hovercardSplit = store.object(forKey: "hovercard.split") as? Bool ?? true
+        autoCleanUrl = store.object(forKey: "copy.autoClean") as? Bool ?? true
         slidesColumn = store.bool(forKey: Motion.slidesKey)
         roomyTabs = store.bool(forKey: "sidebar.roomy")
         sideIcons = store.bool(forKey: "sidebar.icons")

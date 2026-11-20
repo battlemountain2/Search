@@ -692,6 +692,7 @@ struct SettingsPanel: View {
             .pickerStyle(.menu)
             .fixedSize()
         case "search.suggest": Switch(on: $prefs.engineSuggests)
+        case "copy.autoClean": Switch(on: $prefs.autoCleanUrl)
         case "search.keywords":
             if draft == nil {
                 Pill("Add") { draft = Keyword() }

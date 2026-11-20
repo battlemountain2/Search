@@ -2548,10 +2548,11 @@ final class Browser: NSObject, ObservableObject {
 
     /// ⌘⇧C. The address, in the clipboard, and a line that says as much.
     func copyAddress() {
-        guard let url = active?.address else { return }
+        guard let rawUrl = active?.address else { return }
+        let url = prefs.autoCleanUrl ? CleanLink.clean(rawUrl) : rawUrl
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url.absoluteString, forType: .string)
-        announce("Address copied")
+        announce(prefs.autoCleanUrl && url != rawUrl ? "Clean address copied" : "Address copied")
     }
 
     /// ⌥⇧⌘C. The address without its tracking parameters (CleanLink).
@@ -2564,7 +2565,8 @@ final class Browser: NSObject, ObservableObject {
     /// For pasting into notes and messages that read Markdown: a title that
     /// links, not a bare address to explain in your own words.
     func copyMarkdownLink() {
-        guard let tab = active, let url = tab.address else { return }
+        guard let tab = active, let rawUrl = tab.address else { return }
+        let url = prefs.autoCleanUrl ? CleanLink.clean(rawUrl) : rawUrl
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(Browser.markdownLink(tab.label, url), forType: .string)
         announce("Link copied")
