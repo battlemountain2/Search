@@ -167,23 +167,21 @@ struct ZenTopBar: View {
             .focusEffectDisabled()
             .help("Split View   ⌥⌘N")
 
-            // Reader Mode (if available)
-            if let tab = browser.active, tab.readerAvailable {
-                Button {
-                    Haptics.tap()
-                    browser.toggleReader()
-                } label: {
-                    Image(systemName: tab.reading ? "doc.plaintext.fill" : "doc.plaintext")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(tab.reading ? Color.accentColor : Palette.ink)
-                        .frame(width: 26, height: 26)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .focusable(false)
-                .focusEffectDisabled()
-                .help("Toggle Reader Mode   ⇧⌘R")
+            // Reader Mode
+            Button {
+                Haptics.tap()
+                browser.toggleReader()
+            } label: {
+                Image(systemName: "doc.plaintext")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Palette.ink)
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .focusable(false)
+            .focusEffectDisabled()
+            .help("Toggle Reader Mode   ⇧⌘R")
 
             // Extension Slot
             ExtensionSlot(browser: browser, edge: .bottom, room: 0)
