@@ -78,6 +78,27 @@ enum SleepPace: String, CaseIterable, Identifiable {
 }
 
 extension Browser {
+    /// Heavy media domains and social SPAs that consume 400MB-600MB+ of WebContent memory
+    static let heavyHosts: [String] = [
+        "youtube.com", "twitch.tv", "reddit.com", "x.com", "twitter.com",
+        "facebook.com", "instagram.com", "tiktok.com", "bilibili.com"
+    ]
+
+    static func isHeavyTab(_ tab: Tab) -> Bool {
+        guard let host = tab.address?.host()?.lowercased() else { return false }
+        return heavyHosts.contains(where: { host == $0 || host.hasSuffix("." + $0) })
+    }
+
+    /// Sleep wait interval for a specific tab, with smart tiered sleeping for heavy SPAs.
+    static func sleepWait(for tab: Tab, base: TimeInterval? = nil) -> TimeInterval {
+        let wait = base ?? sleepAfter
+        // Heavy media domains and social SPAs sleep after 6 minutes of inactivity if not noisy/playing
+        if isHeavyTab(tab) {
+            return min(wait, 6 * 60)
+        }
+        return wait
+    }
+
     /// How long a tab has to go without being looked at: the chosen pace's
     /// wait, no longer than Sooner's in Low Power Mode when the switch for it
     /// is on, or `sleep.after` in seconds, for the bench and the measurements.
@@ -91,7 +112,7 @@ extension Browser {
     /// Started once, at launch. The same look closes the tabs left alone
     /// longest, when tabs close themselves (see Closing.swift).
     func watchForSleep() {
-        let every = min(60, max(5, Browser.sleepAfter / 4))
+        let every = min(30, max(5, Browser.sleepAfter / 4))
         let timer = Timer(timeInterval: every, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.sleepIdle()
@@ -117,11 +138,13 @@ extension Browser {
     /// left longest first.
     func sleepIdle(within given: TimeInterval? = nil) {
         guard prefs.sleepsTabs else { return }
-        let wait = given ?? Browser.sleepAfter
         let now = Date()
         // The rows of the other spaces too: parked is not the same as used.
         let idle = (tabs + parkedTabs)
-            .filter { now.timeIntervalSince($0.touched) >= wait && awake(because: $0) == nil }
+            .filter { tab in
+                let wait = Browser.sleepWait(for: tab, base: given)
+                return now.timeIntervalSince(tab.touched) >= wait && awake(because: tab) == nil
+            }
             .sorted { $0.touched < $1.touched }
         // One after another, not all at once: each is pictured at the screen's
         // pixels first, and under memory pressure every idle tab pictured
@@ -132,6 +155,7 @@ extension Browser {
             guard let tab = rest.popFirst() else { return }
             // Looked at since the list was made, while the ones before it
             // slept: not idle any more.
+            let wait = Browser.sleepWait(for: tab, base: given)
             guard Date().timeIntervalSince(tab.touched) >= wait else { return next() }
             var moved = false
             let onward = {

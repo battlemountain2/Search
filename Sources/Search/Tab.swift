@@ -592,10 +592,32 @@ final class Tab: ObservableObject, Identifiable {
 
     /// True while something on the page is making noise, so the row can say
     /// which tab it is coming from.
-    @Published var noisy = false
+    @Published var noisy = false {
+        didSet {
+            if noisy && throttled {
+                throttle(false)
+            }
+        }
+    }
     /// A video of the page's own document is playing, as the page last
     /// said (see MediaKeys.watch). Sound or none: a muted one counts.
-    var playingVideo = false
+    var playingVideo = false {
+        didSet {
+            if playingVideo && throttled {
+                throttle(false)
+            }
+        }
+    }
+    /// True while background JavaScript execution and timers are throttled.
+    private(set) var throttled = false
+
+    /// Instruct WebKit to throttle background timers when the tab is inactive and not making noise.
+    func throttle(_ enable: Bool) {
+        guard enable != throttled else { return }
+        throttled = enable
+        guard let built else { return }
+        built.evaluateInSearch(enable ? BackgroundThrottler.throttle : BackgroundThrottler.resume)
+    }
     /// Paused from the player at the foot of the sidebar, to be played again
     /// from there (see Player.swift).
     @Published var stilled = false
@@ -1885,6 +1907,7 @@ final class Tab: ObservableObject, Identifiable {
     /// with a second one of its own for the same address.
     @discardableResult
     func wake() -> Bool {
+        throttled = false
         guard let url = pending else { return false }
         pending = nil
         failure = nil
@@ -2096,6 +2119,7 @@ final class Tab: ObservableObject, Identifiable {
     /// back-forward cache. The tab keeps its address; `web` builds again the
     /// next time anyone asks for it.
     private func discard() {
+        throttled = false
         loadGeneration &+= 1
         seekingTwin = false
         sent = nil

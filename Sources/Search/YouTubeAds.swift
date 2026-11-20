@@ -81,7 +81,7 @@ enum YouTubeAds {
           // place later is never what this calls.
           var apply = Reflect.apply, owns = Object.prototype.hasOwnProperty,
               define = Object.defineProperty, isArray = Array.isArray;
-          var ads = ['adPlacements', 'adSlots', 'playerAds', 'adBreakHeartbeatParams'];
+          var ads = ['adPlacements', 'adSlots', 'playerAds', 'adBreakHeartbeatParams', 'heartbeatParams', 'playbackTracking'];
           var marks = ['responseContext', 'playabilityStatus', 'streamingData', 'videoDetails'];
           function plain(o) { return o !== null && typeof o === 'object' && !isArray(o); }
           function youtubes(o) {
@@ -176,17 +176,31 @@ enum YouTubeAds {
           ['playing', 'timeupdate', 'durationchange', 'emptied'].forEach(function (type) {
             document.addEventListener(type, look, true);
           });
+          // Suppress idle background telemetry beacons while paused
+          try {
+            var origSendBeacon = navigator.sendBeacon;
+            if (typeof origSendBeacon === 'function') {
+              navigator.sendBeacon = function(url, data) {
+                if (typeof url === 'string' && (url.indexOf('/api/stats/') >= 0 || url.indexOf('play.google.com/log') >= 0)) {
+                  return true;
+                }
+                return origSendBeacon.apply(navigator, arguments);
+              };
+            }
+          } catch (e) {}
         })();
         """
     }
 
-    /// Shield's rules for YouTube: where its player reports ads and fetches
-    /// them, never the video. Each path is anchored on YouTube's own hosts;
+    /// Shield's rules for YouTube: where its player reports ads, telemetry,
+    /// and heartbeats. Each path is anchored on YouTube's own hosts;
     /// Google's ad hosts that are third parties on YouTube are already in
     /// Shield's list (doubleclick.net, googlesyndication.com…).
     static let paths = [
         "/api/stats/ads", "/pagead/", "/ptracking", "/get_midroll_info",
         "/youtubei/v1/player/ad_break", "/pcs/activeview",
+        "/api/stats/watchtime", "/api/stats/playback",
+        "/youtubei/v1/log_event",
     ]
 
     static func filter(path: String) -> String {
@@ -202,10 +216,14 @@ enum YouTubeAds {
             "trigger": ["url-filter": "^https?://([^/]+\\.)?youtube\\.com/api/stats/qoe\\?.*adformat="],
             "action": ["type": "block"],
         ])
-        // Google's own ad paths and the video ads SDK, only from YouTube's
+        // Google's own ad paths, heartbeat logs, and the video ads SDK, only from YouTube's
         // pages: other sites' players may need the SDK to play at all.
         let youtube = ["*youtube.com", "*youtube-nocookie.com"]
-        for filter in ["^https?://([^/]+\\.)?google\\.com/pagead/", "^https?://imasdk\\.googleapis\\.com/"] {
+        for filter in [
+            "^https?://([^/]+\\.)?google\\.com/pagead/",
+            "^https?://imasdk\\.googleapis\\.com/",
+            "^https?://play\\.google\\.com/log"
+        ] {
             rules.append([
                 "trigger": ["url-filter": filter, "if-domain": youtube],
                 "action": ["type": "block"],

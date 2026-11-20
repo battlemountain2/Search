@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import WebKit
 
 // Memory the app has finished with, handed back to the Mac.
 //
@@ -13,12 +14,9 @@ import Darwin
 // by macOS when it decides what to squeeze. Measured: 1153 MB of footprint
 // around 44 MB of live allocations.
 //
-// So when an extension's rules have been built (its update of them has
-// answered, see the shim's declarativeNetRequest), and when the app goes to
-// the background, the footprint is read — one kernel call — and when it has
-// grown by a good margin since the last look, malloc is asked to give back
-// what it is holding empty. Nothing runs on a timer. The work is a walk over
-// malloc's free lists, off the main thread.
+// When the app goes to the background or a window is minimized, malloc is
+// asked to give back what it is holding empty, and WebKit is instructed to
+// purge in-memory resource caches across all WebContent helper processes.
 enum Trim {
     /// Growth worth a walk. Below this, what comes back isn't worth noticing.
     private static let margin: UInt64 = 64 << 20
@@ -26,11 +24,30 @@ enum Trim {
     nonisolated(unsafe) private static var after: UInt64 = 0
     private static let queue = DispatchQueue(label: "com.officecommun.search.trim", qos: .utility)
 
-    /// Started once, at launch: the background is one moment to look.
+    /// Started once, at launch: background and window minimize are moments to look.
     static func start() {
         NotificationCenter.default.addObserver(
             forName: NSApplication.didResignActiveNotification, object: nil, queue: nil
-        ) { _ in look() }
+        ) { _ in
+            look()
+            DispatchQueue.main.async { purgeWebContent() }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didMiniaturizeNotification, object: nil, queue: nil
+        ) { _ in
+            look()
+            DispatchQueue.main.async { purgeWebContent() }
+        }
+    }
+
+    /// Purges in-memory resource caches across all WebContent processes in all spaces.
+    @MainActor
+    static func purgeWebContent() {
+        let types = Set([WKWebsiteDataTypeMemoryCache])
+        for store in Spaces.everyStore {
+            store.removeData(ofTypes: types, modifiedSince: .distantPast) { }
+        }
     }
 
     /// An extension's rules were just built; what building them took can go.

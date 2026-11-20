@@ -114,15 +114,30 @@ final class Browser: NSObject, ObservableObject {
             // Focus moving within a pair isn't leaving it; a pair left is
             // one entry, under its first page.
             if prefs.splitView, let pair = splits.first(where: { $0.contains(old) }) {
-                if let id = activeID, pair.contains(id) { return }
+                if let id = activeID, pair.contains(id) {
+                    updateTabThrottling()
+                    return
+                }
                 tabSwitcher.cancel()
                 if let first = tabs.first(where: { $0.id == pair.left }) {
                     tabSwitcher.left(first, alive: Set((tabs + parkedTabs).map(\.id)))
                 }
+                updateTabThrottling()
                 return
             }
             tabSwitcher.cancel()
             if let left { tabSwitcher.left(left, alive: Set((tabs + parkedTabs).map(\.id))) }
+            updateTabThrottling()
+        }
+    }
+
+    /// Throttles background JavaScript timers in inactive tabs not playing audio.
+    func updateTabThrottling() {
+        let visible = visibleTabIDs
+        for tab in tabs + parkedTabs {
+            let isVisible = visible.contains(tab.id)
+            let isExempt = isVisible || tab.noisy || tab.playingVideo || tab.floating || floating == tab.id || pictured == tab.id
+            tab.throttle(!isExempt)
         }
     }
 
