@@ -212,12 +212,10 @@ struct SideBar: View {
         .onAppear { SpaceSwipe.shared.start(for: browser) }
         .background {
             ZStack {
-                onFrame ? Palette.frame : Palette.ground
+                VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
                 if landing { greys.hover }
-                // The space's colour, if it has one: over the ground, so the
-                // column stays opaque and folded out over the page it brings
-                // the same wash along.
-                SpaceWash(look: browser.wash)
+                // Soft space wash tint over the frosted glass
+                SpaceWash(look: browser.wash).opacity(0.35)
                 if prefs.splitView {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }

@@ -528,9 +528,19 @@ struct ContentView: View {
         ZStack(alignment: sideOnRight ? .topTrailing : .topLeading) {
             // Black while a page has the screen, so the frame of our own window
             // that survives the transition is not a white band across the top.
-            // With the tabs down the side, the ground the page's card and the
-            // column sit on (see CardEdge).
-            (fullscreenTab != nil ? Color.black : cards ? Palette.frame : Palette.ground)
+            // With the tabs down the side, the ground the page's card sits on.
+            // When the sidebar is visible, leave its strip transparent for frosted glass.
+            if fullscreenTab != nil {
+                Color.black
+            } else if cards {
+                Palette.frame
+            } else if !browser.prefs.sidebar || browser.folded {
+                Palette.ground
+            } else {
+                Palette.ground
+                    .padding(.leading, (!sideOnRight && browser.prefs.sidebar && !browser.folded) ? chrome.width : 0)
+                    .padding(.trailing, (sideOnRight && browser.prefs.sidebar && !browser.folded) ? chrome.width : 0)
+            }
             // As cards, the column, the bookmarks bar and the gaps around the
             // page share that ground, so the space's colour washes all of it
             // alike. Edge to edge the column and the strip bring their own.
@@ -1198,7 +1208,8 @@ struct ContentView: View {
         window.titleVisibility = .hidden
         // A window put back in full screen is so before any notice says it.
         browser.fullScreen = window.styleMask.contains(.fullScreen)
-        window.backgroundColor = browser.asCards ? Palette.NS.frame : Palette.NS.ground
+        window.backgroundColor = .clear
+        window.isOpaque = false
         // The strip does the dragging, so the page underneath can't be grabbed
         // by accident while selecting text.
         window.isMovableByWindowBackground = false
@@ -1423,6 +1434,7 @@ struct ContentView: View {
             || ((key == "[" || key == "]" || key == "{" || key == "}") && shifted)
             || (key == "z" && browser.veiling)
             || (key == "k" && !shifted)
+            || (key == "c" && shifted)
             || (!shifted && (event.keyCode == 123 || event.keyCode == 124) && !caretIn(event))
         guard !reserved, event.window?.firstResponder is PageView else { return false }
         if let passed = ContentView.passed, PageView.same(passed, event) {
@@ -1850,7 +1862,7 @@ struct ContentView: View {
         case "t" where shifted:
             browser.reopen()
         case "c" where shifted:
-            browser.copyAddress()
+            browser.copyMarkdownLink()
         case "d" where !shifted:
             browser.duplicate()
         // Dark pages, the site you're on (see Dusk.swift). Off, the key is
