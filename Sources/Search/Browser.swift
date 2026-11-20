@@ -2117,7 +2117,7 @@ final class Browser: NSObject, ObservableObject {
 
     struct PinsProxy {
         let browser: Browser
-        func toggle(_ tab: Tab) {
+        @MainActor func toggle(_ tab: Tab) {
             browser.togglePin(tab)
         }
     }

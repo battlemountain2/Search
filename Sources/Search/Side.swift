@@ -1563,6 +1563,7 @@ private struct PinSquare: View, Equatable {
     /// stays put — so the glyph sits at its usual size, centred, rather than
     /// stretching to chase the width.
     private var scale: CGFloat { min(width, height) }
+    private var arrowEdge: Edge { prefs.sidePosition == .right ? .leading : .trailing }
 
     /// The pin's letter: full ink with High contrast text, otherwise soft
     /// grey until the square is live or under the pointer.
@@ -1642,7 +1643,7 @@ private struct PinSquare: View, Equatable {
             hoverTask?.cancel()
             showingHovercard = false
         }
-        .popover(isPresented: $showingHovercard, hangingFrom: prefs.sidebarOnRight ? .leading : .trailing) {
+        .popover(isPresented: $showingHovercard, hangingFrom: arrowEdge) {
             TabHovercard(browser: browser, tab: tab, isHoveringCard: $isHoveringCard) {
                 showingHovercard = false
             }
@@ -1780,6 +1781,7 @@ private struct SideRow: View, Equatable {
     /// Any other tab asleep, with Settings › Tabs › Dim sleeping tabs on:
     /// faded until the pointer is on it.
     private var dim: Bool { prefs.dimsSleepingTabs && tab.asleep && !live && !hovering && !putAway }
+    private var arrowEdge: Edge { prefs.sidePosition == .right ? .leading : .trailing }
 
     var body: some View {
         let _ = Bench.count("row")
@@ -1941,7 +1943,7 @@ private struct SideRow: View, Equatable {
             showingHovercard = false
             if interactive { Bench.rowDisappeared(tab.id) }
         }
-        .popover(isPresented: $showingHovercard, hangingFrom: prefs.sidebarOnRight ? .leading : .trailing) {
+        .popover(isPresented: $showingHovercard, hangingFrom: arrowEdge) {
             TabHovercard(browser: browser, tab: tab, isHoveringCard: $isHoveringCard) {
                 showingHovercard = false
             }
