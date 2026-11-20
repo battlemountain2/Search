@@ -1661,15 +1661,22 @@ struct TabMenu: View {
         }
         let rows = browser.prefs.showsPinRows
         if tab.pin == nil {
-            Button("Pin") { browser.pin(tab) }
-                .disabled(!tab.isWeb || tab.shy)
-            if rows {
-                Button("Pin as Row") { browser.pin(tab, listed: true) }
+            if browser.prefs.pinAsRow {
+                Button("Pin as Tab") { browser.pin(tab, listed: true) }
                     .disabled(!tab.isWeb || tab.shy)
+                Button("Pin to Essentials") { browser.pin(tab, listed: false) }
+                    .disabled(!tab.isWeb || tab.shy)
+            } else {
+                Button("Pin Tab") { browser.pin(tab) }
+                    .disabled(!tab.isWeb || tab.shy)
+                if rows {
+                    Button("Pin as Row") { browser.pin(tab, listed: true) }
+                        .disabled(!tab.isWeb || tab.shy)
+                }
             }
         } else {
-            if rows {
-                Button(tab.listed ? "Show as Square" : "Show as Row") { browser.setListed(tab, !tab.listed) }
+            Button(tab.listed ? "Move to Essentials" : "Move to Pinned Tabs") {
+                browser.setListed(tab, !tab.listed)
             }
             // Settings › Tabs › Folders in pinned rows: a row of this
             // space's own into a folder, a new one or one there is.

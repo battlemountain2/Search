@@ -322,15 +322,11 @@ struct SearchApp: App {
                         Button("Pin Tab") { browser.pin(tab) }
                             .shortcut("tabs.pin")
                             .disabled(!tab.isWeb || tab.shy)
-                        if rows {
-                            Button("Pin Tab as Row") { browser.pin(tab, listed: true) }
-                                .shortcut("tabs.pinRow")
-                                .disabled(!tab.isWeb || tab.shy)
-                        }
+                        Button("Pin Tab as Row") { browser.pin(tab, listed: true) }
+                            .shortcut("tabs.pinRow")
+                            .disabled(!tab.isWeb || tab.shy)
                     } else {
-                        if rows {
-                            Button(tab.listed ? "Show Pin as Square" : "Show Pin as Row") { browser.setListed(tab, !tab.listed) }
-                        }
+                        Button(tab.listed ? "Show Pin in Essentials" : "Show Pin as Row") { browser.setListed(tab, !tab.listed) }
                         if !(rows && tab.listed) {
                             Button("Change Letter") { browser.editLetter(tab) }
                         }
@@ -593,10 +589,10 @@ struct ContentView: View {
             // there on the window's ground above the page's card, and no wider.
             if barShown {
                 BookmarksBar(browser: browser, bookmarks: browser.bookmarks, onFrame: cards)
-                    .padding(.leading, sideOnRight ? farGap : chrome.width)
-                    .padding(.trailing, sideOnRight ? chrome.width : farGap)
-                    .padding(.top, band)
-                    .transition(.opacity)
+                    .padding(.leading, sideOnRight ? farGap : (showZenTopBar ? (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap) : chrome.width))
+                    .padding(.trailing, sideOnRight ? (showZenTopBar ? (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap) : chrome.width) : farGap)
+                    .padding(.top, showZenTopBar ? (Metrics.cardGap + ZenTopBar.height + 4) : (cards ? Metrics.cardGap : band))
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
 
             // Zen-style dynamic top navigation bar above the web card
@@ -604,7 +600,7 @@ struct ContentView: View {
                 ZenTopBar(browser: browser, prefs: browser.prefs)
                     .padding(.leading, sideOnRight ? farGap : (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap))
                     .padding(.trailing, sideOnRight ? (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap) : farGap)
-                    .padding(.top, (barShown ? BookmarksBar.height + Metrics.cardGap : Metrics.cardGap))
+                    .padding(.top, Metrics.cardGap)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
@@ -684,13 +680,27 @@ struct ContentView: View {
     /// still leaves the card's gap, and so does the top, unless the bookmarks
     /// bar is there.
     private var chrome: CGSize {
-        let bar = barShown ? BookmarksBar.height : 0
-        let topBar = showZenTopBar ? ZenTopBar.height + Metrics.cardGap : 0
+        let barHeight: CGFloat = BookmarksBar.height
+        let cardGap = Metrics.cardGap
+        let zenHeight = ZenTopBar.height
+
         if cards {
-            return CGSize(width: sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap,
-                          height: (barShown ? bar : Metrics.cardGap) + topBar)
+            let width = sidebar ? sideWidth + cardGap : cardGap
+            let height: CGFloat
+            if showZenTopBar && barShown {
+                height = cardGap + zenHeight + 4 + barHeight + cardGap
+            } else if showZenTopBar {
+                height = cardGap + zenHeight + cardGap
+            } else if barShown {
+                height = cardGap + barHeight + cardGap
+            } else {
+                height = cardGap
+            }
+            return CGSize(width: width, height: height)
         }
-        return CGSize(width: sidebar ? sideWidth : 0, height: band + bar)
+        let bar = barShown ? barHeight : 0
+        let topBar = showZenTopBar ? zenHeight : 0
+        return CGSize(width: sidebar ? sideWidth : 0, height: band + topBar + bar)
     }
 
     /// The column's width folded away: the room ⌘S gives the page before
@@ -742,10 +752,11 @@ struct ContentView: View {
             .transition(.opacity)
     }
 
-    /// The bookmarks bar is up: asked for, there are bookmarks, and the tabs
-    /// aren't folded away or under a video filling the screen.
+    /// The bookmarks bar is up: asked for (or on new tab if enabled),
+    /// there are bookmarks, and the tabs aren't folded away or under a video filling the screen.
     private var barShown: Bool {
-        browser.prefs.bookmarksBar && !browser.bookmarks.isEmpty && !browser.folded
+        let onNewTab = browser.prefs.bookmarksBarOnNewTab && (browser.active?.isBlank ?? false)
+        return (browser.prefs.bookmarksBar || onNewTab) && !browser.bookmarks.isEmpty && !browser.folded
             && fullscreenTab == nil
     }
 

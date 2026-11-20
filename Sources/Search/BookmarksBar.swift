@@ -44,7 +44,7 @@ struct BookmarksBar: View {
                     }
                 }
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 8)
         }
         .frame(height: BookmarksBar.height)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -53,16 +53,24 @@ struct BookmarksBar: View {
             Button("New Folder…") { bookmarks.askNewFolder(in: nil) }
             Divider()
             Button("Show Bookmarks…") { browser.bookmarking = true }
+            Toggle("Show on New Tab Only", isOn: Binding(
+                get: { browser.prefs.bookmarksBarOnNewTab },
+                set: { browser.prefs.bookmarksBarOnNewTab = $0 }
+            ))
+            Divider()
             Button("Hide Bookmarks Bar") {
                 withAnimation(Motion.glide) { browser.prefs.bookmarksBar = false }
             }
         }
         .background {
-            ZStack {
-                (onFrame ? Palette.frame : Palette.ground).opacity(0.24)
-                // The tabs' wash carried on under them, or the colour
-                // stopped at the bar's edge.
-                SpaceWash(look: browser.wash)
+            if onFrame {
+                // Glass transparency matching dynamic mode top bar and sidebar
+                Color.clear
+            } else {
+                ZStack {
+                    Palette.ground.opacity(0.12)
+                    SpaceWash(look: browser.wash)
+                }
             }
         }
         .overlay(alignment: .bottom) {
@@ -131,37 +139,56 @@ struct BookmarksBar: View {
         let node: Bookmark
         let act: () -> Void
         @State private var hovering = false
+        @State private var pressed = false
 
         var body: some View {
-            HStack(spacing: 6) {
+            HStack(spacing: 5.5) {
                 if node.isFolder {
-                    Image(systemName: "folder")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(Palette.muted)
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Palette.ink.opacity(0.60))
                 } else {
                     Mark(icon: Favicons.shared.cached(for: node.address), letter: String((node.host ?? "•").prefix(1)).uppercased(), size: 13)
                 }
                 if !node.unnamed {
                     Text(node.title)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.ink)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Palette.ink.opacity(0.85))
                         .lineLimit(1)
                         .frame(maxWidth: 150, alignment: .leading)
                         .fixedSize(horizontal: true, vertical: false)
                 }
                 if node.isFolder {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 7.5, weight: .semibold))
-                        .foregroundStyle(Palette.faint)
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(Palette.ink.opacity(0.35))
                 }
             }
-            .padding(.horizontal, node.unnamed ? 0 : 8)
-            .frame(minWidth: node.unnamed ? 22 : nil)
-            .frame(height: 22)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hovering ? Palette.hover : .clear))
+            .padding(.horizontal, node.unnamed ? 5 : 7)
+            .frame(minWidth: node.unnamed ? 24 : nil)
+            .frame(height: 24)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(hovering ? Palette.ink.opacity(0.08) : Color.white.opacity(0.02))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Color.white.opacity(hovering ? 0.08 : 0.0), lineWidth: 0.5)
+            )
+            .scaleEffect(pressed ? 0.96 : 1.0)
             .contentShape(Rectangle())
-            .onTapGesture(perform: act)
-            .onHover { hovering = $0 }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in if !pressed { pressed = true } }
+                    .onEnded { _ in pressed = false }
+            )
+            .onTapGesture {
+                Haptics.click()
+                act()
+            }
+            .onHover { h in
+                withAnimation(Motion.quick) { hovering = h }
+            }
             .help(node.url ?? node.title)
         }
     }

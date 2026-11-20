@@ -237,6 +237,9 @@ enum SettingsIndex {
         .init(id: "bookmarks.bar", group: "tablook", icon: "bookmark",
               title: "Show the bookmarks bar", detail: "Your bookmarks in a row above the page",
               keys: ["bookmarks.bar"], words: ["favorites bar"]),
+        .init(id: "bookmarks.bar.newTab", group: "tablook", icon: "bookmark.circle",
+              title: "Show bookmarks on new tab", detail: "Show the bookmarks bar when opening a new blank tab",
+              keys: ["bookmarks.bar.newTab"], words: ["favorites bar", "new tab", "blank"]),
         .init(id: "motion.light", group: "motion", icon: "leaf",
               title: "Save power in Low Power Mode", detail: "Simpler motion while saving power or running hot; idle tabs sleep sooner in Low Power Mode",
               more: "In Low Power Mode, or while the Mac runs hot. Pages are left as they are.",
@@ -413,6 +416,11 @@ enum SettingsIndex {
               title: "Pinned rows", detail: "Pins as rows under the squares, and Clear over the rest",
               more: "As in Arc: squares for the sites you live in, rows for pages you keep, and a line over the rest with Clear. Right-click a tab to pin it as a row.",
               keys: ["pins.list"], words: ["arc", "pinned"], parent: "tabs.layout"),
+        .init(id: "pins.asRow", group: "pins", icon: "rectangle.stack",
+              title: "Pin tabs as rows (keep out of Essentials)",
+              detail: "Pinned tabs stay as rows in their space instead of adding to the shared Essentials grid at the top",
+              more: "Pins remain organized within the space's tab list rather than filling the top square grid.",
+              keys: ["pins.asRow"], words: ["pin", "pinned", "essentials", "favorites", "tab row"], parent: "tabs.layout"),
         .init(id: "pins.folders", group: "pins", icon: "folder",
               title: "Folders in pinned rows", detail: "Pinned rows in folders, folders in folders, as in Arc",
               more: "Right-click a pinned row and choose New Folder, or drag a row onto a folder. A folder folds with a click and holds up to three levels. Bringing Arc over keeps its folders as folders here. New Live Folder… fills one from a site's RSS or Atom feed, kept fresh every half hour.",
@@ -635,7 +643,7 @@ enum SettingsIndex {
         case "pages.dusk": return prefs.look != .light
         case "inspector.dark": return prefs.look != .dark
         case "sidebar.roomy", "sidebar.player": return prefs.sidebar && !prefs.sideIcons
-        case "sidebar.hides", "sidebar.slides", "sidebar.topbar", "sidebar.topbarHides", "layout.cards", "pins.list": return prefs.sidebar
+        case "sidebar.hides", "sidebar.slides", "sidebar.topbar", "sidebar.topbarHides", "layout.cards", "pins.list", "pins.asRow": return prefs.sidebar
         case "layout.cardsFullScreen", "zen.darkGlass", "zen.borderless": return prefs.sidebar && prefs.cards
         case "pins.folders": return prefs.sidebar && prefs.listsPins
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides

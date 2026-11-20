@@ -751,6 +751,10 @@ final class Preferences: ObservableObject {
     @Published var bookmarksBar: Bool {
         didSet { store.set(bookmarksBar, forKey: "bookmarks.bar") }
     }
+    /// Show bookmarks bar only on new blank tabs. Off unless asked for.
+    @Published var bookmarksBarOnNewTab: Bool {
+        didSet { store.set(bookmarksBarOnNewTab, forKey: "bookmarks.bar.newTab") }
+    }
     /// Where a link goes, at the bottom of the page while the pointer is on
     /// it (see StatusLine.swift). On unless turned off.
     @Published var showsLinks: Bool {
@@ -887,6 +891,10 @@ final class Preferences: ObservableObject {
     @Published var listsPins: Bool {
         didSet { store.set(listsPins, forKey: "pins.list") }
     }
+    /// Pinned tabs stay as space rows instead of adding to Essentials squares.
+    @Published var pinAsRow: Bool {
+        didSet { store.set(pinAsRow, forKey: "pins.asRow") }
+    }
     /// Folders among the pinned rows, as in Arc's pinned list (see
     /// PinFolders.swift): Arc's folders come in as folders of rows rather
     /// than as tab groups. Off unless asked for; without Pinned rows it
@@ -915,7 +923,7 @@ final class Preferences: ObservableObject {
     @Published var pinNumberGoesBack = true
     /// Whether the pinned rows are drawn as rows: asked for, and with the
     /// tabs down the side. Across the top every pin is a square.
-    var showsPinRows: Bool { listsPins && sidebar }
+    var showsPinRows: Bool { (listsPins || pinAsRow) && sidebar }
     /// Whether the pinned rows are drawn in their folders.
     var showsPinFolders: Bool { pinFolders && showsPinRows }
     /// Pins every space shows above its own, as Arc's favourites sit above
@@ -1162,6 +1170,7 @@ final class Preferences: ObservableObject {
         spacesOnCommand = store.bool(forKey: Preferences.spacesOnCommandKey)
         profilesInOneWindow = store.bool(forKey: "profiles.oneWindow")
         listsPins = store.bool(forKey: "pins.list")
+        pinAsRow = store.bool(forKey: "pins.asRow")
         pinFolders = store.bool(forKey: "pins.folders")
         pinCommandOpensTab = store.bool(forKey: "pins.commandNewTab")
         // "Pins keep their site" is one switch over two keys (see
@@ -1216,6 +1225,7 @@ final class Preferences: ObservableObject {
         sendsLinksToSpaces = store.bool(forKey: SpaceRoutes.key)
         spaceRoutes = (store.array(forKey: SpaceRoutes.rulesKey) ?? []).compactMap(SpaceRoute.init(plist:))
         bookmarksBar = store.bool(forKey: "bookmarks.bar")
+        bookmarksBarOnNewTab = store.bool(forKey: "bookmarks.bar.newTab")
         alwaysShowsDownloads = store.bool(forKey: "downloads.button")
         downloadsOpening = store.string(forKey: "downloads.open").flatMap(DownloadsOpening.init(rawValue:)) ?? .tab
         let links = store.object(forKey: "links.show") as? Bool ?? true
@@ -1327,6 +1337,8 @@ final class Preferences: ObservableObject {
         take(\.showsTabShortcuts, store.bool(forKey: "tabs.shortcuts"))
         take(\.spacesOnCommand, store.bool(forKey: Preferences.spacesOnCommandKey))
         take(\.bookmarksBar, store.bool(forKey: "bookmarks.bar"))
+        take(\.bookmarksBarOnNewTab, store.bool(forKey: "bookmarks.bar.newTab"))
+        take(\.pinAsRow, store.bool(forKey: "pins.asRow"))
         take(\.alwaysShowsDownloads, store.bool(forKey: "downloads.button"))
     }
 

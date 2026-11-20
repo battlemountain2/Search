@@ -2123,7 +2123,7 @@ final class Browser: NSObject, ObservableObject {
     }
 
     /// `listed`: as a row under the squares rather than as a square.
-    func pin(_ tab: Tab, listed: Bool = false) {
+    func pin(_ tab: Tab, listed: Bool? = nil) {
         // Drawn again even when the tab stays where it is (see unpin).
         objectWillChange.send()
         // Pins are the space's, kept on disk and shown in every window: a
@@ -2139,7 +2139,11 @@ final class Browser: NSObject, ObservableObject {
             // Pinned tabs live at the head of the row, in the order they were
             // pinned, so their letters never move under your hand: a square
             // after the squares, a row after the rows.
-            tab.listed = listed
+            let shouldBeListed = listed ?? (prefs.pinAsRow || prefs.listsPins)
+            tab.listed = shouldBeListed
+            if shouldBeListed && !prefs.listsPins {
+                prefs.listsPins = true
+            }
             settlePin(tab)
         }
         // No dialog and no waiting cursor: the letter is taken from the
