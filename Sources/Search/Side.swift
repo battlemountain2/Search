@@ -1762,7 +1762,7 @@ private struct SideRow: View, Equatable {
     private var status: Bool { !editing && (tab.loading || speaker) }
     /// The speaker, which can be pressed, and so steps in beside the cross
     /// under the pointer rather than hiding beneath it as the ring does.
-    private var speaker: Bool { !tab.loading && (tab.noisy || tab.muted) }
+    private var speaker: Bool { !tab.loading && (tab.isPlayingAudio || tab.noisy || tab.muted || tab.stilled) }
     /// A pinned row with a peek opened from it: the peek's icon at its end,
     /// as on a square's corner.
     private var peeking: Bool { !editing && tab.pin != nil && peek != nil }
@@ -1854,14 +1854,13 @@ private struct SideRow: View, Equatable {
             }
 
             if status {
-                ZStack {
+                ZStack(alignment: .trailing) {
                     if tab.loading {
-                        Ring().transition(.opacity)
+                        Ring().frame(width: 15, height: 15).transition(.opacity)
                     } else {
-                        Speaker(tab: tab).transition(.opacity)
+                        AudioWaveformPill(tab: tab).transition(.opacity)
                     }
                 }
-                .frame(width: 15, height: 15)
                 // The cross takes this place while the pointer is here; the
                 // speaker moves one place in, clear of the cross's reach.
                 .opacity(hovering && !speaker ? 0 : 1)

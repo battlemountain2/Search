@@ -356,7 +356,7 @@ private struct SplitTabHalf: View {
     @ViewBuilder
     private var status: some View {
         if playing {
-            Speaker(tab: tab)
+            AudioWaveformPill(tab: tab)
                 .padding(.trailing, stacked && hovering ? 3 : 0)
         } else if tab.loading && !(stacked && hovering) {
             Ring(size: 10)

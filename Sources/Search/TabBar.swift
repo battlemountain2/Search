@@ -793,7 +793,7 @@ private struct TabPill: View, Equatable {
     private var compact: Bool { !editing && !pinned && width < Metrics.tabTitled }
     /// A speaker to press at the end of the pill: the page plays sound, or
     /// was muted. The ring, while the page is still coming, goes first.
-    private var speaker: Bool { !editing && !tab.loading && (tab.noisy || tab.muted) }
+    private var speaker: Bool { !editing && !tab.loading && (tab.isPlayingAudio || tab.noisy || tab.muted || tab.stilled) }
     /// Where the page is, said on the tab you're on (Settings › Tabs › Show
     /// the address on the tab you're on).
     private var rest: AtRest? { live && !editing ? AtRest.said(tab.restAddress, always: prefs.showsAddress) : nil }
@@ -1015,8 +1015,8 @@ private struct TabPill: View, Equatable {
             // and clear of its reach.
             HStack(spacing: 0) {
                 if speaker {
-                    Speaker(tab: tab)
-                        .padding(.trailing, hovering ? 8 : 0)
+                    AudioWaveformPill(tab: tab)
+                        .padding(.trailing, hovering ? 6 : 0)
                         .transition(.opacity)
                 }
 
