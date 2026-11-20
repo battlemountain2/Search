@@ -222,6 +222,10 @@ final class Preferences: ObservableObject {
     @Published var zenTopBar: Bool {
         didSet { store.set(zenTopBar, forKey: "zen.topbar") }
     }
+    /// Hides the Zen-style dynamic top bar when the sidebar is folded (⌘S) for full immersion.
+    @Published var zenTopBarHidesWithFold: Bool {
+        didSet { store.set(zenTopBarHidesWithFold, forKey: "zen.topbar.hidesFold") }
+    }
     /// The column slides out and back in a longer, eased slide (Motion.slidesColumn),
     /// where it otherwise snaps out on a short spring. Off unless asked for.
     @Published var slidesColumn: Bool {
@@ -1029,6 +1033,7 @@ final class Preferences: ObservableObject {
         sidePosition = store.string(forKey: "sidebar.position").flatMap(SidebarPosition.init) ?? .left
         sideHides = store.bool(forKey: "sidebar.hides")
         zenTopBar = store.object(forKey: "zen.topbar") as? Bool ?? true
+        zenTopBarHidesWithFold = store.object(forKey: "zen.topbar.hidesFold") as? Bool ?? true
         slidesColumn = store.bool(forKey: Motion.slidesKey)
         roomyTabs = store.bool(forKey: "sidebar.roomy")
         sideIcons = store.bool(forKey: "sidebar.icons")

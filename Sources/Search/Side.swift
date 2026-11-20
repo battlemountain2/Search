@@ -142,13 +142,17 @@ struct SideBar: View {
                     // The lights stacked in their band (Lights, vertical),
                     // the three doors one above the other under them.
                     Color.clear.frame(height: lightsBand)
-                    Helm(browser: browser, vertical: true)
-                        .frame(maxWidth: .infinity)
-                        .padding(.bottom, 8)
+                    if !prefs.zenTopBar {
+                        Helm(browser: browser, vertical: true)
+                            .frame(maxWidth: .infinity)
+                            .padding(.bottom, 8)
+                    }
                 } else {
                     HStack(spacing: 0) {
                         Color.clear.frame(width: lights)
-                        Helm(browser: browser)
+                        if !prefs.zenTopBar {
+                            Helm(browser: browser)
+                        }
                         Spacer(minLength: 0)
                     }
                     .frame(height: Metrics.strip)
@@ -1406,7 +1410,9 @@ private struct SideFoot: View {
                 // An agent connected in this window: a click on it is Stop.
                 AgentStatus(browser: browser, style: .icon)
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
-                ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0)
+                if !prefs.zenTopBar {
+                    ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: 0)
+                }
                 BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
                 if prefs.usesSpaces { SpaceDot(browser: browser) }
                 if Profiles.shared.several { ProfileBadge(browser: browser) }
@@ -1417,7 +1423,9 @@ private struct SideFoot: View {
             HStack(spacing: 2) {
                 if Profiles.shared.several { ProfileBadge(browser: browser) }
                 if prefs.usesSpaces { SpaceDot(browser: browser) }
-                ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: room)
+                if !prefs.zenTopBar {
+                    ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: room)
+                }
                 BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)
                 // Only while a download is running, and a moment after.
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing)

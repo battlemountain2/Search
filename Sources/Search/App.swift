@@ -675,7 +675,7 @@ struct ContentView: View {
     }
 
     private var showZenTopBar: Bool {
-        browser.prefs.sidebar && browser.prefs.zenTopBar && fullscreenTab == nil
+        browser.prefs.sidebar && browser.prefs.zenTopBar && fullscreenTab == nil && (!browser.prefs.zenTopBarHidesWithFold || !browser.folded)
     }
 
     /// What the column and the strip take from the page right now: animated

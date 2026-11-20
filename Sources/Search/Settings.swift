@@ -579,6 +579,7 @@ struct SettingsPanel: View {
                      ))
         case "sidebar.hides": Switch(on: $prefs.sideHides)
         case "sidebar.topbar": Switch(on: $prefs.zenTopBar)
+        case "sidebar.topbarHides": Switch(on: $prefs.zenTopBarHidesWithFold)
         case "sidebar.slides": Switch(on: $prefs.slidesColumn)
         case "sidebar.foldIcons": Switch(on: $prefs.foldsToIcons)
         case "layout.cards":

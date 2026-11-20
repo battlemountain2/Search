@@ -173,6 +173,9 @@ enum SettingsIndex {
         .init(id: "sidebar.topbar", group: "window", icon: "menubar.rectangle",
               title: "Top Navigation Bar (Dynamic Mode)", detail: "Show a compact navigation bar with back/forward controls and address capsule above the page",
               keys: ["zen.topbar"], words: ["address bar", "url", "navigation", "toolbar", "zen", "top bar", "dynamic"], parent: "tabs.layout"),
+        .init(id: "sidebar.topbarHides", group: "window", icon: "menubar.arrow.up.rectangle",
+              title: "Hide top toolbar when sidebar is folded", detail: "Pressing ⌘S hides both the sidebar and top toolbar for full canvas immersion",
+              keys: ["zen.topbar.hidesFold"], words: ["full immersion", "hide toolbar", "zen", "dynamic"], parent: "sidebar.topbar"),
         .init(id: "sidebar.slides", group: "window", icon: "rectangle.lefthalf.inset.filled.arrow.left",
               title: "Slide the column in and out", detail: "A gentler slide when ⌘S or the window's edge brings the column out or puts it away",
               more: "With Reduce Motion on in System Settings › Accessibility › Display, the column fades in and out instead. With Reduce animations on, it comes and goes at once.",
@@ -617,7 +620,7 @@ enum SettingsIndex {
         case "pages.dusk": return prefs.look != .light
         case "inspector.dark": return prefs.look != .dark
         case "sidebar.roomy", "sidebar.player": return prefs.sidebar && !prefs.sideIcons
-        case "sidebar.hides", "sidebar.slides", "sidebar.topbar", "layout.cards", "pins.list": return prefs.sidebar
+        case "sidebar.hides", "sidebar.slides", "sidebar.topbar", "sidebar.topbarHides", "layout.cards", "pins.list": return prefs.sidebar
         case "layout.cardsFullScreen": return prefs.sidebar && prefs.cards
         case "pins.folders": return prefs.sidebar && prefs.listsPins
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides

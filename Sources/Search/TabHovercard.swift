@@ -31,7 +31,7 @@ struct TabHovercard: View {
             quickActionsSection
         }
         .padding(10)
-        .frame(width: 280)
+        .frame(width: 295)
         .background(
             ZStack {
                 VisualEffectView(material: .popover, blendingMode: .withinWindow)
@@ -248,7 +248,7 @@ struct TabHovercard: View {
 
     @ViewBuilder
     private var quickActionsSection: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 4) {
             // 📌 Pin Tab Pill
             HovercardPill(
                 icon: tab.pin != nil ? "pin.fill" : "pin",
@@ -266,6 +266,26 @@ struct TabHovercard: View {
                 iconColor: bookmarked ? Color.yellow : nil
             ) {
                 browser.bookmarks.toggle(tab)
+            }
+
+            // ◫ Split View Pill (ALWAYS present on every tab!)
+            let isCurrentTabSplit = browser.prefs.splitView && (browser.active?.id == tab.id || browser.splitPair?.left.id == tab.id || browser.splitPair?.right.id == tab.id)
+            HovercardPill(
+                icon: "rectangle.split.2x1",
+                label: isCurrentTabSplit ? "Unsplit" : "Split",
+                iconColor: isCurrentTabSplit ? Color.accentColor : nil
+            ) {
+                Haptics.click()
+                if let activeTab = browser.active, activeTab.id != tab.id {
+                    // Hovering a background tab: pair it side-by-side with active
+                    if !browser.prefs.splitView {
+                        browser.prefs.splitView = true
+                    }
+                    browser.pair(tab, with: activeTab, onLeft: false)
+                } else {
+                    // Hovering the active tab: toggle split view on/off
+                    browser.splitKey()
+                }
             }
 
             // 🔗 Copy Link Pill
@@ -310,16 +330,16 @@ private struct HovercardPill: View {
             Haptics.tap()
             action()
         }) {
-            HStack(spacing: 3.5) {
+            HStack(spacing: 3) {
                 Image(systemName: icon)
-                    .font(.system(size: 8.5, weight: .semibold))
+                    .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(iconColor ?? (disabled ? Palette.muted.opacity(0.4) : Palette.ink))
                 Text(label)
-                    .font(.system(size: 9.5, weight: .medium))
+                    .font(.system(size: 9, weight: .medium))
                     .lineLimit(1)
                     .foregroundStyle(disabled ? Palette.muted.opacity(0.5) : Palette.ink)
             }
-            .padding(.horizontal, 5)
+            .padding(.horizontal, 4)
             .padding(.vertical, 4)
             .frame(maxWidth: .infinity, minHeight: 22)
             .background(
