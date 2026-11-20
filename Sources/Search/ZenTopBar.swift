@@ -2,7 +2,7 @@ import SwiftUI
 
 /// A compact, Zen-style floating navigation bar positioned above the web card.
 /// Provides visible Back / Forward / Reload controls, an address capsule showing the domain,
-/// and quick action buttons (Split View, Reader Mode, Extensions).
+/// and an integrated Page Actions & Settings menu inside the address capsule (Reader Mode, Split View, Extensions).
 struct ZenTopBar: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
@@ -13,18 +13,19 @@ struct ZenTopBar: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // Navigation Cluster
+            // Navigation Cluster (Back, Forward, Reload)
             navigationControls
 
             Spacer(minLength: 0)
 
-            // Address Capsule
+            // Address Capsule with integrated Zen-style actions
             addressCapsule
 
             Spacer(minLength: 0)
 
-            // Action Cluster
-            actionControls
+            // Balance spacer matching navigation cluster width
+            Color.clear
+                .frame(width: 86, height: 26)
         }
         .padding(.horizontal, 10)
         .frame(height: ZenTopBar.height)
@@ -98,6 +99,8 @@ struct ZenTopBar: View {
                 .buttonStyle(.plain)
                 .help(tab.loading ? "Stop Loading   esc" : "Reload Page   ⌘R")
             }
+        } else {
+            Color.clear.frame(width: 86, height: 26)
         }
     }
 
@@ -106,36 +109,43 @@ struct ZenTopBar: View {
     @ViewBuilder
     private var addressCapsule: some View {
         if let tab = browser.active {
-            Button {
-                Haptics.tap()
-                browser.edit()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: tab.address?.scheme == "https" ? "lock.fill" : "globe")
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .foregroundStyle(tab.address?.scheme == "https" ? Palette.safe : Palette.muted)
+            HStack(spacing: 6) {
+                // Security / Scheme Icon
+                Image(systemName: tab.address?.scheme == "https" ? "lock.fill" : "globe")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(tab.address?.scheme == "https" ? Palette.safe : Palette.muted)
 
+                // Domain text button (expands to fill capsule center)
+                Button {
+                    Haptics.tap()
+                    browser.edit()
+                } label: {
                     Text(displayDomain(for: tab))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Palette.ink)
                         .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
-                .padding(.horizontal, 14)
-                .frame(minWidth: 200, maxWidth: 380, maxHeight: 24)
-                .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(capsuleHovered ? Color.white.opacity(0.12) : Color.white.opacity(0.06))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .stroke(Color.white.opacity(capsuleHovered ? 0.18 : 0.08), lineWidth: 0.5)
-                )
+                .buttonStyle(.plain)
+                .focusable(false)
+                .focusEffectDisabled()
+                .help("Click to edit URL or search   ⌘L")
+
+                // Zen-style Page Actions & Settings inside the capsule
+                pageSettingsMenu
             }
-            .buttonStyle(.plain)
-            .focusable(false)
-            .focusEffectDisabled()
+            .padding(.leading, 10)
+            .padding(.trailing, 6)
+            .frame(minWidth: 220, maxWidth: 380, maxHeight: 25)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(capsuleHovered ? Color.white.opacity(0.12) : Color.white.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(Color.white.opacity(capsuleHovered ? 0.18 : 0.08), lineWidth: 0.5)
+            )
             .onHover { capsuleHovered = $0 }
-            .help("Click to edit URL or search   ⌘L")
         }
     }
 
@@ -146,45 +156,72 @@ struct ZenTopBar: View {
         return tab.title.isEmpty ? "Search or enter address" : tab.title
     }
 
-    // MARK: - Action Controls
+    // MARK: - Page Actions Menu inside the Capsule
 
     @ViewBuilder
-    private var actionControls: some View {
-        HStack(spacing: 4) {
-            // Split View Toggle
-            Button {
-                Haptics.click()
-                browser.splitKey()
-            } label: {
-                Image(systemName: "rectangle.split.2x1")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(browser.prefs.splitView ? Color.accentColor : Palette.ink)
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .focusable(false)
-            .focusEffectDisabled()
-            .help("Split View   ⌥⌘N")
-
+    private var pageSettingsMenu: some View {
+        Menu {
             // Reader Mode
             Button {
                 Haptics.tap()
                 browser.toggleReader()
             } label: {
-                Image(systemName: "doc.plaintext")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Palette.ink)
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
+                Label("Toggle Reader Mode", systemImage: "doc.plaintext")
             }
-            .buttonStyle(.plain)
-            .focusable(false)
-            .focusEffectDisabled()
-            .help("Toggle Reader Mode   ⇧⌘R")
 
-            // Extension Slot
-            ExtensionSlot(browser: browser, edge: .bottom, room: 0)
+            // Split View
+            Button {
+                Haptics.click()
+                browser.splitKey()
+            } label: {
+                Label(browser.prefs.splitView ? "Close Split View" : "Split View", systemImage: "rectangle.split.2x1")
+            }
+
+            // Extensions Submenu
+            if #available(macOS 15.4, *) {
+                let extensions = Extensions.shared
+                if !extensions.installed.isEmpty {
+                    Menu {
+                        ForEach(extensions.buttons) { button in
+                            Button {
+                                extensions.press(button.id, in: browser)
+                            } label: {
+                                Text(button.name)
+                            }
+                        }
+                    } label: {
+                        Label("Extensions", systemImage: "puzzlepiece.extension")
+                    }
+                }
+            }
+
+            Divider()
+
+            // Copy Address
+            Button {
+                Haptics.tap()
+                browser.copyAddress()
+            } label: {
+                Label("Copy Address", systemImage: "link")
+            }
+
+            // Copy Clean Link
+            Button {
+                Haptics.tap()
+                browser.copyCleanLink()
+            } label: {
+                Label("Copy Clean Link", systemImage: "sparkles")
+            }
+        } label: {
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Palette.muted)
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
         }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .frame(width: 20, height: 20)
+        .help("Page Actions & Settings")
     }
 }

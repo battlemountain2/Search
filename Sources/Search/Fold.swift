@@ -814,11 +814,19 @@ private struct FoldShadow: ViewModifier {
     var strength: Double = 1
 
     func body(content: Content) -> some View {
-        let color = Color.black.opacity(0.14 * strength)
-        if behind {
-            content.background { Palette.ground.shadow(color: color, radius: 20, x: x, y: y) }
+        if strength <= 0 {
+            content
         } else {
-            content.shadow(color: color, radius: 20, x: x, y: y)
+            let color = Color.black.opacity(0.14 * strength)
+            if behind {
+                content.background {
+                    Rectangle()
+                        .fill(Color.black.opacity(0.01))
+                        .shadow(color: color, radius: 20, x: x, y: y)
+                }
+            } else {
+                content.shadow(color: color, radius: 20, x: x, y: y)
+            }
         }
     }
 }

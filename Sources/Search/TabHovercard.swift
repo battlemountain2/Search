@@ -31,7 +31,7 @@ struct TabHovercard: View {
             quickActionsSection
         }
         .padding(10)
-        .frame(width: (browser.active?.id != tab.id ? 305 : 280))
+        .frame(width: 280)
         .background(
             ZStack {
                 VisualEffectView(material: .popover, blendingMode: .withinWindow)
@@ -199,19 +199,24 @@ struct TabHovercard: View {
             .focusEffectDisabled()
             .help(tab.muted ? "Unmute" : "Mute")
 
-            // Track title ticker
-            Text(tab.label)
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(Palette.ink.opacity(0.85))
-                .lineLimit(1)
-                .truncationMode(.tail)
+            // Clean Status or Track Title (deduplicates against page title)
+            mediaLabel
 
             Spacer(minLength: 0)
 
             if tab.noisy {
-                Circle()
-                    .fill(Palette.safe)
-                    .frame(width: 6, height: 6)
+                // Mini Equalizer Bars
+                HStack(spacing: 2) {
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Palette.safe)
+                        .frame(width: 2, height: 8)
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Palette.safe)
+                        .frame(width: 2, height: 12)
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Palette.safe)
+                        .frame(width: 2, height: 6)
+                }
             }
         }
         .padding(.horizontal, 8)
@@ -221,6 +226,22 @@ struct TabHovercard: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Palette.hairline.opacity(0.6), lineWidth: 0.5)
         )
+    }
+
+    @ViewBuilder
+    private var mediaLabel: some View {
+        let isDuplicate = tab.label.trimmingCharacters(in: .whitespaces).lowercased() == tab.title.trimmingCharacters(in: .whitespaces).lowercased()
+        if isDuplicate || tab.label.isEmpty {
+            Text(tab.stilled ? "Audio Paused" : (tab.muted ? "Audio Muted" : "Now Playing"))
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(Palette.muted)
+        } else {
+            Text(tab.label)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(Palette.ink.opacity(0.85))
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
     }
 
     // MARK: - 4. Quick Action Pill Buttons
@@ -259,20 +280,6 @@ struct TabHovercard: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                         copied = false
                     }
-                }
-            }
-
-            // ◫ Split View Pill (pairs background tab side-by-side with active)
-            if let activeTab = browser.active, activeTab.id != tab.id {
-                HovercardPill(
-                    icon: "rectangle.split.2x1",
-                    label: "Split"
-                ) {
-                    Haptics.click()
-                    if !browser.prefs.splitView {
-                        browser.prefs.splitView = true
-                    }
-                    browser.pair(tab, with: activeTab, onLeft: false)
                 }
             }
 

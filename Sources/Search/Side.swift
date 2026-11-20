@@ -210,6 +210,7 @@ struct SideBar: View {
         .onAppear { SpaceSwipe.shared.start(for: browser) }
         .background {
             ZStack {
+                VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
                 (onFrame ? Palette.frame : Palette.ground).opacity(0.18)
                 if landing { greys.hover }
                 // Soft space wash tint over the frosted glass
