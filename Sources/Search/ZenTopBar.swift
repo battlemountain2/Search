@@ -11,6 +11,7 @@ struct ZenTopBar: View {
 
     @State private var capsuleHovered = false
     @State private var showToolbox = false
+    @State private var showSiteCard = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -32,13 +33,17 @@ struct ZenTopBar: View {
         .background(
             ZStack {
                 VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
-                (prefs.cards ? Palette.frame : Palette.ground).opacity(0.18)
+                (prefs.cards ? Palette.frame : Palette.ground).opacity(prefs.zenDarkGlass ? 0.28 : 0.18)
             }
         )
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+            Group {
+                if !prefs.zenBorderless {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                }
+            }
         )
     }
 
@@ -110,10 +115,27 @@ struct ZenTopBar: View {
     private var addressCapsule: some View {
         if let tab = browser.active {
             HStack(spacing: 6) {
-                // Security / Scheme Icon
-                Image(systemName: tab.address?.scheme == "https" ? "lock.fill" : "globe")
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(tab.address?.scheme == "https" ? Palette.safe : Palette.muted)
+                // Security / Scheme Icon & Site Permissions Popover (Like Zen & Safari)
+                Button {
+                    Haptics.tap()
+                    showSiteCard.toggle()
+                } label: {
+                    Image(systemName: tab.address?.scheme == "https" ? "lock.fill" : "globe")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(tab.address?.scheme == "https" ? Palette.safe : Palette.muted)
+                        .frame(width: 18, height: 18)
+                        .background(showSiteCard ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .focusEffectDisabled()
+                .help("View site security, certificate & permissions")
+                .popover(isPresented: $showSiteCard, arrowEdge: .bottom) {
+                    SiteCard(browser: browser, tab: tab) {
+                        showSiteCard = false
+                    }
+                    .padding(4)
+                }
 
                 // Domain text button (expands to fill capsule center)
                 Button {
@@ -421,10 +443,6 @@ private struct ToolboxPillButton: View {
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(hovered ? Palette.ink.opacity(0.08) : Palette.ink.opacity(0.03))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .stroke(Palette.hairline.opacity(0.5), lineWidth: 0.5)
             )
         }
         .buttonStyle(.plain)

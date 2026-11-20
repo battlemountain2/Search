@@ -268,8 +268,8 @@ struct TabHovercard: View {
                 browser.bookmarks.toggle(tab)
             }
 
-            // ◫ Split View Pill (available for regular tabs in the tray)
-            if tab.pin == nil {
+            // ◫ Split View Pill (available for regular tabs in the tray when enabled in Settings)
+            if browser.prefs.hovercardSplit && tab.pin == nil {
                 let isCurrentTabSplit = browser.prefs.splitView && browser.split(for: tab) != nil
                 HovercardPill(
                     icon: "rectangle.split.2x1",

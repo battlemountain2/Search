@@ -322,7 +322,7 @@ final class PaneStage: NSView {
             let ground = Palette.NS.ground.cgColor
             layer?.backgroundColor = card ? NSColor.clear.cgColor : ground
             for slot in slots {
-                slot.layer?.borderWidth = card ? 1 : 0
+                slot.layer?.borderWidth = (card && CardEdge.edge > 0) ? 1 : 0
                 slot.layer?.borderColor = edge
             }
             for shadow in shadows {

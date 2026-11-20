@@ -523,6 +523,7 @@ private struct PopoverGround: ViewModifier {
 /// card each, drawn by the stage that holds them (see PaneStage).
 struct CardEdge: ViewModifier {
     let on: Bool
+    var borderless: Bool = true
 
     // One shape of view, on or off: a page whose view were rebuilt as the
     // card comes and goes (the tabs across the top, a video taking the
@@ -538,15 +539,17 @@ struct CardEdge: ViewModifier {
                     .shadow(color: .black.opacity(on ? CardEdge.shadow : 0), radius: 6, y: 1)
             }
             .overlay {
-                CardShape(on: on)
-                    .strokeBorder(Color.white.opacity(on ? 0.10 : 0), lineWidth: 0.5)
-                    .allowsHitTesting(false)
+                if !borderless {
+                    CardShape(on: on)
+                        .strokeBorder(Color.white.opacity(on ? 0.08 : 0), lineWidth: 0.5)
+                        .allowsHitTesting(false)
+                }
             }
     }
 
     /// How dark the shadow and the edge are, for the stage's own cards too.
     static let shadow: Double = 0.07
-    static let edge: Double = 0.08
+    static let edge: Double = 0.0
 }
 
 /// The card's outline: round at its corners, or, off, a rectangle reaching

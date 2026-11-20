@@ -2865,7 +2865,7 @@ final class Browser: NSObject, ObservableObject {
         super.init()
         NotificationCenter.default.addObserver(forName: .searchTabStartedAudio, object: nil, queue: .main) { [weak self] note in
             guard let self, let activeTab = note.object as? Tab else { return }
-            if self.activeID == activeTab.id {
+            if self.activeID == activeTab.id && self.prefs.audioExclusivity {
                 for other in self.tabs where other.id != activeTab.id && other.noisy {
                     other.still()
                 }

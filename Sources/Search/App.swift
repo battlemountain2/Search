@@ -544,7 +544,8 @@ struct ContentView: View {
             } else {
                 ZStack {
                     VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
-                    (cards ? Palette.frame : Palette.ground).opacity(0.26)
+                    Color.black.opacity(browser.prefs.zenDarkGlass ? 0.38 : 0.12)
+                    (cards ? Palette.frame : Palette.ground).opacity(browser.prefs.zenDarkGlass ? 0.32 : 0.20)
                 }
             }
             // As cards, the column, the bookmarks bar and the gaps around the
@@ -566,7 +567,7 @@ struct ContentView: View {
             // top and on the column's side in the room (see chrome). Two pages
             // side by side are a card each (see PaneStage).
             stage
-                .modifier(CardEdge(on: cards && !browser.prefs.splitView))
+                .modifier(CardEdge(on: cards && !browser.prefs.splitView, borderless: browser.prefs.zenBorderless))
                 .padding(.leading, sideOnRight ? farGap + panelRoom : 0)
                 .padding(.trailing, sideOnRight ? 0 : farGap + panelRoom)
                 .padding(.bottom, farGap)

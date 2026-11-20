@@ -226,6 +226,22 @@ final class Preferences: ObservableObject {
     @Published var zenTopBarHidesWithFold: Bool {
         didSet { store.set(zenTopBarHidesWithFold, forKey: "zen.topbar.hidesFold") }
     }
+    /// Darker smoked frosted glass for Zen-style deep contrast and readability.
+    @Published var zenDarkGlass: Bool {
+        didSet { store.set(zenDarkGlass, forKey: "zen.darkGlass") }
+    }
+    /// Borderless web card and sidebar for clean Zen appearance.
+    @Published var zenBorderless: Bool {
+        didSet { store.set(zenBorderless, forKey: "zen.borderless") }
+    }
+    /// Automatically pause background tabs when active tab plays audio.
+    @Published var audioExclusivity: Bool {
+        didSet { store.set(audioExclusivity, forKey: "audio.exclusivity") }
+    }
+    /// Show 1-click Split View toggle pill on tab hovercards.
+    @Published var hovercardSplit: Bool {
+        didSet { store.set(hovercardSplit, forKey: "hovercard.split") }
+    }
     /// The column slides out and back in a longer, eased slide (Motion.slidesColumn),
     /// where it otherwise snaps out on a short spring. Off unless asked for.
     @Published var slidesColumn: Bool {
@@ -1034,6 +1050,10 @@ final class Preferences: ObservableObject {
         sideHides = store.bool(forKey: "sidebar.hides")
         zenTopBar = store.object(forKey: "zen.topbar") as? Bool ?? true
         zenTopBarHidesWithFold = store.object(forKey: "zen.topbar.hidesFold") as? Bool ?? true
+        zenDarkGlass = store.object(forKey: "zen.darkGlass") as? Bool ?? true
+        zenBorderless = store.object(forKey: "zen.borderless") as? Bool ?? true
+        audioExclusivity = store.object(forKey: "audio.exclusivity") as? Bool ?? true
+        hovercardSplit = store.object(forKey: "hovercard.split") as? Bool ?? true
         slidesColumn = store.bool(forKey: Motion.slidesKey)
         roomyTabs = store.bool(forKey: "sidebar.roomy")
         sideIcons = store.bool(forKey: "sidebar.icons")

@@ -590,6 +590,8 @@ struct SettingsPanel: View {
                         set: { on in withAnimation(Motion.glide) { prefs.cards = on } }
                      ))
         case "layout.cardsFullScreen": Switch(on: $prefs.cardsInFullScreen)
+        case "zen.darkGlass": Switch(on: $prefs.zenDarkGlass)
+        case "zen.borderless": Switch(on: $prefs.zenBorderless)
         case "toolbar.left": Switch(on: $prefs.navigationLeft)
         case "tabs.compact":
             Switch(on: Binding(
@@ -644,6 +646,8 @@ struct SettingsPanel: View {
                     .foregroundStyle(Palette.muted)
             }
         case "tabs.sleep.dim": Switch(on: $prefs.dimsSleepingTabs)
+        case "audio.exclusivity": Switch(on: $prefs.audioExclusivity)
+        case "hovercard.split": Switch(on: $prefs.hovercardSplit)
         case "tabs.close.after":
             Picker("", selection: $prefs.tabLife) {
                 ForEach(TabLife.allCases) { life in

@@ -193,6 +193,18 @@ enum SettingsIndex {
               title: "Keep the card in full screen", detail: "Off, the page goes edge to edge when the window fills the screen",
               keys: ["layout.cardsFullScreen"], words: ["full screen", "fullscreen", "card", "margin", "rounded", "zen", "arc"],
               parent: "layout.cards"),
+        .init(id: "zen.darkGlass", group: "window", icon: "circle.lefthalf.striped.horizontal",
+              title: "Deep Smoked Glass (Zen Frosted Glass)", detail: "Darken the window background transparency for deep contrast and vibrant readability",
+              keys: ["zen.darkGlass"], words: ["dark glass", "frosted glass", "transparency", "smoke", "blur", "zen", "contrast"], parent: "layout.cards"),
+        .init(id: "zen.borderless", group: "window", icon: "square.dashed",
+              title: "Borderless Web Canvas", detail: "Remove hairline separator lines around the web page and between sidebar and canvas",
+              keys: ["zen.borderless"], words: ["borderless", "no borders", "clean", "lines", "zen", "minimalist"], parent: "layout.cards"),
+        .init(id: "audio.exclusivity", group: "tabs", icon: "speaker.wave.2.fill",
+              title: "Smart Audio Exclusivity", detail: "Automatically pause background tabs when active tab begins playing media",
+              keys: ["audio.exclusivity"], words: ["audio", "sound", "mute", "pause", "music", "youtube", "media", "smart audio"], parent: "tabs.sleep"),
+        .init(id: "hovercard.split", group: "tabs", icon: "rectangle.split.2x1",
+              title: "Show Split View button on tab hover preview", detail: "Tile tabs side-by-side with 1 click directly from the tab hovercard",
+              keys: ["hovercard.split"], words: ["split view", "tile", "hovercard", "preview", "tabs"], parent: "tabs.sleep"),
         .init(id: "toolbar.left", group: "window", icon: "arrow.left.arrow.right",
               title: "Back, forward and reload on the left", detail: "Beside the window's buttons, before the tabs",
               keys: ["toolbar.left"], words: ["toolbar", "buttons", "navigation"], parent: "tabs.layout"),
@@ -621,7 +633,7 @@ enum SettingsIndex {
         case "inspector.dark": return prefs.look != .dark
         case "sidebar.roomy", "sidebar.player": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "sidebar.slides", "sidebar.topbar", "sidebar.topbarHides", "layout.cards", "pins.list": return prefs.sidebar
-        case "layout.cardsFullScreen": return prefs.sidebar && prefs.cards
+        case "layout.cardsFullScreen", "zen.darkGlass", "zen.borderless": return prefs.sidebar && prefs.cards
         case "pins.folders": return prefs.sidebar && prefs.listsPins
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
