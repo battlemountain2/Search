@@ -78,8 +78,7 @@ final class Dusk: ObservableObject {
     /// hasn't been measured yet (it is then taken for light, which is what
     /// gets it darkened).
     func choose(_ darkened: Bool, for host: String, native: Bool?) {
-        let measured = !(native ?? false)
-        if darkened == measured { sites[host] = nil } else { sites[host] = darkened }
+        sites[host] = darkened
         Store.settings.set(sites, forKey: "dusk.sites")
         revision += 1
     }

@@ -191,7 +191,7 @@ struct ZenTopBar: View {
     }
 }
 
-// MARK: - Zen URL Toolbox Popover (Ardia / Zen Style)
+// MARK: - Zen URL Toolbox Popover (Column / Zen Style)
 
 struct UrlToolboxView: View {
     @ObservedObject var browser: Browser
@@ -201,74 +201,72 @@ struct UrlToolboxView: View {
     @State private var copiedLink = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // 1. Top Quick Action Buttons Row (Share, Capture, Pin, Bookmark)
-            HStack(spacing: 6) {
-                // Share / Copy Link
-                ToolboxPillButton(
-                    icon: copiedLink ? "checkmark" : "square.and.arrow.up",
-                    label: copiedLink ? "Copied" : "Share",
-                    iconColor: copiedLink ? Palette.safe : nil
-                ) {
-                    if let url = tab.address {
-                        CleanLink.copy(url)
-                        copiedLink = true
+        VStack(alignment: .leading, spacing: 10) {
+            // 1. Quick Actions Section
+            VStack(alignment: .leading, spacing: 6) {
+                Text("QUICK ACTIONS")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(Palette.muted)
+
+                HStack(spacing: 6) {
+                    // Share / Clean Copy
+                    ToolboxPillButton(
+                        icon: copiedLink ? "checkmark" : "square.and.arrow.up",
+                        label: copiedLink ? "Copied" : "Share",
+                        iconColor: copiedLink ? Palette.safe : nil
+                    ) {
+                        if let url = tab.address {
+                            CleanLink.copy(url)
+                            copiedLink = true
+                            Haptics.tap()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copiedLink = false }
+                        }
+                    }
+
+                    // Screenshot / Capture
+                    ToolboxPillButton(
+                        icon: "camera",
+                        label: "Capture"
+                    ) {
+                        Haptics.click()
+                        browser.toggleSnap()
+                        onDismiss()
+                    }
+
+                    // Pin Tab
+                    ToolboxPillButton(
+                        icon: tab.pin != nil ? "pin.fill" : "pin",
+                        label: tab.pin != nil ? "Pinned" : "Pin",
+                        iconColor: tab.pin != nil ? Color.accentColor : nil
+                    ) {
                         Haptics.tap()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copiedLink = false }
+                        browser.pins.toggle(tab)
+                    }
+
+                    // Bookmark
+                    let bookmarked = tab.address.map { browser.bookmarks.contains($0) } ?? false
+                    ToolboxPillButton(
+                        icon: bookmarked ? "bookmark.fill" : "bookmark",
+                        label: bookmarked ? "Saved" : "Save",
+                        iconColor: bookmarked ? Color.yellow : nil
+                    ) {
+                        Haptics.tap()
+                        browser.bookmarks.toggle(tab)
                     }
                 }
-
-                // Screenshot / Capture
-                ToolboxPillButton(
-                    icon: "camera",
-                    label: "Capture"
-                ) {
-                    Haptics.click()
-                    browser.toggleSnap()
-                    onDismiss()
-                }
-
-                // Pin / Unpin
-                ToolboxPillButton(
-                    icon: tab.pin != nil ? "pin.fill" : "pin",
-                    label: tab.pin != nil ? "Unpin" : "Pin",
-                    iconColor: tab.pin != nil ? Color.accentColor : nil
-                ) {
-                    Haptics.tap()
-                    browser.pins.toggle(tab)
-                }
-
-                // Bookmark
-                let bookmarked = tab.address.map { browser.bookmarks.contains($0) } ?? false
-                ToolboxPillButton(
-                    icon: bookmarked ? "bookmark.fill" : "bookmark",
-                    label: bookmarked ? "Saved" : "Save",
-                    iconColor: bookmarked ? Color.yellow : nil
-                ) {
-                    Haptics.tap()
-                    browser.bookmarks.toggle(tab)
-                }
             }
-
-            Divider().opacity(0.3)
 
             // 2. Extensions Section
             if #available(macOS 15.4, *) {
                 let extensions = Extensions.shared
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Extensions")
-                            .font(.system(size: 11, weight: .semibold))
+                if !extensions.installed.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("EXTENSIONS")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .tracking(0.6)
                             .foregroundStyle(Palette.muted)
-                        Spacer()
-                    }
 
-                    if extensions.installed.isEmpty {
-                        Text("No extensions installed")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Palette.muted.opacity(0.6))
-                            .padding(.vertical, 2)
-                    } else {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
                                 ForEach(extensions.buttons) { button in
@@ -279,13 +277,17 @@ struct UrlToolboxView: View {
                                     } label: {
                                         VStack(spacing: 3) {
                                             ExtensionIcon(button: button, size: 16)
-                                                .frame(width: 30, height: 30)
-                                                .background(Palette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                                .frame(width: 32, height: 32)
+                                                .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                                        .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+                                                )
                                             Text(button.name)
                                                 .font(.system(size: 9))
                                                 .foregroundStyle(Palette.ink)
                                                 .lineLimit(1)
-                                                .frame(width: 46)
+                                                .frame(width: 48)
                                         }
                                     }
                                     .buttonStyle(.plain)
@@ -303,12 +305,16 @@ struct UrlToolboxView: View {
                                         Image(systemName: "plus")
                                             .font(.system(size: 12, weight: .semibold))
                                             .foregroundStyle(Palette.muted)
-                                            .frame(width: 30, height: 30)
-                                            .background(Palette.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                            .frame(width: 32, height: 32)
+                                            .background(Palette.ink.opacity(0.035), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+                                            )
                                         Text("Manage")
                                             .font(.system(size: 9))
                                             .foregroundStyle(Palette.muted)
-                                            .frame(width: 46)
+                                            .frame(width: 48)
                                     }
                                 }
                                 .buttonStyle(.plain)
@@ -318,64 +324,71 @@ struct UrlToolboxView: View {
                         }
                     }
                 }
-
-                Divider().opacity(0.3)
             }
 
-            // 3. Settings / Site Controls Section
+            // 3. Page Controls Section
             VStack(alignment: .leading, spacing: 6) {
-                Text("Settings")
-                    .font(.system(size: 11, weight: .semibold))
+                Text("PAGE CONTROLS")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .tracking(0.6)
                     .foregroundStyle(Palette.muted)
 
-                // Reader Mode Row
-                ToolboxSettingRow(
-                    icon: "doc.plaintext",
-                    title: "Reader View",
-                    subtitle: "Distraction-free article reader",
-                    actionTitle: "Toggle"
-                ) {
-                    Haptics.tap()
-                    browser.toggleReader()
-                    onDismiss()
-                }
+                VStack(spacing: 4) {
+                    // Reader Mode Row
+                    ToolboxSettingRow(
+                        icon: "doc.plaintext",
+                        title: "Reader View",
+                        subtitle: "Distraction-free article reader",
+                        actionTitle: "Toggle"
+                    ) {
+                        Haptics.tap()
+                        browser.toggleReader()
+                        onDismiss()
+                    }
 
-                // Split View Row
-                ToolboxSettingRow(
-                    icon: "rectangle.split.2x1",
-                    title: "Split View",
-                    subtitle: browser.prefs.splitView ? "Active side-by-side" : "Browse two tabs together",
-                    actionTitle: browser.prefs.splitView ? "Close" : "Split",
-                    isActive: browser.prefs.splitView
-                ) {
-                    Haptics.click()
-                    browser.splitKey()
-                    onDismiss()
-                }
+                    // Split View Row
+                    ToolboxSettingRow(
+                        icon: "rectangle.split.2x1",
+                        title: "Split View",
+                        subtitle: browser.prefs.splitView ? "Active side-by-side" : "Browse two tabs together",
+                        actionTitle: browser.prefs.splitView ? "Close" : "Split",
+                        isActive: browser.prefs.splitView
+                    ) {
+                        Haptics.click()
+                        browser.splitKey()
+                        onDismiss()
+                    }
 
-                // Cinema Mode Row
-                ToolboxSettingRow(
-                    icon: "film",
-                    title: "Cinema Mode",
-                    subtitle: "Spotlight video & dim distractions",
-                    actionTitle: "Toggle"
-                ) {
-                    Haptics.tap()
-                    browser.toggleCinema()
-                    onDismiss()
+                    // Cinema Mode Row
+                    ToolboxSettingRow(
+                        icon: "film",
+                        title: "Cinema Mode",
+                        subtitle: "Spotlight video & dim distractions",
+                        actionTitle: "Toggle"
+                    ) {
+                        Haptics.tap()
+                        browser.toggleCinema()
+                        onDismiss()
+                    }
                 }
+                .padding(6)
+                .background(Palette.ink.opacity(0.035), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+                )
             }
 
-            Divider().opacity(0.3)
+            Divider().opacity(0.25)
 
-            // 4. Bottom Security & More Bar
+            // 4. Bottom Bar: Security & Copy URL
             HStack {
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
                     Image(systemName: tab.address?.scheme == "https" ? "lock.fill" : "globe")
-                        .font(.system(size: 9.5, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(tab.address?.scheme == "https" ? Palette.safe : Palette.muted)
                     Text(tab.address?.scheme == "https" ? "Secure Connection" : "Insecure")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(Palette.muted)
                 }
 
@@ -388,7 +401,7 @@ struct UrlToolboxView: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copiedLink = false }
                 } label: {
                     Text(copiedLink ? "Copied" : "Copy URL")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(Color.accentColor)
                 }
                 .buttonStyle(.plain)
@@ -397,7 +410,7 @@ struct UrlToolboxView: View {
             }
         }
         .padding(12)
-        .frame(width: 295)
+        .frame(width: 300)
         .background(
             ZStack {
                 VisualEffectView(material: .popover, blendingMode: .withinWindow)
@@ -419,18 +432,23 @@ private struct ToolboxPillButton: View {
         Button(action: action) {
             VStack(spacing: 3) {
                 Image(systemName: icon)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(iconColor ?? Palette.ink)
                 Text(label)
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(Palette.muted)
                     .lineLimit(1)
             }
-            .frame(maxWidth: .infinity, minHeight: 38)
+            .frame(maxWidth: .infinity, minHeight: 40)
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(hovered ? Palette.ink.opacity(0.08) : Palette.ink.opacity(0.03))
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(hovered ? Palette.ink.opacity(0.08) : Palette.ink.opacity(0.035))
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+            )
+            .animation(Motion.settle, value: hovered)
         }
         .buttonStyle(.plain)
         .focusable(false)
@@ -456,11 +474,11 @@ private struct ToolboxSettingRow: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(isActive ? Color.accentColor : Palette.ink)
                     .frame(width: 22, height: 22)
-                    .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 5))
+                    .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(Palette.ink)
                     Text(subtitle)
                         .font(.system(size: 9.5))
@@ -473,13 +491,14 @@ private struct ToolboxSettingRow: View {
                 Text(actionTitle)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(isActive ? Color.accentColor : Palette.muted)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(isActive ? Color.accentColor.opacity(0.12) : Palette.ink.opacity(0.04), in: Capsule())
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3.5)
+                    .background(isActive ? Color.accentColor.opacity(0.12) : Palette.ink.opacity(0.05), in: Capsule())
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 5)
-            .background(hovered ? Palette.ink.opacity(0.05) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+            .background(hovered ? Palette.ink.opacity(0.05) : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .animation(Motion.settle, value: hovered)
         }
         .buttonStyle(.plain)
         .focusable(false)
@@ -509,30 +528,41 @@ final class WindowDragNSView: NSView {
     }
 }
 
-// MARK: - Modern Site Security & Permissions Popover (Clean Zen / Safari Style)
+// MARK: - Modern Site Security & Permissions Popover (Column / Zen Style)
 
 struct SiteSecurityPopoverView: View {
     @ObservedObject var browser: Browser
     @ObservedObject var tab: Tab
     let close: () -> Void
 
+    @State private var copiedAddress = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header: Status Badge + Domain + Certificate action
+        VStack(alignment: .leading, spacing: 10) {
+            // 1. Hero Connection Status Header
             headerSection
 
-            Divider().opacity(0.3)
+            Divider().opacity(0.25)
 
-            // Permissions Group
+            // 2. Protection & Controls Group
+            controlsSection
+
+            // 3. Permissions Group
             permissionsSection
 
-            Divider().opacity(0.3)
+            Divider().opacity(0.25)
 
-            // Protection & Page Controls Group
-            controlsSection
+            // 4. Bottom Action Bar
+            bottomSection
         }
-        .padding(14)
-        .frame(width: 290)
+        .padding(12)
+        .frame(width: 300)
+        .background(
+            ZStack {
+                VisualEffectView(material: .popover, blendingMode: .withinWindow)
+                Palette.ground.opacity(0.92)
+            }
+        )
         .focusable(false)
         .focusEffectDisabled()
         .onAppear(perform: certify)
@@ -547,7 +577,7 @@ struct SiteSecurityPopoverView: View {
             Image(systemName: isSecure ? "lock.fill" : "lock.open.fill")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(isSecure ? Palette.safe : Palette.unsafe)
-                .frame(width: 28, height: 28)
+                .frame(width: 30, height: 30)
                 .background((isSecure ? Palette.safe : Palette.unsafe).opacity(0.12), in: Circle())
 
             VStack(alignment: .leading, spacing: 2) {
@@ -556,8 +586,8 @@ struct SiteSecurityPopoverView: View {
                     .foregroundStyle(Palette.ink)
 
                 Text(isSecure
-                     ? "Your information (passwords, messages, cards) is private when sent to this site."
-                     : "Don't enter sensitive info or passwords on this site.")
+                     ? "Your connection is encrypted. Passwords, messages, and cards stay private."
+                     : "This site is not encrypted. Don't enter sensitive info or passwords.")
                     .font(.system(size: 10))
                     .foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -591,12 +621,147 @@ struct SiteSecurityPopoverView: View {
     }
 
     @ViewBuilder
+    private var controlsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("PROTECTION & CONTROLS")
+                .font(.system(size: 9.5, weight: .semibold))
+                .tracking(0.6)
+                .foregroundStyle(Palette.muted)
+
+            VStack(spacing: 7) {
+                // Shield / Ad blocker toggle
+                if let url = tab.pageAddress, let host = browser.curtain.host(of: url) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "shield.lefthalf.filled")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Shield.shared.isPaused(on: host) ? Palette.muted : Palette.safe)
+                            .frame(width: 20, height: 20)
+                            .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Block Ads & Trackers")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(Palette.ink)
+                            Text(Shield.shared.isPaused(on: host) ? "Paused for this site" : "Active protection")
+                                .font(.system(size: 9.5))
+                                .foregroundStyle(Palette.muted)
+                        }
+
+                        Spacer()
+
+                        Switch(on: Binding(
+                            get: { !Shield.shared.isPaused(on: host) },
+                            set: { on in
+                                Shield.shared.pause(host, !on)
+                                tab.reload()
+                            }
+                        ))
+                    }
+                }
+
+                // Dark mode toggle for this site (fixed toggle with instant feedback)
+                if browser.canDusk(tab) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "moon.fill")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(tab.dusked ? Color.indigo : Palette.muted)
+                            .frame(width: 20, height: 20)
+                            .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Darken this site")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(Palette.ink)
+                            Text(tab.dusked ? "Applied dark theme" : "Default light appearance")
+                                .font(.system(size: 9.5))
+                                .foregroundStyle(Palette.muted)
+                        }
+
+                        Spacer()
+
+                        Switch(on: Binding(
+                            get: { tab.dusked },
+                            set: { browser.dusk($0, tab) }
+                        ))
+                    }
+                }
+
+                // Zoom control row
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                        .frame(width: 20, height: 20)
+                        .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+
+                    Text("Zoom")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Palette.ink)
+
+                    Spacer()
+
+                    HStack(spacing: 2) {
+                        Button {
+                            Haptics.tap()
+                            browser.zoom(by: 1 / 1.1)
+                        } label: {
+                            Image(systemName: "minus")
+                                .font(.system(size: 10, weight: .semibold))
+                                .frame(width: 22, height: 22)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                        .focusEffectDisabled()
+
+                        Button {
+                            Haptics.tap()
+                            browser.resetZoom()
+                        } label: {
+                            Text("\(Int((tab.zoom * 100).rounded()))%")
+                                .font(.system(size: 10.5, weight: .medium))
+                                .monospacedDigit()
+                                .frame(width: 40)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                        .focusEffectDisabled()
+
+                        Button {
+                            Haptics.tap()
+                            browser.zoom(by: 1.1)
+                        } label: {
+                            Image(systemName: "plus")
+                                .font(.system(size: 10, weight: .semibold))
+                                .frame(width: 22, height: 22)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                        .focusEffectDisabled()
+                    }
+                    .padding(.horizontal, 2)
+                    .background(Palette.ink.opacity(0.06), in: Capsule())
+                }
+            }
+            .padding(8)
+            .background(Palette.ink.opacity(0.035), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+            )
+        }
+    }
+
+    @ViewBuilder
     private var permissionsSection: some View {
         if let url = tab.pageAddress, let scheme = url.scheme, let host = url.host() {
             let origin = Browser.origin(scheme, host, url.port ?? 0)
             VStack(alignment: .leading, spacing: 6) {
-                Text("PERMISSIONS")
+                Text("SITE PERMISSIONS")
                     .font(.system(size: 9.5, weight: .semibold))
+                    .tracking(0.6)
                     .foregroundStyle(Palette.muted)
 
                 VStack(spacing: 5) {
@@ -606,13 +771,17 @@ struct SiteSecurityPopoverView: View {
                     permissionRow(title: "Notifications", icon: "bell", kind: .notifications, origin: origin)
                 }
                 .padding(8)
-                .background(Palette.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(Palette.ink.opacity(0.035), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+                )
             }
         }
     }
 
     private func permissionRow(title: String, icon: String, kind: CaptureChoices.Kind, origin: String) -> some View {
-        HStack {
+        HStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.system(size: 11))
                 .foregroundStyle(Palette.muted)
@@ -628,8 +797,11 @@ struct SiteSecurityPopoverView: View {
                 Button("Block") { browser.setSitePermission(false, kind: kind, origin: origin) }
             } label: {
                 Text(CaptureChoices.choice(kind, origin: origin).title)
-                    .font(.system(size: 10.5))
+                    .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(Palette.ink)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2.5)
+                    .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -638,116 +810,44 @@ struct SiteSecurityPopoverView: View {
         }
     }
 
-    @ViewBuilder
-    private var controlsSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("PROTECTION & CONTROLS")
-                .font(.system(size: 9.5, weight: .semibold))
+    private var bottomSection: some View {
+        HStack {
+            Text(tab.address?.host ?? "")
+                .font(.system(size: 10.5, weight: .medium))
                 .foregroundStyle(Palette.muted)
+                .lineLimit(1)
 
-            VStack(spacing: 6) {
-                // Shield / Ad blocker toggle
-                if let url = tab.pageAddress, let host = browser.curtain.host(of: url) {
-                    HStack {
-                        Image(systemName: "shield.lefthalf.filled")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Shield.shared.isPaused(on: host) ? Palette.muted : Palette.safe)
-                            .frame(width: 16)
-                        Text("Block Ads & Trackers")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Palette.ink)
-                        Spacer()
-                        Toggle("", isOn: Binding(
-                            get: { !Shield.shared.isPaused(on: host) },
-                            set: { on in
-                                Shield.shared.pause(host, !on)
-                                tab.reload()
-                            }
-                        ))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .scaleEffect(0.7)
-                        .focusable(false)
-                        .focusEffectDisabled()
-                    }
+            Spacer()
+
+            Button {
+                Haptics.tap()
+                if let url = tab.address {
+                    CleanLink.copy(url)
+                    copiedAddress = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copiedAddress = false }
                 }
-
-                // Dark mode toggle for this site
-                if browser.canDusk(tab) {
-                    HStack {
-                        Image(systemName: "moon")
-                            .font(.system(size: 11))
-                            .foregroundStyle(tab.dusked ? Palette.safe : Palette.muted)
-                            .frame(width: 16)
-                        Text("Darken this site")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Palette.ink)
-                        Spacer()
-                        Toggle("", isOn: Binding(
-                            get: { tab.dusked },
-                            set: { browser.dusk($0, tab) }
-                        ))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .scaleEffect(0.7)
-                        .focusable(false)
-                        .focusEffectDisabled()
-                    }
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: copiedAddress ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 9.5))
+                    Text(copiedAddress ? "Copied" : "Copy Clean URL")
+                        .font(.system(size: 10.5, weight: .medium))
                 }
-
-                // Zoom control row
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Palette.muted)
-                        .frame(width: 16)
-                    Text("Zoom")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Palette.ink)
-                    Spacer()
-                    HStack(spacing: 4) {
-                        Button {
-                            browser.zoom(by: 1 / 1.1)
-                        } label: {
-                            Image(systemName: "minus")
-                                .font(.system(size: 10, weight: .semibold))
-                                .frame(width: 20, height: 20)
-                                .background(Palette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 4))
-                        }
-                        .buttonStyle(.plain)
-                        .focusable(false)
-                        .focusEffectDisabled()
-
-                        Button {
-                            browser.resetZoom()
-                        } label: {
-                            Text("\(Int((tab.zoom * 100).rounded()))%")
-                                .font(.system(size: 10.5, weight: .medium))
-                                .monospacedDigit()
-                                .frame(width: 38)
-                        }
-                        .buttonStyle(.plain)
-                        .focusable(false)
-                        .focusEffectDisabled()
-
-                        Button {
-                            browser.zoom(by: 1.1)
-                        } label: {
-                            Image(systemName: "plus")
-                                .font(.system(size: 10, weight: .semibold))
-                                .frame(width: 20, height: 20)
-                                .background(Palette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 4))
-                        }
-                        .buttonStyle(.plain)
-                        .focusable(false)
-                        .focusEffectDisabled()
-                    }
-                }
+                .foregroundStyle(Color.accentColor)
             }
-            .padding(8)
-            .background(Palette.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .buttonStyle(.plain)
+            .focusable(false)
+            .focusEffectDisabled()
         }
     }
+
+    private func certify() {
+        guard let trust = tab.built?.serverTrust else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            _ = SecTrustEvaluateWithError(trust, nil)
+        }
+    }
+}
 
     private func certify() {
         guard let trust = tab.built?.serverTrust else { return }

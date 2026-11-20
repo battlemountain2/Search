@@ -7783,12 +7783,16 @@ final class Browser: NSObject, ObservableObject {
     }
 
     func dusk(_ on: Bool, _ tab: Tab) {
-        guard let host = Dusk.host(of: tab.pageAddress) else { return }
+        guard let host = Dusk.host(of: tab.pageAddress ?? tab.address) else { return }
+        tab.dusked = on
         if tab.shy {
             tab.built?.evaluateInSearch(Dusk.shared.forced(for: host, on))
         } else {
             Dusk.shared.choose(on, for: host, native: tab.duskNative)
         }
+        let js = on ? Dusk.shared.update(for: host) : "window.__officeDusk && (window.__officeDusk.force ? window.__officeDusk.force(false) : window.__officeDusk.update({ on: false }))"
+        tab.built?.evaluateInSearch(js)
+        tab.built?.underPageBackgroundColor = on ? Dusk.underPage : nil
     }
 
     /// ⌥⇧⌘D: every page as its site made it, until pressed again or Search

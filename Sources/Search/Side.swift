@@ -214,13 +214,12 @@ struct SideBar: View {
         .onAppear { SpaceSwipe.shared.start(for: browser) }
         .background {
             ZStack {
-                if !onFrame {
+                if onFrame {
                     VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
+                    Palette.frame.opacity(prefs.zenDarkGlass ? 0.16 : 0.12)
+                    SpaceWash(look: browser.wash).opacity(0.35)
                 }
-                (onFrame ? Palette.frame : Palette.ground).opacity(prefs.zenDarkGlass ? 0.12 : 0.08)
                 if landing { greys.hover }
-                // Soft space wash tint over the frosted glass
-                SpaceWash(look: browser.wash).opacity(0.35)
                 if prefs.splitView {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }
