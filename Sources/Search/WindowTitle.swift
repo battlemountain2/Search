@@ -24,6 +24,11 @@ struct WindowTitle: View {
             .onAppear(perform: apply)
             .onChange(of: tab.title) { _, _ in apply() }
             .onChange(of: tab.name) { _, _ in apply() }
+            .onChange(of: tab.address) { _, _ in apply() }
+            .onDisappear {
+                window?.userActivity?.invalidate()
+                window?.userActivity = nil
+            }
     }
 
     private func apply() {
@@ -34,13 +39,38 @@ struct WindowTitle: View {
     /// first set (WindowSetup), so its name doesn't wait for the next change.
     static func set(_ tab: Tab, in window: NSWindow) {
         let title = name(page: tab.name ?? tab.title, private: tab.shy)
-        guard window.title != title else { return }
-        window.title = title
-        // A new title makes AppKit lay the title bar out again, and the
-        // traffic lights go back to where it puts them: the zoom button came
-        // up out of line on each tab switch. Looked at now, and once more
-        // after the layout that follows, and put back only if they moved.
-        Lights.refreshIfMoved(window)
-        DispatchQueue.main.async { Lights.refreshIfMoved(window) }
+        if window.title != title {
+            window.title = title
+            // A new title makes AppKit lay the title bar out again, and the
+            // traffic lights go back to where it puts them: the zoom button came
+            // up out of line on each tab switch. Looked at now, and once more
+            // after the layout that follows, and put back only if they moved.
+            Lights.refreshIfMoved(window)
+            DispatchQueue.main.async { Lights.refreshIfMoved(window) }
+        }
+        updateHandoff(tab, in: window, title: title)
+    }
+
+    /// Broadcast active web page to nearby Apple devices (iPhone, iPad, other Macs) via Continuity Handoff.
+    private static func updateHandoff(_ tab: Tab, in window: NSWindow, title: String) {
+        guard !tab.shy, let url = tab.address, url.scheme == "http" || url.scheme == "https" else {
+            window.userActivity?.invalidate()
+            window.userActivity = nil
+            return
+        }
+        if let existing = window.userActivity, existing.activityType == NSUserActivityTypeBrowsingWeb {
+            existing.title = title
+            existing.webpageURL = url
+            existing.becomeCurrent()
+        } else {
+            let activity = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
+            activity.title = title
+            activity.webpageURL = url
+            activity.isEligibleForHandoff = true
+            activity.isEligibleForSearch = false
+            activity.isEligibleForPublicIndexing = false
+            window.userActivity = activity
+            activity.becomeCurrent()
+        }
     }
 }

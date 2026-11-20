@@ -39,6 +39,8 @@ final class LittleWindow: NSObject, NSWindowDelegate {
     private var cascaded = false
     /// What it says for a moment at its foot: "Address copied".
     private let note = LittleNote()
+    /// Floating / Pin state for Helium superpowers.
+    private let state = LittleState()
     /// No smaller than this, by hand or from a kept place.
     private static let smallest = NSSize(width: 420, height: 320)
 
@@ -220,7 +222,13 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         }
         window.delegate = self
         let id = tab.id
-        window.contentView = NSHostingView(rootView: LittleView(tab: tab, note: note, keep: { [weak self] in self?.keep() })
+        window.contentView = NSHostingView(rootView: LittleView(
+            tab: tab,
+            state: state,
+            note: note,
+            toggleFloating: { [weak self] in self?.toggleFloating() },
+            keep: { [weak self] in self?.keep() }
+        )
             .overlay {
                 TabSwitcherOverlay(
                     switcher: LittleWindow.switcher,
@@ -367,6 +375,42 @@ final class LittleWindow: NSObject, NSWindowDelegate {
             switcher.cancel()
             if event.keyCode == 53 { return true }
         }
+        if flags.contains(.command), flags.contains(.option) {
+            switch key {
+            case "f", "p":
+                toggleFloating()
+                return true
+            case "x":
+                toggleClickThrough()
+                return true
+            case "]", "=", "+":
+                adjustOpacity(by: 0.1)
+                return true
+            case "[", "-":
+                adjustOpacity(by: -0.1)
+                return true
+            case "1":
+                snap(to: .topLeft)
+                return true
+            case "2":
+                snap(to: .topRight)
+                return true
+            case "3":
+                snap(to: .bottomLeft)
+                return true
+            case "4":
+                snap(to: .bottomRight)
+                return true
+            case "0":
+                snap(to: .center)
+                return true
+            default: break
+            }
+        }
+        if flags.contains(.command), flags.contains(.shift), key == "p" {
+            toggleFloating()
+            return true
+        }
         // Escape is a link's way out. A lifted tab is one of yours, and a
         // page's own Escape closing it lost it: ⌘W or the window's button.
         if event.keyCode == 53 && flags.isEmpty && !lifted || key == "w" && flags == .command {
@@ -418,6 +462,63 @@ final class LittleWindow: NSObject, NSWindowDelegate {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(markdown ? Browser.markdownLink(tab.label, url) : url.absoluteString, forType: .string)
         note.say(markdown ? "Link copied" : "Address copied")
+    }
+
+    /// Pinned in front of every other app's windows, or floating normally.
+    func toggleFloating() {
+        state.isFloating.toggle()
+        window.level = state.isFloating ? .floating : .normal
+        note.say(state.isFloating ? "Pinned on top" : "Normal window")
+    }
+
+    /// Modify window opacity (clamped between 0.2 and 1.0).
+    func adjustOpacity(by delta: CGFloat) {
+        let current = window.alphaValue
+        let next = max(0.2, min(1.0, round((current + delta) * 10) / 10))
+        window.alphaValue = next
+        note.say("Opacity \(Int((next * 100).rounded()))%")
+    }
+
+    /// Let mouse clicks fall straight through to the app underneath.
+    func toggleClickThrough() {
+        window.ignoresMouseEvents.toggle()
+        note.say(window.ignoresMouseEvents ? "Click-through ON (⌥⌘X to toggle)" : "Click-through OFF")
+    }
+
+    enum Corner {
+        case topLeft, topRight, bottomLeft, bottomRight, center
+    }
+
+    /// Snap to screen corners or center with clean margins.
+    func snap(to corner: Corner) {
+        guard let screen = window.screen ?? NSScreen.main else { return }
+        let visible = screen.visibleFrame
+        let size = window.frame.size
+        let margin: CGFloat = 16
+        var origin = window.frame.origin
+
+        switch corner {
+        case .topLeft:
+            origin = CGPoint(x: visible.minX + margin, y: visible.maxY - size.height - margin)
+        case .topRight:
+            origin = CGPoint(x: visible.maxX - size.width - margin, y: visible.maxY - size.height - margin)
+        case .bottomLeft:
+            origin = CGPoint(x: visible.minX + margin, y: visible.minY + margin)
+        case .bottomRight:
+            origin = CGPoint(x: visible.maxX - size.width - margin, y: visible.minY + margin)
+        case .center:
+            origin = CGPoint(x: visible.midX - size.width / 2, y: visible.midY - size.height / 2)
+        }
+
+        window.setFrameOrigin(origin)
+        rememberFrame()
+        switch corner {
+        case .topLeft: note.say("Snapped Top-Left")
+        case .topRight: note.say("Snapped Top-Right")
+        case .bottomLeft: note.say("Snapped Bottom-Left")
+        case .bottomRight: note.say("Snapped Bottom-Right")
+        case .center: note.say("Centered")
+        }
     }
 
     /// Into the browser's row, after the tab on screen (never among the
@@ -505,13 +606,15 @@ final class LittleWindow: NSObject, NSWindowDelegate {
 /// is somewhere to keep it (an extension's popup window has no such button).
 struct LittleView: View {
     @ObservedObject var tab: Tab
+    @ObservedObject var state: LittleState = LittleState()
     /// Its window's line at the foot; an extension's popup has none.
     var note: LittleNote? = nil
+    var toggleFloating: (() -> Void)? = nil
     let keep: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 // Room for the window's own buttons, which sit on this line.
                 Spacer().frame(width: 64)
                 Spacer(minLength: 0)
@@ -523,11 +626,24 @@ struct LittleView: View {
                     // registrable domain, which a cut tail would lose.
                     .truncationMode(.head)
                 Spacer(minLength: 0)
-                if let keep {
-                    Pill("Open in Search", action: keep)
-                        .help("Open in Search   ⌘O")
-                } else {
-                    Spacer().frame(width: 64)
+                HStack(spacing: 6) {
+                    if let toggleFloating {
+                        Button(action: toggleFloating) {
+                            Image(systemName: state.isFloating ? "pin.fill" : "pin")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(state.isFloating ? Color.accentColor : Palette.muted)
+                                .frame(width: 24, height: 24)
+                                .background(state.isFloating ? Color.accentColor.opacity(0.15) : Color.clear, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(state.isFloating ? "Unpin window   ⌥⌘F" : "Pin on top   ⌥⌘F")
+                    }
+                    if let keep {
+                        Pill("Open in Search", action: keep)
+                            .help("Open in Search   ⌘O")
+                    } else {
+                        Spacer().frame(width: 64)
+                    }
                 }
             }
             .padding(.horizontal, 10)
@@ -572,6 +688,12 @@ struct LittleView: View {
         guard let id = tab.opener else { return nil }
         return Browsers.all.lazy.flatMap { $0.tabs }.first { $0.id == id }?.committed
     }
+}
+
+/// Observable state for the small window's floating / pin status.
+@MainActor
+final class LittleState: ObservableObject {
+    @Published var isFloating: Bool = false
 }
 
 /// A line said for a moment, as the browser's window says it (see

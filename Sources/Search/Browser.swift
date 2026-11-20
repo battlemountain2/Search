@@ -6672,6 +6672,16 @@ final class Browser: NSObject, ObservableObject {
         lift(active, quietly: false, otherwise: otherPane)
     }
 
+    /// ⇧⌘L, Cinema Mode: spotlights video or primary article and dims background clutter.
+    func toggleCinema() {
+        guard let tab = active, let built = tab.built else { return }
+        built.evaluateJavaScript(Cinema.toggleScript) { [weak self] result, _ in
+            if let mode = result as? String {
+                self?.announce(mode == "on" ? "Cinema mode on" : "Cinema mode off")
+            }
+        }
+    }
+
     /// The tab whose video Search last sent to macOS's picture in picture
     /// (Settings › General › The floating video), to bring back when you
     /// return to it, as Search's own window lands.
