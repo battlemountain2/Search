@@ -1433,8 +1433,7 @@ struct ContentView: View {
         let reserved = (key == "t") || (key == "w") || (key == "n" && shifted)
             || ((key == "[" || key == "]" || key == "{" || key == "}") && shifted)
             || (key == "z" && browser.veiling)
-            || (key == "k" && !shifted)
-            || (key == "c" && shifted)
+            || (key == "k")
             || (!shifted && (event.keyCode == 123 || event.keyCode == 124) && !caretIn(event))
         guard !reserved, event.window?.firstResponder is PageView else { return false }
         if let passed = ContentView.passed, PageView.same(passed, event) {
@@ -1862,7 +1861,7 @@ struct ContentView: View {
         case "t" where shifted:
             browser.reopen()
         case "c" where shifted:
-            browser.copyMarkdownLink()
+            browser.copyAddress()
         case "d" where !shifted:
             browser.duplicate()
         // Dark pages, the site you're on (see Dusk.swift). Off, the key is
@@ -1907,6 +1906,8 @@ struct ContentView: View {
             // Held down, ⌘K walks the list a step at a time; letting go of ⌘
             // takes wherever it stopped. Pressed afresh, it puts it away.
             browser.searchTabsKey()
+        case "k" where shifted:
+            browser.copyMarkdownLink()
         case "s" where shifted:
             browser.toggleSidebar()
         case "s" where !shifted:
