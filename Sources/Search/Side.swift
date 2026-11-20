@@ -1554,6 +1554,9 @@ private struct PinSquare: View, Equatable {
     }
 
     @State private var hovering = false
+    @State private var showingHovercard = false
+    @State private var isHoveringCard = false
+    @State private var hoverTask: DispatchWorkItem?
     @State private var selectedOnPress = false
 
     /// Everything drawn inside scales off the shorter edge — the one that
@@ -1634,11 +1637,46 @@ private struct PinSquare: View, Equatable {
         .modifier(OptionClick { if !lettering { browser.optionClick(tab) } })
         // Put down, like ⌘W: close() is what knows a pin isn't removed.
         .overlay { MiddleClick { browser.close(tab) } }
-        .onHover { hovering = $0 }
+        .onHover(perform: hoverPin)
+        .onDisappear {
+            hoverTask?.cancel()
+            showingHovercard = false
+        }
+        .popover(isPresented: $showingHovercard, hangingFrom: prefs.sidebarOnRight ? .leading : .trailing) {
+            TabHovercard(browser: browser, tab: tab, isHoveringCard: $isHoveringCard) {
+                showingHovercard = false
+            }
+        }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: { browser.close(tab) }) }
         .help(tab.label)
         .animation(nil, value: hovering)
         .transition(.scale(scale: 0.8).combined(with: .opacity))
+    }
+
+    private func hoverPin(_ over: Bool) {
+        hovering = over
+        hoverTask?.cancel()
+        guard !lettering, !tab.isBlank else {
+            showingHovercard = false
+            return
+        }
+        if over {
+            let task = DispatchWorkItem {
+                if hovering {
+                    showingHovercard = true
+                }
+            }
+            hoverTask = task
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.38, execute: task)
+        } else {
+            let task = DispatchWorkItem {
+                if !hovering && !isHoveringCard {
+                    showingHovercard = false
+                }
+            }
+            hoverTask = task
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: task)
+        }
     }
 }
 
@@ -1710,6 +1748,9 @@ private struct SideRow: View, Equatable {
     }
 
     @State private var hovering = false
+    @State private var showingHovercard = false
+    @State private var isHoveringCard = false
+    @State private var hoverTask: DispatchWorkItem?
     @State private var selectedOnPress = false
     @State private var shake: CGFloat = 0
     @State private var pressed = false
@@ -1885,6 +1926,8 @@ private struct SideRow: View, Equatable {
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .modifier(OneClick(double: false) {
             guard interactive, !selectedOnPress, TabClick.flags.intersection([.command, .shift, .option]).isEmpty else { return }
+            hoverTask?.cancel()
+            showingHovercard = false
             browser.clearTabSelection()
             if live { browser.beginTabEdit(tab) } else { browser.select(tab) }
         })
@@ -1893,7 +1936,16 @@ private struct SideRow: View, Equatable {
         .overlay { if interactive { MiddleClick(act: close) } }
         .onHover(perform: hover)
         .onAppear { if interactive { Bench.rowAppeared(tab.id, hover: hover) } }
-        .onDisappear { if interactive { Bench.rowDisappeared(tab.id) } }
+        .onDisappear {
+            hoverTask?.cancel()
+            showingHovercard = false
+            if interactive { Bench.rowDisappeared(tab.id) }
+        }
+        .popover(isPresented: $showingHovercard, hangingFrom: prefs.sidebarOnRight ? .leading : .trailing) {
+            TabHovercard(browser: browser, tab: tab, isHoveringCard: $isHoveringCard) {
+                showingHovercard = false
+            }
+        }
         // Another space's tab come into this row (Browser.rowKey).
         .onChange(of: tab.id) { was, now in
             guard interactive else { return }
@@ -1917,7 +1969,31 @@ private struct SideRow: View, Equatable {
         .transition(.scale(scale: 0.94, anchor: .leading).combined(with: .opacity))
     }
 
-    private func hover(_ over: Bool) { hovering = over }
+    private func hover(_ over: Bool) {
+        hovering = over
+        hoverTask?.cancel()
+        guard interactive, !editing, !tab.isBlank else {
+            showingHovercard = false
+            return
+        }
+        if over {
+            let task = DispatchWorkItem {
+                if hovering {
+                    showingHovercard = true
+                }
+            }
+            hoverTask = task
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.38, execute: task)
+        } else {
+            let task = DispatchWorkItem {
+                if !hovering && !isHoveringCard {
+                    showingHovercard = false
+                }
+            }
+            hoverTask = task
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: task)
+        }
+    }
 
     @ViewBuilder
     private var ground: some View {

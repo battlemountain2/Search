@@ -779,6 +779,9 @@ private struct TabPill: View, Equatable {
     }
 
     @State private var hovering = false
+    @State private var showingHovercard = false
+    @State private var isHoveringCard = false
+    @State private var hoverTask: DispatchWorkItem?
     @State private var shake: CGFloat = 0
     @State private var pressed = false
     private var pinned: Bool { tab.pin != nil && !editing }
@@ -861,6 +864,8 @@ private struct TabPill: View, Equatable {
         // once. Change Letter in the menu covers the rest.
         .modifier(OneClick(double: live && pinned) {
             guard TabClick.flags.intersection([.command, .shift, .option]).isEmpty else { return }
+            hoverTask?.cancel()
+            showingHovercard = false
             browser.clearTabSelection()
             if live && pinned {
                 browser.goHome(tab)
@@ -873,7 +878,16 @@ private struct TabPill: View, Equatable {
         .modifier(ModifiedTabClick { if !editing { browser.extendTabSelection(to: tab, modifiers: $0) } })
         .modifier(OptionClick { if !editing { browser.optionClick(tab) } })
         .overlay { MiddleClick(act: close) }
-        .onHover { hovering = $0 }
+        .onHover(perform: hover)
+        .onDisappear {
+            hoverTask?.cancel()
+            showingHovercard = false
+        }
+        .popover(isPresented: $showingHovercard, hangingFrom: .bottom) {
+            TabHovercard(browser: browser, tab: tab, isHoveringCard: $isHoveringCard) {
+                showingHovercard = false
+            }
+        }
         .contextMenu { TabMenu(browser: browser, tab: tab, close: close) }
         .help(pinned || compact ? tab.label : "")
         .animation(nil, value: hovering)
@@ -887,6 +901,32 @@ private struct TabPill: View, Equatable {
         }
         // Arriving and leaving from the strip rather than from nowhere.
         .transition(.scale(scale: 0.9, anchor: .leading).combined(with: .opacity))
+    }
+
+    private func hover(_ over: Bool) {
+        hovering = over
+        hoverTask?.cancel()
+        guard !editing, !lettering, !tab.isBlank else {
+            showingHovercard = false
+            return
+        }
+        if over {
+            let task = DispatchWorkItem {
+                if hovering {
+                    showingHovercard = true
+                }
+            }
+            hoverTask = task
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.38, execute: task)
+        } else {
+            let task = DispatchWorkItem {
+                if !hovering && !isHoveringCard {
+                    showingHovercard = false
+                }
+            }
+            hoverTask = task
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: task)
+        }
     }
 
     @ViewBuilder

@@ -2103,6 +2103,25 @@ final class Browser: NSObject, ObservableObject {
     /// while the rows are off: they are drawn as squares then.
     var listedPins: [Tab] { prefs.showsPinRows ? tabs.filter { $0.pin != nil && $0.listed } : [] }
 
+    /// Toggle pinned status for a tab.
+    func togglePin(_ tab: Tab) {
+        if tab.pin != nil {
+            unpin(tab)
+        } else {
+            pin(tab)
+        }
+    }
+
+    /// Proxy to support spec-conforming `browser.pins.toggle(tab)`.
+    var pins: PinsProxy { PinsProxy(browser: self) }
+
+    struct PinsProxy {
+        let browser: Browser
+        func toggle(_ tab: Tab) {
+            browser.togglePin(tab)
+        }
+    }
+
     /// `listed`: as a row under the squares rather than as a square.
     func pin(_ tab: Tab, listed: Bool = false) {
         // Drawn again even when the tab stays where it is (see unpin).

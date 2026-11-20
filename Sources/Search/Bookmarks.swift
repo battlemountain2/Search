@@ -273,8 +273,40 @@ final class Bookmarks {
         return made
     }
 
+    /// Add a bookmark directly for a tab.
+    @discardableResult
+    func add(_ tab: Tab) -> Bookmark? {
+        guard let url = tab.address else { return nil }
+        return add(url, title: tab.title)
+    }
+
+    /// Toggle bookmark state for a tab.
+    func toggle(_ tab: Tab) {
+        guard let url = tab.address else { return }
+        if contains(url) {
+            remove(url: url)
+        } else {
+            add(url, title: tab.title)
+        }
+    }
+
     func contains(_ url: URL) -> Bool {
         kept.contains(url.absoluteString)
+    }
+
+    func remove(url: URL) {
+        let target = url.absoluteString
+        roots = Bookmarks.pruneURL(target, from: roots)
+        save()
+    }
+
+    private static func pruneURL(_ urlString: String, from nodes: [Bookmark]) -> [Bookmark] {
+        nodes.compactMap { node in
+            if node.url == urlString { return nil }
+            var copy = node
+            if let kids = node.children { copy.children = pruneURL(urlString, from: kids) }
+            return copy
+        }
     }
 
     func remove(_ id: Bookmark.ID) {

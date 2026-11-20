@@ -647,6 +647,25 @@ final class Tab: ObservableObject, Identifiable {
         if let built { Muter.set(muted, on: built) }
     }
 
+    /// Whether this tab has any media element (noisy, playing video, stilled or muted).
+    var hasMedia: Bool {
+        noisy || playingVideo || stilled || muted
+    }
+
+    /// Whether this tab is currently actively producing audio.
+    var isPlayingAudio: Bool {
+        noisy
+    }
+
+    /// Toggle media playback: resumes if stilled or quiet, pauses if playing.
+    func togglePlayback() {
+        if stilled || !noisy {
+            playAgain()
+        } else {
+            still()
+        }
+    }
+
     /// What the page hands back when you point at something and click it.
     var onPick: ((Tab, String, String, String) -> Void)?
     /// The page has a sign-in on it; the page has just sent one.
@@ -1704,6 +1723,22 @@ final class Tab: ObservableObject, Identifiable {
         let configuration = WKSnapshotConfiguration()
         configuration.snapshotWidth = NSNumber(value: Double(width))
         built.takeSnapshot(with: configuration) { image, _ in done(image) }
+    }
+
+    /// Convenience wrapper for previews and hovercards without waking WebContent.
+    func snapshotImage(width: CGFloat = 260, _ done: @escaping (NSImage?) -> Void) {
+        preview(width: width, done)
+    }
+
+    /// Put this tab to sleep, utilizing the browser's sleep pipeline or taking a snapshot.
+    func sleep(in browser: Browser? = nil) {
+        if let browser {
+            browser.sleep(self)
+        } else if !asleep {
+            snapshot { [weak self] picture in
+                self?.sleep(picture: picture)
+            }
+        }
     }
 
     /// `scale`: pixels to a point, written as the picture's density (72 a
