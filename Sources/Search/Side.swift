@@ -368,16 +368,11 @@ struct SideBar: View {
         .onAppear { SpaceSwipe.shared.start(for: browser) }
         .background {
             ZStack {
-                if !browser.glassUnder {
-                    if !onFrame {
-                        VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
-                        Color.black.opacity(prefs.zenDarkGlass ? 0.18 : 0.08)
-                    } else {
-                        Palette.frame
-                    }
+                if !onFrame {
+                    VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
+                    Color.black.opacity(prefs.zenDarkGlass ? 0.18 : 0.08)
                 }
                 if landing { greys.hover }
-                if !browser.glassUnder { SpaceWash(look: browser.wash) }
                 if prefs.splitView {
                     SplitDropZone(browser: browser, tab: nil, kind: .strip)
                 }
