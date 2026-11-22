@@ -798,6 +798,67 @@ enum ExtensionShims {
       // refused. Those are handed over with each such fetch; the browser
       // applies what matches, only to an address the extension has.
       const headerRules = new Map();
+      // Chrome tells an extension of its own requests too: a webRequest
+      // listener in its worker hears the worker's fetch, tab -1. WebKit
+      // tells of the requests tabs make, and one the browser sends for the
+      // extension (ExtensionFetch) no engine sees at all. Similarweb's
+      // worker learns who you are from a fetch of its own and reads the
+      // Cookie header of that very request in onSendHeaders, to keep
+      // "mixpanelCookie", an empty object when there is no such cookie; its
+      // panel reads `.distinct_id` of what was kept, and with nothing kept
+      // threw, its spinner turning for good. So the listeners for what is
+      // sent are kept here as they are added, and told of each fetch the
+      // browser sends from this same page or worker, with the headers that
+      // went out (the Cookie header only to one that asked for
+      // "extraHeaders", as in Chrome).
+      const ownRequests = { onBeforeSendHeaders: [], onSendHeaders: [] };
+      // A match pattern against an address, as webRequest's filter reads one.
+      const patternMatches = (pattern, url) => {
+        if (pattern === "<all_urls>") return /^https?:$/.test(url.protocol);
+        const parts = /^(\*|https?):\/\/(\*|(?:\*\.)?[^/*]+)(\/.*)$/.exec(String(pattern));
+        if (!parts || !/^https?:$/.test(url.protocol)) return false;
+        if (parts[1] !== "*" && parts[1] + ":" !== url.protocol) return false;
+        // A pattern names no port and matches them all.
+        const host = parts[2].toLowerCase(), name = url.hostname.toLowerCase();
+        if (host !== "*" && (host.startsWith("*.") ? name !== host.slice(2) && !name.endsWith(host.slice(1)) : name !== host)) return false;
+        const path = new RegExp("^" + parts[3].split("*").map((p) => p.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*") + "$");
+        return path.test(url.pathname + url.search);
+      };
+      const hearsOwn = (entry, address) => {
+        const filter = entry.filter || {};
+        if (filter.tabId !== undefined && filter.tabId !== -1) return false;
+        if (filter.windowId !== undefined && filter.windowId !== -1) return false;
+        if (Array.isArray(filter.types) && !filter.types.includes("xmlhttprequest")) return false;
+        let url;
+        try { url = new URL(address); } catch (e) { return false; }
+        return Array.isArray(filter.urls) && filter.urls.some((p) => patternMatches(p, url));
+      };
+      // What the browser is asked to say of a fetch it sends: nothing with
+      // no listener here, else that it went ("sent"), with its headers
+      // ("headers"), the Cookie header among them ("extra").
+      const ownTell = () => {
+        let tell;
+        for (const key of Object.keys(ownRequests)) for (const entry of ownRequests[key]) {
+          if (!entry.spec.includes("requestHeaders")) { tell = tell || "sent"; continue; }
+          if (entry.spec.includes("extraHeaders")) return "extra";
+          tell = "headers";
+        }
+        return tell;
+      };
+      // Each listener in a turn of its own, in the order Chrome keeps: one
+      // that throws stops neither the others nor the fetch.
+      const tellOwn = (number, sent) => {
+        for (const key of Object.keys(ownRequests)) for (const entry of ownRequests[key].slice()) {
+          if (!hearsOwn(entry, sent.url)) continue;
+          const details = { requestId: String(number), url: sent.url, method: sent.method, frameId: -1, parentFrameId: -1,
+                            tabId: -1, type: "xmlhttprequest", timeStamp: Date.now(), initiator: root.location.origin };
+          if (entry.spec.includes("requestHeaders")) {
+            details.requestHeaders = (sent.headers || []).filter((h) => entry.spec.includes("extraHeaders") || String(h[0]).toLowerCase() !== "cookie")
+              .map((h) => ({ name: h[0], value: h[1] }));
+          }
+          setTimeout(() => { if (ownRequests[key].includes(entry)) entry.listener(details); }, 0);
+        }
+      };
       // Chrome's worker has no background page to get: neither
       // extension.getBackgroundPage nor runtime.getBackgroundPage is there.
       // WebKit has both, and code that tells its background from its pages
@@ -858,23 +919,33 @@ enum ExtensionShims {
       // pages, so a page is given one that posts to the worker over the same
       // channel, and a message either way says who sent it. A port handed
       // over with a message can't cross the channel: it stays with the
-      // sender, and what is posted to the one the other side is given comes
-      // back over the channel to it.
+      // sender, and each side keeps its end under the same key, so what is
+      // posted on either end comes out of the other — both ways, as in
+      // Chrome (Zotero's offscreen page says it is ready on its port). Each
+      // message says which side it is for: two pages at one address both
+      // hold a port the worker hands "that page", and neither is the worker.
       const clientsChannel = typeof BroadcastChannel === "function" && !inContent && !embedded ? new BroadcastChannel("search-clients") : null;
       const heldPorts = new Map();
+      const side = worker ? "worker" : "page", other = worker ? "page" : "worker";
       const handOver = (transfer) => (Array.isArray(transfer) ? transfer : (transfer && transfer.transfer) || [])
         .filter((p) => p instanceof MessagePort)
-        .map((port) => { const key = Math.random().toString(36).slice(2); heldPorts.set(key, port); return key; });
+        .map((port) => {
+          const key = Math.random().toString(36).slice(2);
+          heldPorts.set(key, port);
+          port.onmessage = (e) => { try { clientsChannel.postMessage({ port: key, to: other, data: e.data }); } catch (x) {} };
+          return key;
+        });
       const answered = (data) => {
         if (typeof data.port !== "string") return false;
-        const port = heldPorts.get(data.port);
+        const port = data.to === side ? heldPorts.get(data.port) : null;
         if (port) port.postMessage(data.data);
         return true;
       };
       const messageFrom = (source, data, keys) => {
         const ports = (Array.isArray(keys) ? keys : []).map((key) => {
           const pair = new MessageChannel();
-          pair.port1.onmessage = (e) => clientsChannel.postMessage({ port: key, data: e.data });
+          heldPorts.set(key, pair.port1);
+          pair.port1.onmessage = (e) => clientsChannel.postMessage({ port: key, to: other, data: e.data });
           return pair.port2;
         });
         const event = new MessageEvent("message", { data, ports, origin: location.origin });
@@ -916,14 +987,24 @@ enum ExtensionShims {
           if (!data || answered(data) || data.url !== location.href) return;
           try { container.dispatchEvent(messageFrom(controller, data.data, data.ports)); } catch (e) {}
         };
-        // Only the controller: `ready` is left as WebKit has it, since a
-        // made-up registration has none of a real one's methods
-        // (showNotification…), and a page calling them would throw where it
-        // used to wait.
+        // `ready` brings WebKit's own registration, with every method a real
+        // one has (a made-up one would throw at showNotification…), but its
+        // `active` is the stand-in: WebKit's never reaches the extension's
+        // worker, and pages post to it as Chrome's docs show (Zotero does).
         if (controller) {
           kept.add(container);
           let own = controller;
           try { Object.defineProperty(container, "controller", { configurable: true, get: () => own }); } catch (e) {}
+          const readyOf = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(container), "ready");
+          if (readyOf && typeof readyOf.get === "function") {
+            let ready = null;
+            try {
+              Object.defineProperty(container, "ready", { configurable: true, get: () => ready || (ready = readyOf.get.call(container).then((registration) => {
+                if (registration) { try { Object.defineProperty(registration, "active", { configurable: true, get: () => controller }); } catch (e) {} }
+                return registration;
+              })) });
+            } catch (e) {}
+          }
           // A page that, told a worker controls it, loads a script of its
           // own the extension doesn't ship counts on that worker's fetch
           // handler to make it, as Chrome lets it: Stylus's popup writes in
@@ -1074,12 +1155,15 @@ enum ExtensionShims {
         const fetch = function fetch(input, init) {
           const self = this, args = arguments;
           // Read cheaply first: only credentials "include" is the browser's,
-          // and from a page "same-origin", the default, too: Chrome counts a
-          // granted host as the extension's own origin, so its cookies go
-          // with a plain fetch there. Save to Notion's popup asks Notion's
-          // API so and, given no session, said "Log in" while its tabs were
-          // signed in. Not yet from the worker, whose plain fetches are many
-          // (images, an app on the Mac polled with a short timeout).
+          // and "same-origin", the default, too: Chrome counts a granted
+          // host as the extension's own origin, so its cookies go with a
+          // plain fetch there. Save to Notion's popup asks Notion's API so
+          // and, given no session, said "Log in" while its tabs were signed
+          // in. From the worker as from a page: Brandsearch's asks its site
+          // for the account with its token and no word about credentials,
+          // the site lets a request in on its session cookie alone, and
+          // without it answered with its sign-in page, which the panel read
+          // as the account: it stayed grey.
           // Any other fetch goes on untouched, its body unread.
           let credentials;
           try {
@@ -1100,7 +1184,7 @@ enum ExtensionShims {
               return /^https?:$/.test(u.protocol) && ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
             } catch (e) { return false; }
           };
-          if (credentials !== "include" && (worker || credentials !== "same-origin") && !(worker && loopback())) {
+          if (credentials !== "include" && credentials !== "same-origin" && !(worker && loopback())) {
             return original.apply(self, args);
           }
           // A copy to read, so the page's own Request keeps its body for
@@ -1114,14 +1198,14 @@ enum ExtensionShims {
             if (request.method !== "GET" && request.method !== "HEAD") {
               try { body = encode(new Uint8Array(await request.arrayBuffer())); } catch (e) { return original.apply(self, args); }
             }
-            const id = ++sequence + "-" + Math.random().toString(36).slice(2);
+            const number = ++sequence, id = number + "-" + Math.random().toString(36).slice(2);
             const hello = { fetch: id, url: request.url, method: request.method, headers: [...request.headers], body,
                             redirect: request.redirect, userAgent: navigator.userAgent, credentials,
-                            headerRules: headerRules.size ? [...headerRules.values()] : undefined };
+                            headerRules: headerRules.size ? [...headerRules.values()] : undefined, tell: ownTell() };
             return await new Promise((resolve, reject) => {
               let port;
               try { port = connect("search.fetch"); } catch (e) { resolve(original.apply(self, args)); return; }
-              let accepted = false, tries = 0, controller = null, done = false;
+              let accepted = false, tries = 0, bounced = 0, controller = null, done = false;
               const close = () => { try { port.disconnect(); } catch (e) {} };
               // The browser never took it: WebKit's fetch, as without it. Not
               // for a request that changes something, which may already have
@@ -1147,7 +1231,15 @@ enum ExtensionShims {
               };
               port.onMessage.addListener((m) => {
                 if (!m || done) return;
+                // A worker's first words on a port can come back to it
+                // instead of reaching the browser (see below). Said again
+                // at once rather than at `again`'s next turn, 100 ms on: a
+                // worker's plain fetches are many.
+                if (m.fetch === id) { if (!accepted && bounced++ < 5) { try { port.postMessage(hello); } catch (e) {} } return; }
                 if (m.accepted === id) { accepted = true; return; }
+                // Gone out, and again at each redirect followed: for this
+                // page's or worker's own webRequest listeners (ownRequests).
+                if (m.sent) { accepted = true; tellOwn(number, m.sent); return; }
                 if (m.pass) { done = true; close(); resolve(original.apply(self, args)); return; }
                 if (m.head && m.head.opaqueRedirect) {
                   // redirect: "manual", as Chrome answers it: a response of
@@ -2200,9 +2292,62 @@ enum ExtensionShims {
         if (root.HTMLIFrameElement && runtime && typeof runtime.getURL === "function") {
           const ownBase = runtime.getURL("");
           const given = new WeakMap();
+          // One of the extension's pages in a frame that itself stands in
+          // an empty frame, as Similarweb's panel does: a frame with no
+          // address, out of reach of the site's styles, and the panel's
+          // page in a frame inside it. WebKit checks
+          // web_accessible_resources against the address of the frame just
+          // above (WebExtensionURLSchemeHandler), there about:blank, which
+          // no pattern matches: the page is refused without a word, the
+          // frame stays blank, and Similarweb, waiting for it to load,
+          // never slid its panel in — its button did nothing. Chrome
+          // checks against the site the empty frame has its origin from.
+          //
+          // A document opened by a script of another takes that one's
+          // address (document.open), in WebKit's own record of the frame
+          // too. So the empty frame is opened and closed from here, its
+          // content lifted out before and put back after: the same nodes,
+          // with all that was set on them. Put back, the frame inside
+          // loads again and is let through, checked against the site as
+          // Chrome checks it. Closing fires `load` on the empty frame once
+          // more, a moment later; the extension, which built its panel
+          // when it first loaded, would build a second: that one event
+          // stops here. Not from a script that is in an empty frame
+          // itself: its own address is no better.
+          const empty = (d) => !!d && /^about:(blank|srcdoc)/.test(d.URL);
+          const house = (frame) => {
+            if (!frame.isConnected) return false;
+            const d = frame.ownerDocument;
+            const above = d !== document && empty(d) && !empty(document) && d.defaultView && d.defaultView.frameElement;
+            if (!above) return true;
+            const content = d.documentElement;
+            const hush = (event) => { event.stopImmediatePropagation(); heard(); };
+            const heard = () => above.removeEventListener("load", hush, true);
+            above.addEventListener("load", hush, true);
+            setTimeout(heard, 2000);
+            try {
+              if (content) d.removeChild(content);
+              d.open();
+              d.close();
+            } catch (e) { heard(); }
+            try {
+              if (content && !content.parentNode) {
+                if (d.documentElement) d.replaceChild(content, d.documentElement); else d.appendChild(content);
+              }
+            } catch (e) {}
+            return true;
+          };
+          // Given its address before it is put in a document, more often
+          // than after: looked at once the script that did both is done,
+          // and a few times more for one put in later.
+          const settle = (frame, waits) => {
+            if (house(frame) || !waits.length) return;
+            setTimeout(() => settle(frame, waits.slice(1)), waits[0]);
+          };
           const remember = (frame, value) => {
             const address = String(value);
             if (address.startsWith(ownBase)) given.set(frame, address); else given.delete(frame);
+            if (given.has(frame)) Promise.resolve().then(() => settle(frame, [0, 50, 250, 1000]));
           };
           const proto = HTMLIFrameElement.prototype;
           const d = Object.getOwnPropertyDescriptor(proto, "src");
@@ -3917,6 +4062,14 @@ enum ExtensionShims {
         const target = chrome.webRequest[key];
         if (!/^on[A-Z]/.test(key) || !target || typeof target.addListener !== "function") continue;
         const add = target.addListener.bind(target);
+        const own = ownRequests[key];
+        if (own && typeof target.removeListener === "function") {
+          const remove = target.removeListener.bind(target);
+          put(target, "removeListener", (listener) => {
+            for (let i = own.length - 1; i >= 0; i--) if (own[i].listener === listener) own.splice(i, 1);
+            return remove(listener);
+          });
+        }
         put(target, "addListener", (listener, filter, spec) => {
           // WebKit can't read ws:// and wss:// patterns, and refuses the
           // whole listener over one; Chrome watches sockets too. The
@@ -3940,6 +4093,11 @@ enum ExtensionShims {
           // it — a listener for every request can't join the late list
           // (it would wake the worker for all of them).
           const late = (e) => { if (!/startup/i.test(String(e && e.message))) throw e; };
+          // Kept for the extension's own fetches too (ownRequests), added
+          // late or not: the worker is awake when it fetches.
+          if (own && typeof listener === "function" && !own.some((e) => e.listener === listener)) {
+            own.push({ listener, filter, spec: Array.isArray(spec) ? spec.slice() : [] });
+          }
           try {
             if (!Array.isArray(spec)) return add(listener, filter);
             const kept = spec.filter((s) => s === "requestHeaders" || s === "responseHeaders" || s === "requestBody");
@@ -4668,6 +4826,21 @@ enum ExtensionShims {
 
       // Members of namespaces WebKit has.
       if (chrome.i18n && !chrome.i18n.detectLanguage) put(chrome.i18n, "detectLanguage", call("i18n.detectLanguage"));
+      // WebKit's i18n functions answer null (getMessage) when called loose, off
+      // their object: `const t = chrome.i18n.getMessage; t("key")` — how Monarch
+      // Money's bundle reads every string, so its options page had no text.
+      // Chrome's are plain functions. Bound to their object, as Chrome's act.
+      for (const ns of new Set([chrome.i18n, root.browser && root.browser.i18n])) {
+        if (!ns) continue;
+        for (const key of ["getMessage", "getUILanguage", "detectLanguage", "getAcceptLanguages"]) {
+          const fn = ns[key];
+          if (typeof fn === "function" && !fn.__searchBound) {
+            const bound = function () { return fn.apply(ns, arguments); };
+            try { Object.defineProperty(bound, "__searchBound", { value: true }); } catch (e) {}
+            put(ns, key, bound);
+          }
+        }
+      }
       if (runtime && !runtime.getContexts) put(runtime, "getContexts", call("runtime.getContexts"));
 
       // Chrome's old FileSystem API — requestFileSystem, entries, FileWriter and
@@ -5387,8 +5560,19 @@ enum ExtensionShims {
             return kids.enumerated().map { node($1, parent: key, index: $0, deep: false) }
         case "bookmarks.get":
             let keys = (first as? [String]) ?? (first as? String).map { [$0] } ?? []
-            return keys.compactMap { key in
-                find(key, in: browser.bookmarks.roots).map { node($0.node, parent: $0.parent, index: $0.index, deep: false) }
+            // The root and the bar answer too: every top-level bookmark names
+            // "1" as its parent, and sync extensions such as Floccus walk
+            // parentId up with get until a node has none.
+            // An id that names nothing is an error, as in Chrome, not an empty
+            // answer: Floccus asks for Firefox's "root________" and falls back
+            // to getTree only when that fails.
+            return try keys.map { key in
+                if key == "0" { return root(browser.bookmarks.roots, deep: false) }
+                if key == "1" { return bar(browser.bookmarks.roots, deep: false) }
+                guard let hit = find(key, in: browser.bookmarks.roots) else {
+                    throw Unsupported(what: "Can't find bookmark for id.")
+                }
+                return node(hit.node, parent: hit.parent, index: hit.index, deep: false)
             }
         case "bookmarks.getRecent":
             let count = (first as? Int) ?? 10
@@ -6439,8 +6623,10 @@ enum ExtensionShims {
         return out
     }
 
-    private static func root(_ roots: [Bookmark]) -> [String: Any] {
-        ["id": "0", "title": "", "dateAdded": 0, "syncing": false, "children": [bar(roots)]]
+    private static func root(_ roots: [Bookmark], deep: Bool = true) -> [String: Any] {
+        var out: [String: Any] = ["id": "0", "title": "", "dateAdded": 0, "syncing": false]
+        if deep { out["children"] = [bar(roots)] }
+        return out
     }
 
     private static func visit(_ trace: History.Trace) -> [String: Any] {

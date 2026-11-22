@@ -57,6 +57,11 @@ def main():
              any(v == "Strip" for _, v, _, _ in free), [p for p in across if p[1] == "Strip"][:4])
         t.ok("tabs: the strip's own run never holds the window",
              not any(v == "Strip" for _, v, _, _ in held), [p for p in held if p[1] == "Strip"][:4])
+        tab = next((x for x, v, m, _ in held if v not in ("Strip", "", "NSButton")), None)
+        if tab is not None:
+            v, movable, _ = at(tab, 6)
+            t.ok("tabs: above a tab the window is movable (the row's scroll view took it, #1321)",
+                 movable and v == "Strip", (tab, v, movable))
         if lights:
             v, movable, _ = at(lights[2][0] + 6, lights[2][1])
             t.ok("tabs: over the lights the window is movable (the green button's tiling)", movable, v)
@@ -70,6 +75,10 @@ def main():
         probe = sv.cmd({"do": "probe"})
         lights = probe.get("lights") or []
         y = lights[0][1] if lights else 20
+        # Under the band, the page lies in AppKit's title bar: the window
+        # holds still there until the page has said it has nothing under
+        # the pointer (idea 935), so the pointer comes there first.
+        at(600, y); time.sleep(0.5)
         v, movable, _ = at(600, y)
         t.ok("column: the band along the top over the page is movable", movable, v)
         v, movable, _ = at(200, y)

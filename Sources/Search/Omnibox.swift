@@ -9,6 +9,9 @@ final class FieldState: ObservableObject {
     @Published var offers: [Suggestion] = []
     @Published var ending: String?
     @Published var picked: Int?
+    /// The row was picked by what was typed (Arc-style tab popup), not by
+    /// the arrow keys: Return takes it, and the field keeps what was typed.
+    @Published var pickedByTyping = false
     @Published var siteOffer: SearchSite?
 }
 
@@ -34,18 +37,26 @@ struct Omnibox: View {
     var fitted = false
     /// The page whose pane this field stands on, with Split View on.
     var tab: Tab.ID?
+    /// Only the list, as wide as this, for the address line's field
+    /// (AddressLine.swift), which stands where the line is.
+    var listOnly: CGFloat?
 
-    init(browser: Browser, over: Bool, fitted: Bool = false, tab: Tab.ID? = nil) {
+    init(browser: Browser, over: Bool, fitted: Bool = false, tab: Tab.ID? = nil, listOnly: CGFloat? = nil) {
         self.browser = browser
         self.typing = browser.typing
         self.over = over
         self.fitted = fitted
         self.tab = tab
+        self.listOnly = listOnly
     }
 
     var body: some View {
         Group {
-            if fitted {
+            if let width = listOnly {
+                if browser.fieldShowing, !browser.offers.isEmpty || browser.siteOffer != nil || browser.switcherNote != nil {
+                    list.frame(width: width)
+                }
+            } else if fitted {
                 GeometryReader { geometry in
                     content(width: min(Metrics.fieldWidth, max(0, geometry.size.width - 28)))
                 }
@@ -59,8 +70,9 @@ struct Omnibox: View {
     private func content(width: CGFloat) -> some View {
         ZStack {
             // Keep the container mounted: only the field scales, while the
-            // page's cover fades without pulling its edges into view.
-            if browser.fieldShowing {
+            // page's cover fades without pulling its edges into view. Not
+            // while the address line has the field (AddressLine.swift).
+            if browser.fieldShowing, !browser.editingInline {
                 if over {
                     // The page is still there, just out of the way.
                     Rectangle()
@@ -119,8 +131,10 @@ struct Omnibox: View {
                     // A slow, almost invisible breath under the field. It is
                     // the only thing on an empty tab, and a thing that never
                     // moves at all reads as a picture of an app rather than
-                    // an app.
-                    Breath()
+                    // an app. Not over a theme (Settings › Themes): the wall
+                    // moves the eye already, and the ink's haze lay over a
+                    // picture as a white or dark smudge (idea 952).
+                    UnlessThemed(over: over) { Breath() }
 
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(Palette.ground)
@@ -255,6 +269,11 @@ struct Omnibox: View {
                     // Kept by you, not only visited: the bookmark's mark,
                     // at the end now that the site's icon leads the row.
                     symbol("bookmark")
+                } else if offer.kind == .elsewhere {
+                    // Open on another device: iCloud Tabs' mark.
+                    symbol("laptopcomputer.and.iphone")
+                } else if offer.pinned {
+                    symbol("pin")
                 }
             }
             .padding(.horizontal, 12)
@@ -362,6 +381,27 @@ private struct SiteOfferRow: View {
     }
 }
 
+/// Its content only where no theme is behind the field: over a page (⌘L) or
+/// on a plain blank tab. A view of its own, so only it watches the settings.
+private struct UnlessThemed<Content: View>: View {
+    let over: Bool
+    @ViewBuilder let content: () -> Content
+    @ObservedObject private var prefs = Shared.prefs
+
+    var body: some View {
+        if over || !themed { content() }
+    }
+
+    /// A chosen picture that can't be read shows as Off (HomeBackground).
+    private var themed: Bool {
+        switch prefs.homeTheme {
+        case .off: return false
+        case .custom: return HomeBackground.load(prefs.homeThemeImage) != nil
+        default: return true
+        }
+    }
+}
+
 /// The breath under the field: a soft shape of ink, blurred, moved by Core
 /// Animation. Animated by SwiftUI, it was drawn again on the main thread
 /// every frame for as long as an empty tab was showing — 18% of a core with
@@ -455,11 +495,14 @@ struct AddressField: NSViewRepresentable {
     @ObservedObject private var typing: FieldState
     /// The pane's page, for a field standing on one (see Coordinator.focus).
     var tab: Tab.ID?
+    /// Its type, smaller in the address line (AddressLine.swift).
+    var size: CGFloat = 15.5
 
-    init(browser: Browser, tab: Tab.ID? = nil) {
+    init(browser: Browser, tab: Tab.ID? = nil, size: CGFloat = 15.5) {
         self.browser = browser
         self.typing = browser.typing
         self.tab = tab
+        self.size = size
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(browser: browser) }
@@ -478,7 +521,7 @@ struct AddressField: NSViewRepresentable {
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = .systemFont(ofSize: 15.5)
+        field.font = .systemFont(ofSize: size)
         field.textColor = Palette.NS.ink
         field.lineBreakMode = .byClipping
         field.cell?.usesSingleLineMode = true
@@ -489,7 +532,7 @@ struct AddressField: NSViewRepresentable {
         // SwiftUI picks its own colour for a placeholder, and on a pale ground
         // that colour was near-white.
         let words = Self.placeholderWords(for: browser)
-        field.placeholderAttributedString = Self.placeholder(words)
+        field.placeholderAttributedString = Self.placeholder(words, size: size)
         field.setAccessibilityLabel(Self.accessibilityName(for: browser))
         context.coordinator.placeheld = words
         return field
@@ -498,8 +541,10 @@ struct AddressField: NSViewRepresentable {
     /// What the empty field asks for: with a site put in it with Tab, the
     /// words to search that site for; otherwise an address, and where it
     /// will open, since the field looks the same whichever key raised it.
+    /// In the address bar there is no doubt where: it is the tab's own.
     private static func placeholderWords(for browser: Browser) -> String {
         if let site = browser.siteChip { return "Search \(site.name)" }
+        if browser.editingInline { return "Enter a web address" }
         switch browser.fieldMode {
         case .blank: return "Enter a web address"
         case .newTab: return "New tab: enter a web address"
@@ -519,11 +564,11 @@ struct AddressField: NSViewRepresentable {
         }
     }
 
-    private static func placeholder(_ words: String) -> NSAttributedString {
+    private static func placeholder(_ words: String, size: CGFloat) -> NSAttributedString {
         NSAttributedString(
             string: words,
             attributes: [
-                .font: NSFont.systemFont(ofSize: 15.5),
+                .font: NSFont.systemFont(ofSize: size),
                 .foregroundColor: NSColor(Palette.ink.opacity(0.3)),
             ]
         )
@@ -552,7 +597,7 @@ struct AddressField: NSViewRepresentable {
         let words = Self.placeholderWords(for: browser)
         if coordinator.placeheld != words {
             coordinator.placeheld = words
-            field.placeholderAttributedString = Self.placeholder(words)
+            field.placeholderAttributedString = Self.placeholder(words, size: size)
             field.setAccessibilityLabel(Self.accessibilityName(for: browser))
             DispatchQueue.main.async { coordinator.showPlaceholder(in: field) }
         }

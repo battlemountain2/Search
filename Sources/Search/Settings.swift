@@ -21,6 +21,7 @@ struct SettingsPanel: View {
     @ObservedObject private var updater = Updater.shared
     @ObservedObject private var shield = Shield.shared
     @ObservedObject private var sync = Sync.shared
+    @ObservedObject private var icloud = ICloudSync.shared
     /// The keys rows name, as Settings › Shortcuts has them now.
     @ObservedObject private var shortcuts = ShortcutStore.shared
     @State private var isDefault = Links.isDefault
@@ -43,12 +44,13 @@ struct SettingsPanel: View {
     @MainActor static var arcBefore: Preferences.ArcSetup?
 
     enum Page: String, CaseIterable, Identifiable {
-        case general, appearance, tabs, browsing, spaces, passwords, privacy, ai, extensions, keyboard, about
+        case general, appearance, themes, tabs, browsing, spaces, passwords, privacy, ai, extensions, keyboard, about
         var id: String { rawValue }
         var title: String {
             switch self {
             case .general: return "General"
             case .appearance: return "Appearance"
+            case .themes: return "Themes"
             case .tabs: return "Tabs"
             case .browsing: return "Browsing"
             case .spaces: return "Spaces & Pins"
@@ -64,6 +66,7 @@ struct SettingsPanel: View {
             switch self {
             case .general: return "gearshape"
             case .appearance: return "paintbrush"
+            case .themes: return "photo.artframe"
             case .tabs: return "square.on.square"
             case .browsing: return "globe"
             case .spaces: return "square.stack"
@@ -87,7 +90,7 @@ struct SettingsPanel: View {
         }
         /// The rail's three blocks: the browser, your data and tools, About.
         static var blocks: [[Page]] {
-            [[.general, .appearance, .tabs, .browsing, .spaces],
+            [[.general, .appearance, .themes, .tabs, .browsing, .spaces],
              [.passwords, .privacy] + (AI.shipped ? [.ai] : []) + [.extensions, .keyboard],
              [.about]]
         }
@@ -459,7 +462,8 @@ struct SettingsPanel: View {
             return mailHandler.map { "Email links from other apps go to \($0) now" } ?? item.detail
         case "downloads.folder":
             return prefs.downloads.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
-        case "sync": return sync.on ? sync.summary : item.detail
+        case "sync": return icloud.on ? "Off while Sync with iCloud is on" : sync.on ? sync.summary : item.detail
+        case "icloud": return icloud.summary(folderSyncOn: sync.on, otherwise: item.detail)
         case "search.engine": return searchDetail
         case "search.shift": return shiftDetail
         case "search.suggest": return suggestDetail
@@ -487,6 +491,7 @@ struct SettingsPanel: View {
         switch item.page {
         case .general: generalControl(item.id)
         case .appearance: appearanceControl(item.id)
+        case .themes: ThemesPage(prefs: prefs)
         case .tabs: tabsControl(item.id)
         case .browsing: browsingControl(item.id)
         case .spaces: spacesControl(item.id)
@@ -545,7 +550,27 @@ struct SettingsPanel: View {
             Pill("Bring Things Over…") { browser.lead(to: InternalPage(.importing)) }
         case "sync":
             // On asks for the folder first; cancelled, it stays off.
+            // Never with Sync with iCloud: the two would undo each other.
             Switch(on: Binding(get: { sync.on }, set: { $0 ? sync.choose() : sync.turnOff() }))
+                .disabled(icloud.on && !sync.on)
+                .opacity(icloud.on && !sync.on ? 0.4 : 1)
+        case "handoff": Switch(on: $prefs.handoff)
+        case "icloud":
+            // Off limits in a build not signed for iCloud, and while the
+            // folder sync is on.
+            let locked = !icloud.on && (!icloud.available || sync.on)
+            Switch(on: Binding(get: { icloud.on }, set: { $0 ? icloud.turnOn() : icloud.turnOff() }))
+                .disabled(locked)
+                .opacity(locked ? 0.4 : 1)
+        case "icloud.erase":
+            Pill("Delete…") {
+                let alert = NSAlert()
+                alert.messageText = "Delete Search's data from iCloud?"
+                alert.informativeText = "Open tabs, pins, spaces, bookmarks and settings leave iCloud for every device. What is on each device stays. Sync with iCloud turns off here and on your other devices."
+                alert.addButton(withTitle: "Delete")
+                alert.addButton(withTitle: "Cancel")
+                if alert.runModal() == .alertFirstButtonReturn { icloud.erase() }
+            }
         case "quit.confirm": Switch(on: $prefs.confirmsQuit)
         case "downloads.folder": Pill("Change…") { chooseFolder() }
         case "downloads.ask": Switch(on: $prefs.asksWhereToSave)
@@ -592,24 +617,49 @@ struct SettingsPanel: View {
         case "layout.cardsFullScreen": Switch(on: $prefs.cardsInFullScreen)
         case "zen.darkGlass": Switch(on: $prefs.zenDarkGlass)
         case "zen.borderless": Switch(on: $prefs.zenBorderless)
+        case "address.shown": Switch(on: $prefs.addressLine)
+        case "address.width": Segmented(options: AddressWidth.allCases.map { ($0, $0.title) }, selection: $prefs.addressWidth)
+        case "window.glass": Switch(on: $prefs.glass)
+        case "window.glass.style": Segmented(options: GlassStyle.allCases.map { ($0, $0.title) }, selection: $prefs.glassStyle)
+        case "window.glass.clear": Slider(value: $prefs.glassClear, in: 0...1).controlSize(.small).frame(width: 160)
+        case "window.glass.grain": Slider(value: $prefs.glassGrain, in: 0...1).controlSize(.small).frame(width: 160)
         case "toolbar.left": Switch(on: $prefs.navigationLeft)
         case "tabs.compact":
             Switch(on: Binding(
                 get: { prefs.compactStrip },
                 set: { on in withAnimation(Motion.glide) { prefs.compactStrip = on } }
             ))
+        case "tabs.liquid": Switch(on: $prefs.liquidTabs)
         case "sidebar.roomy":
             Switch(on: Binding(
                 get: { prefs.roomyTabs },
                 set: { on in withAnimation(Motion.glide) { prefs.roomyTabs = on } }
             ))
         case "sidebar.player": Switch(on: $prefs.showsPlayer)
+        case "sidebar.foldButton": Switch(on: $prefs.foldButton)
+        case "sidebar.narrowIcons":
+            Switch(on: Binding(
+                get: { prefs.narrowsToIcons },
+                // Off, the column has its titles back, and on again it starts
+                // with them rather than as a strip from long ago.
+                set: { on in withAnimation(Motion.glide) { prefs.narrowsToIcons = on; if !on { prefs.narrowed = false } } }
+            ))
+        case "sidebar.doorsUp":
+            Switch(on: Binding(
+                get: { prefs.doorsUp },
+                set: { on in withAnimation(Motion.glide) { prefs.doorsUp = on } }
+            ))
         case "glyph": Segmented(options: Glyph.allCases.map { ($0, $0.title) }, selection: $prefs.glyph)
         case "tabs.highContrast": Switch(on: $prefs.highContrastText)
         case "tabs.reading": Switch(on: $prefs.showsReading)
         case "tabs.give": Switch(on: $prefs.tabsGive)
         case "bookmarks.bar": Switch(on: $prefs.bookmarksBar)
         case "bookmarks.bar.newTab": Switch(on: $prefs.bookmarksBarOnNewTab)
+        case "bookmarks.side":
+            Switch(on: Binding(
+                get: { prefs.bookmarksInSidebar },
+                set: { on in withAnimation(Motion.glide) { prefs.bookmarksInSidebar = on } }
+            ))
         case "motion.light": Switch(on: $prefs.lightMotion)
         case "motion.instant": Switch(on: $prefs.instantMotion)
         case "note.split": Always()
@@ -631,10 +681,12 @@ struct SettingsPanel: View {
             .fixedSize()
         case "tabs.newAfterLast": Switch(on: $prefs.newTabAfterLast)
         case "tabs.closeGoesBack": Switch(on: $prefs.closeGoesBack)
+        case "home.grid": Switch(on: $prefs.homeGrid)
         case "tabs.undoReopens": Switch(on: $prefs.undoReopensTab)
         case "tabs.switcherBehindFirst": Switch(on: $prefs.switcherBehindFirst)
         case "tabs.switcherLeavesOutPins": Switch(on: $prefs.switcherLeavesOutPins)
         case "tabs.frontBeside": Switch(on: $prefs.frontLinksBeside)
+        case "tabs.swipeBackCloses": Switch(on: $prefs.swipeBackCloses)
         case "tabs.mirror": Switch(on: $prefs.mirrorsTabs)
         case "tabs.lazy": Switch(on: $prefs.lazyTabs)
         case "tabs.popupWindows": Switch(on: $prefs.popupWindows)
@@ -664,6 +716,7 @@ struct SettingsPanel: View {
                 get: { prefs.showsAddress },
                 set: { on in withAnimation(Motion.glide) { prefs.showsAddress = on } }
             ))
+        case "tabs.clickAddressOnly": Switch(on: $prefs.tabClickAddressOnly)
         case "note.groups", "note.awake": Always()
         default: EmptyView()
         }
@@ -727,6 +780,7 @@ struct SettingsPanel: View {
         case "pages.capture": Switch(on: $prefs.capturesPages)
         case "sites.styles": SiteStylesControl(prefs: prefs)
         case "autocorrect": Switch(on: $prefs.autocorrect)
+        case "inlinePredictions": Switch(on: $prefs.inlinePredictions)
         case "note.panel", "note.translate", "note.sitesearch", "note.links", "note.flick": Always()
         default: EmptyView()
         }
@@ -757,6 +811,8 @@ struct SettingsPanel: View {
         case "profiles": Pill("New Profile…") { ProfileMenu.askNew() }
         case "profiles.oneWindow": Switch(on: $prefs.profilesInOneWindow)
         case "spaces.links": Switch(on: $prefs.sendsLinksToSpaces)
+        case "spaces.buttons": Switch(on: $prefs.spaceButtons)
+        case "links.ask": Switch(on: $prefs.asksSpaceForLinks)
         case "pins.keep": Switch(on: $prefs.pinsKeepSite)
         case "pins.list": Switch(on: $prefs.listsPins)
         case "pins.asRow": Switch(on: $prefs.pinAsRow)
@@ -764,6 +820,7 @@ struct SettingsPanel: View {
         case "pins.commandNewTab": Switch(on: $prefs.pinCommandOpensTab)
         case "newtab.floating": Switch(on: $prefs.floatingNewTab)
         case "newtab.recent": Switch(on: $prefs.recentInNewTab)
+        case "newtab.arc": Switch(on: $prefs.arcTabPopup)
         case "commandbar": Switch(on: $prefs.commandBar)
         case "start.fresh": Switch(on: $prefs.startsFresh)
         case "note.sharedpins", "note.pinback": Always()
@@ -800,6 +857,7 @@ struct SettingsPanel: View {
         case "sites.keep": Switch(on: Binding(get: { !prefs.keepsSignIns }, set: { prefs.keepsSignIns = !$0 }))
         case "privacy.clickIDs": Switch(on: $prefs.removesClickIDs)
         case "privacy.gpc": Switch(on: $prefs.sendsPrivacySignal)
+        case "privacy.httpsFirst": Switch(on: $prefs.triesHTTPSFirst)
         case "notifications.ask": Switch(on: $prefs.siteNotifications)
         case "privacy.forget": Pill("Forget choices") { browser.forgetCaptureChoices() }
         case "clear.history": Pill("Clear") { browser.clearHistory() }
@@ -836,6 +894,8 @@ struct SettingsPanel: View {
         case "about.notes": Pill("What's New…") { browser.lead(to: InternalPage(.notes)) }
         case "bench": Switch(on: $prefs.bench)
         case "agents": Switch(on: $prefs.agents)
+        case "news.updates": OptInSettingsField(betaOnly: false) { _ = browser.open($0, foreground: true) }
+        case "news.iphone": OptInSettingsField(betaOnly: true) { _ = browser.open($0, foreground: true) }
         default: EmptyView()
         }
     }

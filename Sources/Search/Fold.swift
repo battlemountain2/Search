@@ -53,7 +53,24 @@ extension Browser {
         // not folded away. One folded before the switch was turned on comes
         // out first, as it always did.
         if prefs.shrinks, !folded {
-            withAnimation(Motion.glide) { prefs.sideIcons.toggle() }
+            // Narrowed to the strip by its edge: the titles come back, as
+            // pulling the edge out would bring them.
+            // The other spaces' rows, kept out of sight for a swipe, out of
+            // the column while its width glides: laid out again with it,
+            // with three spaces of 25 tabs the column moved on every other
+            // frame at best (idea 927, since 1.0.16: frames 20 ms apart at
+            // 120 Hz, 8 with one space). Made again once it rests, as after
+            // the edge is let go (SideBar.pages).
+            turnTicket += 1
+            let ticket = turnTicket
+            if !columnTurning { columnTurning = true }
+            withAnimation(Motion.glide) {
+                if prefs.narrowStrip { prefs.narrowed = false } else { prefs.sideIcons.toggle() }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                guard let self, ticket == self.turnTicket else { return }
+                self.columnTurning = false
+            }
             return
         }
         // Out over the page already (the pointer at the edge brought it):
@@ -189,16 +206,22 @@ extension Browser {
         guard !pages.isEmpty else { return }
         let sizes = pages.map(\.frame.size)
         let until = CFAbsoluteTimeGetCurrent() + 0.25
+        // Covered here, so the stage leaves them be (PaneStage.backPages).
+        pages.forEach { FoldCover.coming.add($0) }
         func resized() {
             let grown = zip(pages, sizes).filter { page, size in
                 page.frame.width > size.width + 0.5 || page.frame.height > size.height + 0.5
             }
             guard !grown.isEmpty else {
                 guard CFAbsoluteTimeGetCurrent() < until,
-                      zip(pages, sizes).allSatisfy({ $0.frame.size == $1 }) else { return }
+                      zip(pages, sizes).allSatisfy({ $0.frame.size == $1 }) else {
+                    pages.forEach { FoldCover.coming.remove($0) }
+                    return
+                }
                 DispatchQueue.main.async { MainActor.assumeIsolated { resized() } }
                 return
             }
+            pages.forEach { FoldCover.coming.remove($0) }
             var covers: [NSView] = []
             for (page, old) in grown {
                 for rect in undrawn(page, old: old) {
@@ -335,8 +358,10 @@ struct Fold: View {
     /// window's buttons alone: the menu bar and the title bar macOS brings
     /// down with it.
     static let fullScreenCorner: CGFloat = 60
-    /// The band along the top that is the title bar over the page.
-    private static let top: CGFloat = 8
+    /// The band along the top that is the title bar over the page. At 8
+    /// it was hard to find with the pointer; 12 is still under a page's
+    /// own first line of anything to click.
+    private static let top: CGFloat = 12
     /// How long the pointer rests on the edge before a column folded for
     /// good comes out. Long enough to cross the edge, short enough not to be
     /// waited for.
@@ -355,7 +380,8 @@ struct Fold: View {
             // to take hold of until the strip came down. Unfolded, the strip
             // is its own title bar, and no band lies over its tabs.
             if prefs.sidebar || folding, !browser.frontFillsHere {
-                DragStrip()
+                // Over the page, which keeps what it has to press there.
+                DragStrip(overPage: true)
                     .frame(height: Fold.top)
                     .frame(maxWidth: .infinity)
             }
@@ -408,7 +434,8 @@ struct Fold: View {
                     SideBar(browser: browser, prefs: prefs, onFrame: browser.asCards, onDrag: onDrag)
                         .frame(maxHeight: .infinity, alignment: .top)
                         .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true,
-                                             strength: browser.folded && browser.peeking ? 1 : 0))
+                                             strength: browser.folded && browser.peeking ? 1 : 0,
+                                             ground: !browser.glassUnder))
                         // Faded rather than slid under Reduce Motion with
                         // Slide the column in and out on (Browser.moveColumn).
                         .animation(Motion.fadesColumn ? .easeInOut(duration: Motion.fade) : nil) { column in
@@ -812,6 +839,8 @@ private struct FoldShadow: ViewModifier {
     /// page until the slide was over.
     var behind = false
     var strength: Double = 1
+    /// Left out where the window's glass is to show through (see Glass.swift).
+    var ground = true
 
     func body(content: Content) -> some View {
         if strength <= 0 {
@@ -819,11 +848,7 @@ private struct FoldShadow: ViewModifier {
         } else {
             let color = Color.black.opacity(0.14 * strength)
             if behind {
-                content.background {
-                    Rectangle()
-                        .fill(Color.black.opacity(0.01))
-                        .shadow(color: color, radius: 20, x: x, y: y)
-                }
+                content.background { (ground ? Palette.ground : Color.clear).shadow(color: color, radius: 20, x: x, y: y) }
             } else {
                 content.shadow(color: color, radius: 20, x: x, y: y)
             }
@@ -876,6 +901,11 @@ private final class Pointer {
 /// What a page has yet to draw while it grows (see Browser.cover): its
 /// own colour, never in the way of the pointer.
 final class FoldCover: NSView {
+    /// Pages about to grow with ⌘S, whose new room a cover is coming for:
+    /// the stage doesn't clear their ground for it as well (see
+    /// PaneStage.backPages).
+    @MainActor static let coming = NSHashTable<WKWebView>.weakObjects()
+
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override var isOpaque: Bool { true }
 }
