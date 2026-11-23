@@ -5187,7 +5187,23 @@ final class Browser: NSObject, ObservableObject {
 
         if tabs.count == 1 {
             if tab.isBlank {
-                NSApp.keyWindow?.performClose(nil)
+                if let nextSpace = otherSpaceWithTabs {
+                    typed = ""
+                    tab.draft = ""
+                    editing = false
+                    goToSpace(nextSpace)
+                } else {
+                    NSApp.keyWindow?.performClose(nil)
+                }
+            } else if !prefs.newTabAfterLast, let nextSpace = otherSpaceWithTabs {
+                remember(tab, at: 0)
+                tab.close()
+                let fresh = Tab(configuration: Web.configuration(space: spaceID))
+                adopt(fresh)
+                tabs = [fresh]
+                activeID = fresh.id
+                removeEmptyGroup(tab.groupID)
+                goToSpace(nextSpace)
             } else {
                 let fresh = Tab(configuration: Web.configuration(space: spaceID))
                 remember(tab, at: 0)
@@ -5226,6 +5242,11 @@ final class Browser: NSObject, ObservableObject {
                     tab.draft = ""
                     editing = false
                     focusRequest += 1
+                } else if let nextSpace = otherSpaceWithTabs {
+                    typed = ""
+                    tab.draft = ""
+                    editing = false
+                    goToSpace(nextSpace)
                 } else {
                     NSApp.keyWindow?.performClose(nil)
                 }

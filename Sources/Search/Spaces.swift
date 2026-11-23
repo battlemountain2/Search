@@ -775,6 +775,29 @@ extension Browser {
         return spaces.contains { $0.id == home } ? home : spaces.first?.id ?? home
     }
 
+    /// Another space that has open tabs or pins, if any.
+    var otherSpaceWithTabs: UUID? {
+        guard prefs.usesSpaces, spaces.count > 1 else { return nil }
+        let currentIndex = spaces.firstIndex { $0.id == spaceID } ?? 0
+
+        // Scan starting from adjacent neighbors (cycle forward)
+        let candidates = (1..<spaces.count).map { spaces[(currentIndex + $0) % spaces.count] }
+
+        for candidate in candidates {
+            if let row = parked[candidate.id] {
+                if row.tabs.contains(where: { !$0.isBlank || $0.pin != nil }) {
+                    return candidate.id
+                }
+            } else {
+                let saved = readRow(candidate.id)
+                if !saved.tabs.isEmpty && saved.tabs.contains(where: { $0.url != "about:blank" || $0.pin != nil }) {
+                    return candidate.id
+                }
+            }
+        }
+        return nil
+    }
+
     /// Whether a space can be deleted: any, as long as the profile keeps
     /// one. Its last is deleted with the profile (see SpaceMenu).
     func canDeleteSpace(_ id: UUID) -> Bool {
