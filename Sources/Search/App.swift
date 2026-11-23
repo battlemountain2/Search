@@ -628,18 +628,22 @@ struct ContentView: View {
             // The bookmarks bar, under the strip or beside the column's top —
             // there on the window's ground above the page's card, and no wider.
             if barShown {
+                let leadingGap = sideOnRight ? max(farGap, Metrics.cardGap) : (showZenTopBar ? (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap) : chrome.width)
+                let trailingGap = sideOnRight ? (showZenTopBar ? (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap) : chrome.width) : max(farGap, Metrics.cardGap)
                 BookmarksBar(browser: browser, bookmarks: browser.bookmarks, onFrame: cards)
-                    .padding(.leading, sideOnRight ? farGap : (showZenTopBar ? (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap) : chrome.width))
-                    .padding(.trailing, sideOnRight ? (showZenTopBar ? (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap) : chrome.width) : farGap)
+                    .padding(.leading, leadingGap)
+                    .padding(.trailing, trailingGap)
                     .padding(.top, showZenTopBar ? (6 + ZenTopBar.height + 2) : (cards ? 6 : band))
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
             // Zen-style dynamic top navigation bar above the web card
             if showZenTopBar {
+                let leadingGap = sideOnRight ? max(farGap, Metrics.cardGap) : (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap)
+                let trailingGap = sideOnRight ? (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap) : max(farGap, Metrics.cardGap)
                 ZenTopBar(browser: browser, prefs: browser.prefs)
-                    .padding(.leading, sideOnRight ? farGap : (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap))
-                    .padding(.trailing, sideOnRight ? (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap) : farGap)
+                    .padding(.leading, leadingGap)
+                    .padding(.trailing, trailingGap)
                     .padding(.top, 6)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -750,9 +754,17 @@ struct ContentView: View {
             }
             return CGSize(width: width, height: height)
         }
-        let bar = barShown ? barHeight : 0
-        let topBar = showZenTopBar ? zenHeight : 0
-        return CGSize(width: sidebar ? sideWidth : 0, height: band + topBar + bar)
+        let height: CGFloat
+        if showZenTopBar && barShown {
+            height = topGap + zenHeight + 2 + barHeight + 6
+        } else if showZenTopBar {
+            height = topGap + zenHeight + 6
+        } else if barShown {
+            height = topGap + barHeight + 6
+        } else {
+            height = band
+        }
+        return CGSize(width: sidebar ? sideWidth : 0, height: height)
     }
 
     /// The column's width folded away: the room ⌘S gives the page before

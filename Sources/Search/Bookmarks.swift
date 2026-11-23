@@ -227,8 +227,23 @@ final class Bookmarks {
     /// The sites of the top-level folder called Home, for a blank tab's grid
     /// (HomeGrid.swift): sixteen at most, four to a row.
     var homeSites: [Bookmark] {
-        let home = roots.first { $0.isFolder && $0.title.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare("Home") == .orderedSame }
-        return Array((home?.children ?? []).filter { !$0.isFolder && $0.address != nil }.prefix(16))
+        if let home = roots.first(where: { $0.isFolder && $0.title.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare("Home") == .orderedSame }) {
+            let list = (home.children ?? []).filter { !$0.isFolder && $0.address != nil }
+            if !list.isEmpty { return Array(list.prefix(16)) }
+        }
+        if let favs = roots.first(where: { $0.isFolder && ["favorites", "favourite", "favourites"].contains($0.title.trimmingCharacters(in: .whitespaces).lowercased()) }) {
+            let list = (favs.children ?? []).filter { !$0.isFolder && $0.address != nil }
+            if !list.isEmpty { return Array(list.prefix(16)) }
+        }
+        let direct = roots.filter { !$0.isFolder && $0.address != nil }
+        if !direct.isEmpty {
+            return Array(direct.prefix(16))
+        }
+        for root in roots where root.isFolder {
+            let inside = (root.children ?? []).filter { !$0.isFolder && $0.address != nil }
+            if !inside.isEmpty { return Array(inside.prefix(16)) }
+        }
+        return []
     }
 
     private func first(where test: (Bookmark) -> Bool) -> Bookmark? {

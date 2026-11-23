@@ -80,7 +80,7 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
     /// over it is ⌘L's. Everywhere else — another app in front, Search
     /// minimised or with no window — it is the launcher's.
     nonisolated static func standsAside(active: Bool, windowShowing: Bool) -> Bool {
-        active && windowShowing
+        false
     }
 
     /// A browser window on screen, not in the Dock.
@@ -96,7 +96,7 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
     var wants: Bool {
         let prefs = Shared.prefs
         guard prefs.launcher, prefs.launcherKey != nil, !ShortcutStore.shared.recording else { return false }
-        return up || !Self.standsAside(active: NSApp.isActive, windowShowing: Self.windowShowing)
+        return true
     }
 
     /// Once, at launch: the key follows the switch, the key chosen, and
@@ -372,7 +372,8 @@ final class Launcher: NSObject, ObservableObject, NSWindowDelegate {
     /// if none is open — and Search in front of the app the field was
     /// raised over. The same order as Browser.submit.
     func submit() {
-        guard up, let target = target ?? Browsers.front else { return }
+        guard up else { return }
+        let target = target ?? Browsers.front ?? SceneSlot.shared.browser
         let chosen = picked.flatMap { offers.indices.contains($0) ? offers[$0] : nil }
 
         if let chosen, let id = chosen.tab,

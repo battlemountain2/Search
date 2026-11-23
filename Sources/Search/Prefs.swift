@@ -1150,7 +1150,12 @@ final class Preferences: ObservableObject {
     /// in Search (see Launcher.swift). Off unless asked for, and no key
     /// taken from the Mac until one is chosen (#783).
     @Published var launcher: Bool {
-        didSet { store.set(launcher, forKey: "launcher.on") }
+        didSet {
+            store.set(launcher, forKey: "launcher.on")
+            if launcher && launcherKey == nil {
+                launcherKey = .suggested
+            }
+        }
     }
     /// Return in that field opens the page in a small window of its own
     /// (Little.swift) over the app you're in, as Arc's ⌥⌘N opens Little Arc,
@@ -1368,9 +1373,11 @@ final class Preferences: ObservableObject {
         commandBar = store.bool(forKey: "commandbar")
         handoff = store.bool(forKey: "handoff")
         floatingNewTab = store.bool(forKey: "newtab.floating")
-        launcher = store.bool(forKey: "launcher.on")
+        let launcherOn = store.bool(forKey: "launcher.on")
+        launcher = launcherOn
         launcherLittle = store.bool(forKey: "launcher.little")
-        launcherKey = store.data(forKey: "launcher.key").flatMap { try? JSONDecoder().decode(LauncherKey.self, from: $0) }
+        let key = store.data(forKey: "launcher.key").flatMap { try? JSONDecoder().decode(LauncherKey.self, from: $0) }
+        launcherKey = launcherOn && key == nil ? .suggested : key
         recentInNewTab = store.bool(forKey: "newtab.recent")
         arcTabPopup = store.bool(forKey: "newtab.arc")
         // On for everyone who never touched it (24 Oct 2026).
