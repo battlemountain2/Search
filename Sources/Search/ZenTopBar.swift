@@ -9,7 +9,7 @@ struct ZenTopBar: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
 
-    static let height: CGFloat = 30
+    static let height: CGFloat = 26
 
     @State private var capsuleHovered = false
     @State private var showToolbox = false
@@ -50,9 +50,9 @@ struct ZenTopBar: View {
                     browser.back()
                 } label: {
                     Image(systemName: "chevron.backward")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 9.5, weight: .semibold))
                         .foregroundStyle(back ? Palette.ink : Palette.muted.opacity(0.35))
-                        .frame(width: 22, height: 22)
+                        .frame(width: 20, height: 20)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -67,9 +67,9 @@ struct ZenTopBar: View {
                     browser.forward()
                 } label: {
                     Image(systemName: "chevron.forward")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 9.5, weight: .semibold))
                         .foregroundStyle(forward ? Palette.ink : Palette.muted.opacity(0.35))
-                        .frame(width: 22, height: 22)
+                        .frame(width: 20, height: 20)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -88,9 +88,9 @@ struct ZenTopBar: View {
                     }
                 } label: {
                     Image(systemName: tab.loading ? "xmark" : "arrow.clockwise")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 9.5, weight: .medium))
                         .foregroundStyle(Palette.ink)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 20, height: 20)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -99,7 +99,7 @@ struct ZenTopBar: View {
                 .help(tab.loading ? "Stop Loading   esc" : "Reload Page   ⌘R")
             }
         } else {
-            Color.clear.frame(width: 70, height: 22)
+            Color.clear.frame(width: 66, height: 20)
         }
     }
 
@@ -114,20 +114,37 @@ struct ZenTopBar: View {
                     Haptics.tap()
                     showSiteCard.toggle()
                 } label: {
-                    Image(systemName: tab.address?.scheme == "https" ? "lock.fill" : "globe")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(tab.address?.scheme == "https" ? Palette.safe : Palette.muted)
-                        .frame(width: 16, height: 16)
-                        .background(showSiteCard ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
+                    if tab.shy {
+                        Image(systemName: "eye.slash.fill")
+                            .font(.system(size: 8.5, weight: .semibold))
+                            .foregroundStyle(Color(red: 0.82, green: 0.70, blue: 1.0))
+                            .frame(width: 15, height: 15)
+                            .background(showSiteCard ? Color.purple.opacity(0.25) : Color.clear, in: RoundedRectangle(cornerRadius: 3.5))
+                    } else {
+                        Image(systemName: tab.address?.scheme == "https" ? "lock.fill" : "globe")
+                            .font(.system(size: 8.5, weight: .semibold))
+                            .foregroundStyle(tab.address?.scheme == "https" ? Palette.safe : Palette.muted)
+                            .frame(width: 15, height: 15)
+                            .background(showSiteCard ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 3.5))
+                    }
                 }
                 .buttonStyle(.plain)
                 .focusable(false)
                 .focusEffectDisabled()
-                .help("View site security, certificate & permissions")
+                .help(tab.shy ? "Private Browsing Session: no history, cookies, or cache are saved" : "View site security, certificate & permissions")
                 .popover(isPresented: $showSiteCard, arrowEdge: .bottom) {
                     SiteSecurityPopoverView(browser: browser, tab: tab) {
                         showSiteCard = false
                     }
+                }
+
+                if tab.shy {
+                    Text("PRIVATE")
+                        .font(.system(size: 7.5, weight: .bold))
+                        .foregroundStyle(Color(red: 0.88, green: 0.80, blue: 1.0))
+                        .padding(.horizontal, 3.5)
+                        .padding(.vertical, 1)
+                        .background(Color.purple.opacity(0.3), in: RoundedRectangle(cornerRadius: 3))
                 }
 
                 // Domain text button (expands to fill capsule center)
@@ -136,7 +153,7 @@ struct ZenTopBar: View {
                     browser.edit()
                 } label: {
                     Text(displayDomain(for: tab))
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Palette.ink)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -152,10 +169,10 @@ struct ZenTopBar: View {
                     showToolbox.toggle()
                 } label: {
                     Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 9.5, weight: .medium))
                         .foregroundStyle(showToolbox ? Color.accentColor : Palette.muted)
-                        .frame(width: 20, height: 20)
-                        .background(showToolbox ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
+                        .frame(width: 17, height: 17)
+                        .background(showToolbox ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -168,12 +185,16 @@ struct ZenTopBar: View {
                     }
                 }
             }
-            .padding(.leading, 8)
+            .padding(.leading, 7)
             .padding(.trailing, 3)
-            .frame(minWidth: 180, maxWidth: 340, maxHeight: 24)
+            .frame(minWidth: 160, maxWidth: 300, maxHeight: 20)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(capsuleHovered || showToolbox ? Color.white.opacity(0.08) : Color.white.opacity(0.04))
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(tab.shy ? Color.purple.opacity(0.12) : (capsuleHovered || showToolbox ? Color.white.opacity(0.08) : Color.white.opacity(0.04)))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .strokeBorder(tab.shy ? Color(red: 0.78, green: 0.65, blue: 1.0).opacity(0.32) : Color.clear, lineWidth: 0.5)
             )
             .onHover { capsuleHovered = $0 }
         }
@@ -550,6 +571,28 @@ struct SiteSecurityPopoverView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if tab.shy {
+                HStack(spacing: 8) {
+                    Image(systemName: "eye.slash.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.78, green: 0.65, blue: 1.0))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Private Browsing Tab")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color(red: 0.88, green: 0.80, blue: 1.0))
+                        Text("Search won't save your browsing history, cookies, or site data once closed.")
+                            .font(.system(size: 9.5))
+                            .foregroundStyle(Palette.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(8)
+                .background(Color.purple.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.purple.opacity(0.25), lineWidth: 0.5))
+
+                Divider().opacity(0.25)
+            }
+
             // 1. Hero Connection Status Header
             headerSection
 

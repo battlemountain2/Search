@@ -2143,9 +2143,10 @@ private struct SideRow: View, Equatable {
                             .help("Opened by a script")
                     }
                     if tab.shy {
-                        Image(systemName: "eye.slash")
-                            .font(.system(size: 9))
-                            .foregroundStyle(colour.opacity(0.7))
+                        Image(systemName: "eye.slash.fill")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundStyle(Color(red: 0.75, green: 0.65, blue: 1.0))
+                            .help("Private tab: history, cookies, and cache are not saved")
                     }
                     if tab.recording {
                         // An extension recording from this page (RecordingIndicator).
@@ -2336,7 +2337,7 @@ private struct SideRow: View, Equatable {
         if live {
             ZStack(alignment: .leading) {
                 // Under a pane of Liquid Glass, the glass is its ground.
-                Rectangle().fill(liquid ? Color.clear : greys.wash)
+                Rectangle().fill(tab.shy ? Color(red: 0.50, green: 0.35, blue: 0.80).opacity(0.20) : (liquid ? Color.clear : greys.wash))
                 if prefs.showsReading {
                     GeometryReader { geo in
                         ReadingFill(meter: tab.meter, width: geo.size.width)
@@ -2344,13 +2345,19 @@ private struct SideRow: View, Equatable {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay {
+                if tab.shy {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(Color(red: 0.75, green: 0.65, blue: 1.0).opacity(0.35), lineWidth: 0.75)
+                }
+            }
             .modifier(LiveMatch(id: LivePill.id(browser), in: pill, tab: tab.id))
         } else if selected {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(greys.wash)
+                .fill(tab.shy ? Color.purple.opacity(0.15) : greys.wash)
         } else if hovering {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(greys.hover)
+                .fill(tab.shy ? Color.purple.opacity(0.10) : greys.hover)
         }
     }
 
