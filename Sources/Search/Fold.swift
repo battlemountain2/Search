@@ -300,8 +300,10 @@ extension Browser {
     /// window's own coordinates: a peek over the page in front (not over its
     /// own), the address field or a panel over it, the Find bar, or the
     /// folded column or strip out over the page. The page then
-    /// hears nothing of the pointer there (see PageView.underCover).
-    func covers(_ page: NSView, at point: NSPoint) -> Bool {
+    /// hears nothing of the pointer there (see PageView.underCover). The
+    /// column's edge while it is away, and the column sliding back in,
+    /// cover the page from the pointer's moves but not from a `press`.
+    func covers(_ page: NSView, at point: NSPoint, press: Bool = false) -> Bool {
         guard let window, page.window === window else { return false }
         if peekInFront, let peek = peekTab, peek.built !== page { return true }
         // The address field raised over the page in front, by ⌘L or by ⌘T's
@@ -311,7 +313,7 @@ extension Browser {
         // What comes over the whole window: the ⌃Tab switcher, the hidden
         // elements' list and a site's style (a click beside either puts it
         // away), Welcome and What's New.
-        if tabSwitcher.visible || reviewing || styling != nil || welcoming || newsShowing { return true }
+        if tabSwitcher.visible || reviewing || styling != nil || welcoming || newsShowing || iphoneAsking { return true }
         // The Find bar is a pill over one corner of the page: whatever a
         // click there would land on decides. Asking the window costs far more
         // than the flags above, so only while the bar is open.
@@ -320,9 +322,25 @@ extension Browser {
            hit !== page, !hit.isDescendant(of: page) {
             return true
         }
-        guard folded, peeking, !frontFillsHere, let size = window.contentView?.bounds.size else { return false }
-        if !prefs.sidebar { return point.y >= size.height - Metrics.strip }
-        return prefs.sidePosition == .right ? point.x >= size.width - prefs.columnWidth : point.x <= prefs.columnWidth
+        guard folded, !frontFillsHere, let size = window.contentView?.bounds.size else { return false }
+        let right = prefs.sidebar && prefs.sidePosition == .right
+        // Out, or still sliding back in: where it lies.
+        func lies() -> Bool {
+            if !prefs.sidebar { return point.y >= size.height - Metrics.strip }
+            return right ? point.x >= size.width - prefs.columnWidth : point.x <= prefs.columnWidth
+        }
+        if peeking { return lies() }
+        guard !press else { return false }
+        if ProcessInfo.processInfo.systemUptime < columnGoneAt { return lies() }
+        // Away: the edge that brings it out. The pointer waits there for
+        // the column, and a page's own menu along that edge (Gmail's rail
+        // opens on hover) is not to stir for a column on its way (idea
+        // 1048). Not in full screen's corner, which doesn't bring it
+        // (Fold.follow).
+        if !prefs.sidebar { return point.y >= size.height - Fold.edge }
+        if window.styleMask.contains(.fullScreen), size.height - point.y < Fold.fullScreenCorner { return false }
+        let zone = prefs.sideHides ? Fold.hiddenEdge : Fold.edge
+        return right ? point.x >= size.width - zone : point.x < zone
     }
 }
 
@@ -345,7 +363,10 @@ struct Fold: View {
     @State private var pointer = Pointer()
 
     /// How near the edge the pointer has to be.
-    private static let edge: CGFloat = 6
+    static let edge: CGFloat = 6
+    /// For a column hidden for good, which waits for the pointer to settle
+    /// (see dwell): a wider edge to find, as a hand reaches for it (#1279).
+    static let hiddenEdge: CGFloat = 10
     /// How far past the window's edge, on the column's side, the pointer
     /// still counts as on it.
     private static let overshoot: CGFloat = 48
@@ -362,10 +383,14 @@ struct Fold: View {
     /// it was hard to find with the pointer; 12 is still under a page's
     /// own first line of anything to click.
     private static let top: CGFloat = 12
-    /// How long the pointer rests on the edge before a column folded for
-    /// good comes out. Long enough to cross the edge, short enough not to be
-    /// waited for.
+    /// How long the pointer rests on the edge before the strip comes out,
+    /// whose edge is the way to the menu bar. Long enough to cross the edge,
+    /// short enough not to be waited for.
     private static let dwell: TimeInterval = 0.15
+    /// The same for a column hidden for good: a hand on its way along the
+    /// side crosses its edge in a frame or two, and anything longer was felt
+    /// as a wait (#1279).
+    private static let columnDwell: TimeInterval = 0.05
 
     var body: some View {
         ZStack(alignment: onRight ? .topTrailing : .topLeading) {
@@ -431,7 +456,10 @@ struct Fold: View {
                     // it does beside the page's card (see CardEdge), or its
                     // own white where the page is no card.
                     // Away exactly when the lights are, which ride with it.
-                    SideBar(browser: browser, prefs: prefs, onFrame: browser.asCards, onDrag: onDrag)
+                    SideBar(browser: browser, prefs: prefs, onFrame: browser.asCards, onDrag: { [pointer, onDrag] width in
+                        pointer.edgeHeld = width != nil
+                        onDrag(width)
+                    })
                         .frame(maxHeight: .infinity, alignment: .top)
                         .modifier(FoldShadow(x: onRight ? -4 : 4, behind: true,
                                              strength: browser.folded && browser.peeking ? 1 : 0,
@@ -600,10 +628,13 @@ struct Fold: View {
             // column stays out while it is up, or the popup is left hanging
             // from nothing (see ExtensionPopup).
             let popup = if #available(macOS 15.4, *) { ExtensionPopup.shared.isUp } else { false }
-            let over = onOwnPanel || popup || holding || overshot || (onWindow && inWindow && distance < reach)
+            // The edge held: the column stays out for the whole drag. Measured
+            // against the width saved before it, or the strip's, the pointer
+            // counted as off the column halfway and it slid away (#1462).
+            let over = onOwnPanel || popup || holding || pointer.edgeHeld || overshot || (onWindow && inWindow && distance < reach)
             if over != inside { inside = over }
             peek(over)
-        } else if inWindow, distance < Fold.edge,
+        } else if inWindow, distance < (prefs.sidebar && prefs.sideHides ? Fold.hiddenEdge : Fold.edge),
                   // In full screen, not from the corner where macOS brings
                   // the window's buttons down with the menu bar: the column
                   // came out over them there, on the way to the red one (#241).
@@ -654,7 +685,7 @@ struct Fold: View {
             peek(true)
         }
         arriving = coming
-        DispatchQueue.main.asyncAfter(deadline: .now() + Fold.dwell, execute: coming)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (prefs.sidebar ? Fold.columnDwell : Fold.dwell), execute: coming)
     }
 
     /// The pointer crossed the edge without stopping.
@@ -865,6 +896,9 @@ private final class Pointer {
     /// The pointer is over the window, or just went off the column's edge from
     /// it and hasn't gone further.
     var crossing = false
+    /// The column's edge is held: its width is the drag's, not yet saved,
+    /// and the pointer can be anywhere along the drag (#1462).
+    var edgeHeld = false
     private var local: Any?
     private var global: Any?
     /// The window's own say on mouse-moved events, given back when the
@@ -908,4 +942,104 @@ final class FoldCover: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override var isOpaque: Bool { true }
+}
+
+/// Settings › The column folded away › A loading line (idea 269): with the
+/// tabs out of sight nothing said a page was coming, since the ring is on
+/// its tab. A hairline along the page's top, as far as WebKit says the page
+/// has come, only while it is loading. Drawn by a layer watching the view,
+/// so the page's progress never makes SwiftUI lay anything out again.
+struct LoadingLine: NSViewRepresentable {
+    let web: WKWebView?
+
+    func makeNSView(context: Context) -> LineView { LineView() }
+    func updateNSView(_ view: LineView, context: Context) { view.watch(web) }
+    static func dismantleNSView(_ view: LineView, coordinator: ()) { view.watch(nil) }
+
+    final class LineView: NSView {
+        private let line = CALayer()
+        private var watched: [NSKeyValueObservation] = []
+        private weak var web: WKWebView?
+        /// What the bench reads: shown, and how far along.
+        private(set) var shown = false
+        private(set) var fraction: Double = 0
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            wantsLayer = true
+            line.backgroundColor = NSColor.controlAccentColor.cgColor
+            line.opacity = 0
+            line.anchorPoint = .zero
+            layer?.addSublayer(line)
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        /// Seen, never pressed.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override var isFlipped: Bool { true }
+
+        func watch(_ next: WKWebView?) {
+            guard next !== web || (next == nil && !watched.isEmpty) else { return }
+            watched = []
+            web = next
+            guard let next else { show(false, 0, animated: false); return }
+            let changed: (WKWebView) -> Void = { [weak self] web in
+                MainActor.assumeIsolated { self?.show(web.isLoading, web.estimatedProgress, animated: true) }
+            }
+            watched = [
+                next.observe(\.estimatedProgress, options: [.new]) { web, _ in changed(web) },
+                next.observe(\.isLoading, options: [.new]) { web, _ in changed(web) },
+            ]
+            show(next.isLoading, next.estimatedProgress, animated: false)
+        }
+
+        override func layout() {
+            super.layout()
+            place(animated: false)
+        }
+
+        private func show(_ loading: Bool, _ progress: Double, animated: Bool) {
+            let was = shown
+            fraction = loading ? max(0.08, progress) : (was ? 1 : 0)
+            shown = loading
+            CATransaction.begin()
+            // A new load starts from the left at once, not run back to it.
+            CATransaction.setDisableActions(!animated || (loading && !was))
+            CATransaction.setAnimationDuration(0.2)
+            place(animated: animated)
+            if loading {
+                line.opacity = 0.9
+            } else if was {
+                // Run to the end, then fade, as a line that just stopped
+                // halfway reads as a page that didn't come.
+                CATransaction.setCompletionBlock { [weak self] in
+                    guard let self, !self.shown else { return }
+                    CATransaction.begin()
+                    CATransaction.setAnimationDuration(0.3)
+                    self.line.opacity = 0
+                    CATransaction.commit()
+                }
+            } else {
+                line.opacity = 0
+            }
+            CATransaction.commit()
+        }
+
+        private func place(animated: Bool) {
+            line.frame = CGRect(x: 0, y: 0, width: bounds.width * fraction, height: 2)
+        }
+    }
+}
+
+/// The loading line for the tab in front, following its view as it is
+/// built, woken or let go.
+struct TabLoadingLine: View {
+    @ObservedObject var tab: Tab
+
+    var body: some View {
+        LoadingLine(web: tab.isWeb ? tab.built : nil)
+            .frame(height: 2)
+            .allowsHitTesting(false)
+    }
 }

@@ -1488,7 +1488,7 @@ final class Tab: ObservableObject, Identifiable {
     /// something about: the sign-in fields that were there a moment ago,
     /// when this was offered, are gone by the time it actually runs.
     /// With `onlyOn`, the page checks for itself, when the script runs, that
-    /// it is still that scheme and host: a document that changed after the
+    /// it is still that origin, port and all: a document that changed after the
     /// last check on this side gets nothing.
     func fill(user: String, password: String, onlyOn page: URL? = nil, done: ((Bool) -> Void)? = nil) {
         callForms("fill(user, password)", ["user": user, "password": password], onlyOn: page, done: done)
@@ -1507,17 +1507,17 @@ final class Tab: ObservableObject, Identifiable {
 
     /// One of the page script's calls, its values handed over as arguments,
     /// never written into the source. With a page, the script first checks
-    /// it is still that scheme and host; a page that can't be checked gets
-    /// nothing.
+    /// it is still that origin — scheme, host and port, as `fillContact`
+    /// does; a page that can't be checked gets nothing.
     private func callForms(_ call: String, _ values: [String: Any], onlyOn page: URL?, done: ((Bool) -> Void)?) {
-        var arguments = values.merging(["scheme": "", "host": ""]) { own, _ in own }
+        var origin = ""
         if let page {
-            guard let scheme = page.scheme?.lowercased(), let host = page.host()?.lowercased() else { done?(false); return }
-            arguments["scheme"] = scheme + ":"
-            arguments["host"] = host
+            guard let known = Self.origin(of: page) else { done?(false); return }
+            origin = known
         }
+        let arguments = values.merging(["origin": origin]) { own, _ in own }
         web.callInSearch("""
-            if (scheme && (location.protocol !== scheme || location.hostname.toLowerCase() !== host)) return false;
+            if (origin && location.origin !== origin) return false;
             return !!(window.__officeForms && window.__officeForms.\(call));
             """, arguments: arguments) { done?(($0 as? Bool) ?? false) }
     }
@@ -1617,6 +1617,10 @@ final class Tab: ObservableObject, Identifiable {
             onCross(self, url)
             return
         }
+        // A sleeping tab sent to a new address gets its web view here, not in
+        // wake(), so it needs the same check. An extension does this when it
+        // moves its sleeping pin to another of its own pages.
+        if asleep { useExtensionConfiguration(for: url) }
         // Set straight away rather than waiting for the observer: the tab has to
         // stop being blank in the same frame the field disappears, or the empty
         // state flashes back for an instant on its way out.
@@ -1682,7 +1686,11 @@ final class Tab: ObservableObject, Identifiable {
     /// pin you are not reading costs a line in a file and nothing else.
     /// Given `home`, it is put down there instead of where it was: Arc's pin
     /// that goes back to its pinned page once closed (see Preferences.pinsGoHome).
-    func rest(at home: URL? = nil) {
+    ///
+    /// Given `websiteConfiguration`, the tab uses it for its next web view.
+    /// Browser.close passes it when the tab was on an extension's page and
+    /// `home` is a website (see there).
+    func rest(at home: URL? = nil, websiteConfiguration: WKWebViewConfiguration? = nil) {
         guard let url = home ?? address else { return }
         // The title was the page it is leaving; the host stands in until the
         // pinned page is woken and names itself.
@@ -1704,6 +1712,7 @@ final class Tab: ObservableObject, Identifiable {
         // gave up and reloaded by hand. Only tearing the view down ends the
         // page; the next wake() builds a fresh one, and a fresh one boots.
         discard()
+        if let websiteConfiguration { configuration = websiteConfiguration }
     }
 
     /// Nobody has looked at this page for a while. Its view goes, as with a
@@ -2008,6 +2017,28 @@ final class Tab: ObservableObject, Identifiable {
         }
     }
 
+    /// WebKit only loads an extension's page (chrome-extension://…) in a web
+    /// view created with that extension's configuration. In any other web
+    /// view the page stays blank.
+    ///
+    /// A sleeping pin can have the wrong configuration for its address:
+    /// - After a restart, the pin is created before the extensions have
+    ///   loaded, so it gets the normal website configuration.
+    /// - A pin that was on a website has the website configuration. ⌘W sends
+    ///   it back to its pinned address, which can be an extension's page.
+    ///
+    /// So before a sleeping tab gets its web view, switch to the extension's
+    /// configuration if `url` is an extension's page. Only call this for a
+    /// sleeping tab: a popup must keep the configuration WebKit gave it.
+    ///
+    /// The opposite case, an extension's configuration on a tab that goes to
+    /// sleep at a website, is handled in Browser.close.
+    private func useExtensionConfiguration(for url: URL) {
+        if built == nil, let extensionConfiguration = Browser.extensionConfiguration(for: url) {
+            configuration = extensionConfiguration
+        }
+    }
+
     /// Opened for the first time since the app started, or coming back from
     /// ⌘W while pinned. Answers whether there was anything to wake — the
     /// caller's own `revive()`, right after this, is for a tab that went
@@ -2017,6 +2048,7 @@ final class Tab: ObservableObject, Identifiable {
     func wake() -> Bool {
         throttled = false
         guard let url = pending else { return false }
+        useExtensionConfiguration(for: url)
         pending = nil
         failure = nil
         reading = 0
@@ -2251,6 +2283,8 @@ final class Tab: ObservableObject, Identifiable {
         guard let web = built else { return }
         (delegate as? Browser)?.cancelDisplay(for: web)
         built = nil
+        // A process too busy to hear the view go would outlive it (#1264).
+        Stuck.watch(web)
         // Back and Forward said what the view let go of could do. The next
         // view starts with nothing to go back to, and its observers only hear
         // a change: left as it was, a pin put down showed Back lit, and Back
@@ -2841,16 +2875,37 @@ final class PageView: WKWebView {
     var onKeys: (() -> Void)?
 
     override func becomeFirstResponder() -> Bool {
+        // WebKit asks for the keys itself as a page it loads arrives
+        // (WebPageProxy::makeFirstResponder), and AppKit has already taken
+        // them from whoever had them when it asks here. With the address
+        // field up over the page, raised by ⌘T or ⌘L while the page was
+        // still on its way, what was typed next went into the page's search
+        // box instead (idea 495). The page says no and the field has them
+        // back, where they were; a click on the page still takes them.
+        if !Self.clicked, let browser, browser.editing, let window, AddressField.keepsKeys(for: browser, in: window) { return false }
         let took = super.becomeFirstResponder()
         if took { onKeys?() }
         return took
+    }
+
+    /// The keys handed to a page as a click on it would leave them: the
+    /// bench's `key`, in a probe that has no mouse.
+    static var handedAsClick = false
+
+    /// The event in hand is a press of the mouse: the keys go where it was.
+    private static var clicked: Bool {
+        if handedAsClick { return true }
+        switch NSApp.currentEvent?.type {
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown: return true
+        default: return false
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
         // A press that reaches the page under a peek is a press beside the
         // panel, which puts the peek away (see Peek.swift); under the column
         // it is nobody's.
-        if underCover(event) {
+        if underCover(event, press: true) {
             if let browser, browser.peekInFront, browser.peekTab?.built !== self { browser.closePeek() }
             return
         }
@@ -2908,10 +2963,13 @@ final class PageView: WKWebView {
         return Browsers.all.first { $0.window === window }
     }
 
-    /// Whether the event is under cover, and if so, the page told so.
-    private func underCover(_ event: NSEvent) -> Bool {
+    /// Whether the event is under cover, and if so, the page told so. A
+    /// `press` is under cover only where something lies on the page: the
+    /// column's edge while it is away, and the column sliding back in,
+    /// hold back the pointer's moves alone (Browser.covers).
+    private func underCover(_ event: NSEvent, press: Bool = false) -> Bool {
         guard let window, event.window == nil || event.window === window,
-              browser?.covers(self, at: event.locationInWindow) == true
+              browser?.covers(self, at: event.locationInWindow, press: press) == true
         else {
             covered = false
             return false
@@ -3011,7 +3069,7 @@ final class PageView: WKWebView {
     }
 
     override func rightMouseDown(with event: NSEvent) {
-        if underCover(event) { return }
+        if underCover(event, press: true) { return }
         super.rightMouseDown(with: event)
     }
 
@@ -3021,7 +3079,7 @@ final class PageView: WKWebView {
     /// drivers settled on regardless, so it's what a mouse's own firmware
     /// is tuned to send.
     override func otherMouseDown(with event: NSEvent) {
-        if underCover(event) { return }
+        if underCover(event, press: true) { return }
         switch event.buttonNumber {
         case 3 where canGoBack: goBack()
         case 4 where canGoForward: goForward()
@@ -3298,8 +3356,17 @@ final class PageView: WKWebView {
         """
     }
 
+    /// A mouse wheel's notches eased over a few frames (WheelGlide.swift).
+    private(set) lazy var glider = WheelGlide(self)
+
+    /// A step of a glided notch, straight to WebKit: it is no swipe.
+    func glide(_ event: NSEvent) {
+        super.scrollWheel(with: event)
+    }
+
     override func scrollWheel(with event: NSEvent) {
         onTouch?()
+        if WheelGlide.on, stops == nil, glider.take(event) { return }
         if event.phase == .mayBegin || event.phase == .began {
             went = false
             Swipe.calm(self)
@@ -3722,10 +3789,59 @@ extension WKWebView {
             let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
             let tooWide = folder == home || ["/", "/Users", "/Volumes"].contains(folder.path)
                 || folder.deletingLastPathComponent().path == "/Volumes"
-            loadFileURL(url, allowingReadAccessTo: tooWide ? url : folder)
+                || WKWebView.sameItem(folder, home) || WKWebView.sameItem(folder, URL(fileURLWithPath: "/Users"))
+                || WKWebView.isVolume(folder)
+            loadFileURL(url, allowingReadAccessTo: tooWide ? url : WKWebView.readRoot(folder, home: home))
         } else {
             load(URLRequest(url: url))
         }
+    }
+
+    /// A static site's pages in a folder of their own reach for their
+    /// styles and pictures one or two folders up (lessons/one.html and
+    /// ../assets/style.css), as Safari and Chrome show them (#1342): the
+    /// page may read up to two folders above its own, never as far as the
+    /// home folder, a folder directly in it (Documents, Desktop, Downloads,
+    /// Library…), the disk, a volume or a folder at the disk's top.
+    ///
+    /// The folders are told apart by what they are on disk, not by how the
+    /// address spells them: /System/Volumes/Data/Users/you, /users/you or a
+    /// link to the home folder is the home folder too.
+    static func readRoot(_ folder: URL, home: URL) -> URL {
+        func spelledBroad(_ candidate: URL) -> Bool {
+            let parent = candidate.deletingLastPathComponent()
+            return candidate.path == home.path || parent.path == home.path || candidate.pathComponents.count <= 3
+                || parent.path == "/Volumes"
+        }
+        func broad(_ candidate: URL) -> Bool {
+            let parent = candidate.deletingLastPathComponent()
+            return spelledBroad(candidate) || spelledBroad(candidate.resolvingSymlinksInPath())
+                || sameItem(candidate, home) || sameItem(parent, home)
+                || isVolume(candidate) || isVolume(parent)
+        }
+        var root = folder
+        for _ in 0..<2 {
+            let up = root.deletingLastPathComponent().standardizedFileURL
+            guard up.path != root.path, !broad(up) else { break }
+            root = up
+        }
+        return root
+    }
+
+    /// The same folder on disk, however each is spelled (links followed,
+    /// case, the data volume's own path). False when either can't be read.
+    static func sameItem(_ a: URL, _ b: URL) -> Bool {
+        func id(_ url: URL) -> NSObject? {
+            (try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.fileResourceIdentifierKey]))?
+                .fileResourceIdentifier as? NSObject
+        }
+        guard let first = id(a), let second = id(b) else { return false }
+        return first.isEqual(second)
+    }
+
+    /// A disk or a volume itself, the data volume's /System/Volumes/Data too.
+    static func isVolume(_ url: URL) -> Bool {
+        (try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.isVolumeKey]))?.isVolume == true
     }
 
     /// JavaScript run in Search's own world (see Web.world), where its page

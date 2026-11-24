@@ -16,6 +16,8 @@ struct SearchApp: App {
     @ObservedObject private var profiles = Profiles.shared
     /// Only for History's tabs on your other devices (Sync with iCloud).
     @ObservedObject private var icloud = ICloudSync.shared
+    /// Only for Help › Search for iPhone…, for now (IPhoneAsk.swift).
+    @ObservedObject private var iphoneAsk = IPhoneAskWatch.shared
     /// Links from other apps, and the Dock icon.
     @NSApplicationDelegateAdaptor(Links.self) private var links
 
@@ -23,6 +25,15 @@ struct SearchApp: App {
     private var browser: Browser { front.browser ?? SceneSlot.shared.browser }
 
     init() {
+        // AppKit's guess at password fields (#1458): every time a native
+        // field takes the keyboard (the address field, ⌘L, ⌘T…), it walks
+        // the window's key views back from it, and through SwiftUI that is
+        // a walk over every view in the window — the column with all its
+        // tabs and folders. On a full window it held the main thread at
+        // 100% for tens of seconds. Search fills its own passwords in
+        // pages; its own fields aren't sign-in forms. Registered, so kept
+        // in memory only: a `defaults write` still wins.
+        UserDefaults.standard.register(defaults: ["NSAutoFillHeuristicsEnabled": false])
         // Settings › General › Start with a fresh window: the files are cut
         // down before any window reads its row from them.
         if Store.settings.bool(forKey: Preferences.freshKey) {
@@ -75,6 +86,10 @@ struct SearchApp: App {
                 Divider()
                 Button("Open Address…") { browser.edit() }
                     .shortcut("file.openAddress")
+                // A page, PDF or picture on this Mac, as Safari's File ›
+                // Open File… (idea 755).
+                Button("Open File…") { browser.openFile() }
+                    .shortcut("file.openFile")
                 Divider()
                 // Another browser's bookmarks, history, passwords and the
                 // rest, as Safari's File › Import From: the one sheet every
@@ -104,6 +119,10 @@ struct SearchApp: App {
                     .disabled(!(browser.active?.isWeb ?? false))
             }
             CommandGroup(after: .pasteboard) {
+                // As Safari's: what ⇧⌘V already does while you type, said
+                // in the menu (idea 814).
+                Button("Paste and Match Style") { Browser.pasteMatchingStyle() }
+                    .shortcut("edit.pasteMatchStyle")
                 Button("Copy Clean Link") { browser.copyCleanLink() }
                     .shortcut("edit.copyCleanLink")
                     .disabled(browser.active?.isBlank ?? true)
@@ -452,8 +471,15 @@ struct SearchApp: App {
                 Button("Clear History") { browser.clearHistory() }
                     .shortcut("history.clear")
             }
-            // Search › Check for Updates…, under About, as in any Mac app.
-            CommandGroup(after: .appInfo) { UpdateMenuItem() }
+            // Search › About Search, our own window with a What's New button
+            // (About.swift); then Check for Updates…, as in any Mac app, and
+            // What's New…, this version's card again (idea 968).
+            CommandGroup(replacing: .appInfo) {
+                Button("About Search") { AboutWindow.show() }
+                UpdateMenuItem()
+                Button("What's New…") { WhatsNew.showAgain(in: browser) }
+                    .disabled(WhatsNew.current == nil)
+            }
             CommandGroup(after: .appSettings) {
                 Button("Settings…") { browser.tuning = true }
                     .shortcut("app.settings")
@@ -462,7 +488,7 @@ struct SearchApp: App {
                 Button("Passwords…") { browser.managing = true }
                     .shortcut("app.passwords")
             }
-            QuitAndHelp()
+            QuitAndHelp(iphoneAsk: iphoneAsk.open)
         }
     }
 }
@@ -470,6 +496,9 @@ struct SearchApp: App {
 /// Quit Search, which can ask first (Settings › General), and Help. One
 /// value, because a scene's commands take at most ten.
 private struct QuitAndHelp: Commands {
+    /// Whether Help offers Search for iPhone… (IPhoneAsk.swift).
+    let iphoneAsk: Bool
+
     var body: some Commands {
         CommandGroup(replacing: .appTermination) {
             Button("Quit Search") {
@@ -479,6 +508,10 @@ private struct QuitAndHelp: Commands {
         }
         CommandGroup(replacing: .help) {
             Button("Send Feedback…") { Links.writeFeedback() }
+            // For now, until the iPhone beta opens (IPhoneAsk.swift).
+            if iphoneAsk {
+                Button(IPhoneAsk.menuTitle) { Browsers.frontBrowser.iphoneAsking = true }
+            }
         }
     }
 }
@@ -604,6 +637,14 @@ struct ContentView: View {
             // side by side are a card each (see PaneStage).
             stage
                 .modifier(CardEdge(on: cards && !browser.prefs.splitView, borderless: false))
+                // The tabs folded away: a line says the page is coming
+                // (Settings, idea 269), clear of the card's round corners.
+                .overlay(alignment: .top) {
+                    if browser.folded, browser.prefs.showsLoadingLine, fullscreenTab == nil, let tab = browser.active {
+                        TabLoadingLine(tab: tab)
+                            .padding(.horizontal, cards ? Metrics.cardRadius : 0)
+                    }
+                }
                 .padding(.leading, sideOnRight ? farGap + panelRoom : 0)
                 .padding(.trailing, sideOnRight ? 0 : farGap + panelRoom)
                 .padding(.bottom, farGap)
@@ -913,9 +954,15 @@ struct ContentView: View {
         // SplitStage owns the field whenever Split View is enabled, including
         // an ordinary tab that is not currently paired. Drawing it here too
         // leaves two offset address fields on a blank tab.
-        if !browser.prefs.splitView {
+        if browser.fieldOnWindow {
+            // Settings › The field in the middle of the window: over the
+            // whole window, as Arc's, in place of the page's (idea 753).
+            Omnibox(browser: browser, over: true, high: true)
+        } else if !browser.prefs.splitView {
             ZStack {
                 HomeGrid(browser: browser)
+                // The iPhone beta, a line under the field for now (IPhoneAsk.swift).
+                IPhoneAskNewTab(browser: browser)
                 Omnibox(browser: browser, over: !(browser.active?.isBlank ?? true))
             }
             // Centred on the page, not on the window. The column of tabs
@@ -950,6 +997,15 @@ struct ContentView: View {
                 })
             } close: { browser.newsShowing = false }
         }
+        // Help › Search for iPhone… (see IPhoneAsk.swift).
+        if browser.iphoneAsking {
+            sheet {
+                IPhoneAskCard(close: { browser.iphoneAsking = false }, open: { url in
+                    browser.iphoneAsking = false
+                    _ = browser.open(url, foreground: true)
+                })
+            } close: { browser.iphoneAsking = false }
+        }
         if browser.reviewing {
             // No dimming for this one: the whole point is to keep looking at
             // the page while the list offers to put things back on it.
@@ -957,10 +1013,8 @@ struct ContentView: View {
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture { browser.reviewing = false }
-                HiddenPanel(browser: browser)
-                    .padding(.top, Metrics.strip + 8)
-                    .padding(.trailing, 14)
-                    .transition(.scale(scale: 0.97, anchor: .topTrailing).combined(with: .opacity))
+                HiddenPanelPlace(browser: browser)
+                    .transition(.scale(scale: 0.97, anchor: .top).combined(with: .opacity))
             }
             .ignoresSafeArea()
             .transition(.opacity)
@@ -1031,6 +1085,21 @@ struct ContentView: View {
                     .ignoresSafeArea()
             }
             .overlay { field }
+            // The card for a new space with the column as icons: too narrow
+            // for its name and field, it comes over the page, beside the
+            // column, as wide as it is anywhere else (idea 835).
+            .overlay(alignment: sideOnRight ? .topTrailing : .topLeading) {
+                if browser.makingSpace, sidebar, browser.prefs.iconColumn {
+                    NewSpaceCard(browser: browser)
+                        .frame(width: 260)
+                        .background(Palette.ground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))
+                        .shadow(color: .black.opacity(0.12), radius: 18, y: 6)
+                        .padding(sideOnRight ? .trailing : .leading, sideWidth + 12)
+                        .padding(.top, 60)
+                        .transition(.opacity)
+                }
+            }
             .overlay { panels }
             .overlay { switcherOverlay }
             .overlay(alignment: .topTrailing) {
@@ -1083,7 +1152,11 @@ struct ContentView: View {
                 browser.tabSwitcher.cancel()
                 if browser.commandHeld { browser.commandHeld = false }
                 measureLights()
-                resting?.isHidden = false
+                // Not in full screen, a split's half included: there macOS
+                // brings its own buttons down with the title bar, and ours,
+                // left where the window's buttons were before, made a second
+                // row of them under it (idea 929).
+                resting?.isHidden = window?.styleMask.contains(.fullScreen) ?? false
                 // Only the window you were in, or every window's video would come.
                 browser.appLeft()
             }
@@ -1100,7 +1173,7 @@ struct ContentView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { note in
-                if let window, (note.object as? NSWindow) === window { browser.fullScreen = true; reveal?.entering() }
+                if let window, (note.object as? NSWindow) === window { browser.fullScreen = true; reveal?.entering(); resting?.isHidden = true }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { note in
                 if let window, (note.object as? NSWindow) === window { browser.fullScreen = false; reveal?.leaving() }
@@ -1127,6 +1200,7 @@ struct ContentView: View {
             .onChange(of: browser.activeID) { _, _ in handBack() }
             .animation(Motion.settle, value: browser.welcoming)
             .animation(Motion.settle, value: browser.newsShowing)
+            .animation(Motion.settle, value: browser.iphoneAsking)
             .animation(Motion.settle, value: browser.reviewing)
             .animation(Motion.settle, value: browser.styling)
         .onAppear {
@@ -1305,7 +1379,7 @@ struct ContentView: View {
         view.spots = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
             .compactMap { window.standardWindowButton($0) }
             .map { $0.convert($0.bounds, to: titlebar) }
-        view.isHidden = NSApp.isActive
+        view.isHidden = NSApp.isActive || window.styleMask.contains(.fullScreen)
     }
 
     /// The window, once there is one: held, dressed, and named for the page
@@ -1330,6 +1404,12 @@ struct ContentView: View {
             window.animationBehavior = .none
             window.isExcludedFromWindowsMenu = true
             window.orderOut(nil)
+        } else {
+            // SwiftUI leaves the window of a Window scene out of the Window
+            // menu, and so out of the Dock icon's list of windows and, it
+            // seems, ⌘`'s round: with a second window open, there was no
+            // going from one to the other there (idea 1047).
+            window.isExcludedFromWindowsMenu = false
         }
         window.tabbingMode = .disallowed
         // Light or dark is the app's to say (Settings › Appearance); the
@@ -1483,6 +1563,22 @@ struct ContentView: View {
             // AppKit and counted instead (see FullScreenEscape): the first
             // puts the reminder up, a second within two seconds leaves. Held
             // down, its repeats are kept and count for nothing.
+            // Without it, as in Safari: the press is the page's, to close
+            // its own pop-up, and the window stays in full screen even when
+            // the page has no use for it (idea 582). WebKit hands a key it
+            // didn't use back through the app; that copy goes no further,
+            // where AppKit would have taken the window out on it.
+            if event.keyCode == 53, !browser.prefs.escapeTwice, let window, event.window === window,
+               window.styleMask.contains(.fullScreen) {
+                if FullScreenEscape.shared.cameBack(event) { return nil }
+                if take(event) { return nil }
+                if let page = (window.firstResponder as? NSView).flatMap(FullScreenEscape.page(holding:)) {
+                    FullScreenEscape.shared.handOver(event)
+                    page.keyDown(with: event)
+                    return nil
+                }
+                return event
+            }
             if event.keyCode == 53, browser.prefs.escapeTwice, let window, event.window === window,
                window.styleMask.contains(.fullScreen) {
                 if event.isARepeat { return nil }
@@ -1915,6 +2011,7 @@ struct ContentView: View {
         if ShortcutStore.shared.anyChanged || browser.prefs.usesSpaces, let combo = KeyCombo(event: event) {
             if let command = ShortcutStore.shared.customCommand(on: combo) {
                 if command.section == .spaces, !browser.prefs.usesSpaces { return false }
+                if command.section == .profiles, !Profiles.shared.several { return false }
                 if Command.split.contains(command.id), !browser.prefs.splitView { return false }
                 if Command.ai.contains(command.id), !browser.prefs.ai { return false }
                 if Command.dusk.contains(command.id), !browser.prefs.darkensPages { return false }
@@ -2045,6 +2142,9 @@ struct ContentView: View {
             browser.recalling = true
         case "j" where shifted:
             browser.showDownloads()
+        case "v" where shifted && flags.contains(.option):
+            // ⌥⇧⌘V, Paste and Match Style as in Safari: never Paste and Go.
+            Browser.pasteMatchingStyle()
         case "v" where shifted:
             // In a text field this key is paste without formatting — a Google
             // Doc, a form, the address field. It only means Paste and Go when

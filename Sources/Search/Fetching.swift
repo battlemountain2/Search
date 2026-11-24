@@ -177,7 +177,9 @@ final class FetchEntry: ObservableObject, Identifiable {
     func failed(_ error: Error, resumeData: Data?) {
         download = nil
         pendingStop = nil
-        self.resumeData = resumeData
+        // Resuming picks up the same partial file, so a failure writing that
+        // file would only fail again: Retry starts it fresh instead.
+        self.resumeData = Self.failedWritingFile(error) ? nil : resumeData
         errorDescription = Self.reason(for: error)
         state = .failed
     }
@@ -224,6 +226,13 @@ final class FetchEntry: ObservableObject, Identifiable {
         fraction = nil
         completedBytes = 0
         totalBytes = 0
+    }
+
+    static func failedWritingFile(_ error: Error) -> Bool {
+        let error = error as NSError
+        guard error.domain == NSURLErrorDomain else { return false }
+        return [NSURLErrorCannotCreateFile, NSURLErrorCannotOpenFile, NSURLErrorCannotWriteToFile,
+                NSURLErrorCannotMoveFile, NSURLErrorCannotRemoveFile].contains(error.code)
     }
 
     private static func reason(for error: Error) -> String {
@@ -667,6 +676,7 @@ struct FetchDoor: View {
     /// both copies hear the list being asked for: the hidden one standing the
     /// card beside a button nobody sees put it at the column's top (#1350).
     let live: Bool
+    @Environment(\.greys) private var greys
 
     @State private var hovering = false
     /// Its view, for the card to stand beside. Held, not drawn from.
@@ -742,8 +752,10 @@ struct FetchDoor: View {
                 }
                 .frame(width: 26, height: 26)
                 .background(
+                    // A door's hover (Door), on any ground: an opaque grey
+                    // stood darker than its neighbours' on glass (idea 1034).
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(hovering ? Palette.hover : .clear)
+                        .fill(hovering ? greys.hover : .clear)
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }

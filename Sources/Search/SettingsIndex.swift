@@ -207,6 +207,10 @@ enum SettingsIndex {
               more: "Off, ⌘S hides the column and the page takes the whole window.",
               keys: ["sidebar.foldIcons"], words: ["collapse", "collapsed", "compact", "narrow", "hide sidebar", "icons only", "favicons"],
               parent: "tabs.layout"),
+        .init(id: "fold.loadingLine", group: "window", icon: "slider.horizontal.below.rectangle",
+              title: "A loading line with the tabs hidden", detail: "Folded away with ⌘S, a thin line along the page's top while it loads",
+              more: "With the tabs in sight, the ring on the tab says a page is loading; hidden, nothing did. The line runs as far as the page has come and goes once it is there.",
+              keys: ["fold.loadingLine"], words: ["loading", "progress", "bar", "spinner", "indicator", "hidden sidebar", "folded", "arc"]),
         .init(id: "layout.cards", group: "window", icon: "rectangle.inset.filled",
               title: "The page as a card", detail: "A little room around the page, with rounded corners",
               more: "Off, the page reaches the window's edges and the column is white with its hairline.",
@@ -243,6 +247,10 @@ enum SettingsIndex {
         .init(id: "address.width", group: "window", icon: "arrow.left.and.right",
               title: "Address width", detail: "Before the tabs across the top",
               keys: ["address.width"], words: ["address bar", "url", "width", "wide"], parent: "address.shown"),
+        .init(id: "scrollbars.fade", group: "window", icon: "scroll",
+              title: "Fade scroll bars when scrolling stops", detail: "Thin bars over the page that come up only as it scrolls, even with a mouse",
+              more: "As macOS draws them with a trackpad, whatever System Settings › Appearance › Show scroll bars says. Off, Search follows that setting.",
+              keys: ["scrollbars.fade"], words: ["scroll bar", "scrollbar", "scrollbars", "overlay", "fade", "hide", "auto hide", "when scrolling"]),
         .init(id: "window.glass", group: "window", icon: "square.on.square.intersection.dashed",
               title: "Glass", detail: "What is behind the window shows through the tabs and the frame, blurred",
               more: "As in Arc and Zen. The glass takes the space's colour; how see-through it is, and its grain, are in the space's menu › Colour…. Not in full screen.",
@@ -266,6 +274,16 @@ enum SettingsIndex {
         .init(id: "sidebar.doorsUp", group: "tablook", icon: "rectangle.topthird.inset.filled",
               title: "Buttons at the top", detail: "Bookmarks, extensions and downloads beside back, forward and reload, when they fit",
               keys: ["sidebar.doorsUp"], words: ["minimal", "toolbar", "footer", "bottom", "icons", "clean"], parent: "tabs.layout"),
+        .init(id: "helm.shown", group: "tablook", icon: "arrow.left.arrow.right",
+              title: "Back, forward and reload", detail: "Untick any you reach with the keys: the tabs get the room",
+              more: "⌘[, ⌘] and ⌘R work whichever are shown. In the column they sit beside the window's buttons; across the top, at the row's end.",
+              keys: ["helm.back.hidden", "helm.forward.hidden", "helm.reload.hidden"],
+              words: ["toolbar", "buttons", "navigation", "hide", "back", "forward", "reload", "minimal", "clean"], kind: .wide),
+        .init(id: "foot.shown", group: "tablook", icon: "square.grid.3x1.below.line.grid.1x2",
+              title: "Buttons under the column", detail: "Untick extensions, bookmarks or your profile to hide its button",
+              more: "Across the top, the same buttons at the row's end. A pinned extension keeps its own button, and Bookmarks and Settings › Extensions are still in the menus.",
+              keys: ["foot.extensions.hidden", "foot.bookmarks.hidden", "foot.profile.hidden"],
+              words: ["toolbar", "buttons", "footer", "bottom", "hide", "extensions", "puzzle", "bookmarks", "profile", "customise", "customize", "minimal", "clean"], kind: .wide),
         .init(id: "sidebar.foldButton", group: "tablook", icon: "sidebar.left",
               title: "Sidebar button", detail: "Beside the window's buttons, to hide the sidebar as ⌘S does",
               more: "With the sidebar hidden, ⌘S or the pointer at the window's edge brings it back; the button then keeps it out.",
@@ -288,6 +306,9 @@ enum SettingsIndex {
         .init(id: "tabs.reading", group: "tablook", icon: "text.line.first.and.arrowtriangle.forward",
               title: "Show how far you've read", detail: "The tab you're on fills with grey as you scroll down",
               keys: ["tabs.reading"], words: ["progress", "scroll"]),
+        .init(id: "tabs.pinCounts", group: "tablook", icon: "app.badge",
+              title: "Show counts on pins", detail: "A pinned page's unread count, from its title, as a badge on its icon",
+              keys: ["tabs.pinCounts"], words: ["badge", "unread", "count", "messages", "notifications", "pinned", "whatsapp"]),
         .init(id: "tabs.give", group: "tablook", icon: "hand.point.up.left",
               title: "Tabs give when pressed", detail: "A tab sinks a little under the pointer, as in Arc",
               keys: ["tabs.give"], words: ["press", "animation", "bounce"]),
@@ -301,6 +322,11 @@ enum SettingsIndex {
               title: "Show the bookmarks bar in the sidebar", detail: "At the top of the sidebar in every space, instead of above the page",
               more: "A row for each bookmark and folder on the bar, before your pinned rows. A folder opens as a menu, as on the bar.",
               keys: ["bookmarks.side"], words: ["favorites bar", "bookmarks toolbar", "sidebar", "column", "folders"],
+              parent: "bookmarks.bar"),
+        .init(id: "bookmarks.iconsOnly", group: "tablook", icon: "square.grid.2x2",
+              title: "Show icons only on the bookmarks bar", detail: "Each bookmark as its site's icon, its name on hover",
+              more: "Folders keep their names. A bookmark you renamed to nothing already shows its icon alone.",
+              keys: ["bookmarks.iconsOnly"], words: ["favorites bar", "bookmarks toolbar", "favicons", "compact", "icon only", "names", "titles"],
               parent: "bookmarks.bar"),
         .init(id: "motion.light", group: "motion", icon: "leaf",
               title: "Save power in Low Power Mode", detail: "Simpler motion while saving power or running hot; idle tabs sleep sooner in Low Power Mode",
@@ -401,8 +427,8 @@ enum SettingsIndex {
               title: "Open links from other apps in a small window", detail: "To read and close, or keep with Open in Search (⌘O); a tab's menu opens one too",
               keys: ["links.little"], words: ["little arc", "mini window", "open in small window"]),
         .init(id: "links.little.tabs", group: "links", icon: "arrow.right.square",
-              title: "Go to a tab that has the page", detail: "A link to a page already open in a tab goes to that tab, not a small window",
-              keys: ["links.little.tabs"], words: ["switch to tab", "already open", "duplicate"], parent: "links.little"),
+              title: "Go to a tab that has the page", detail: "A link from another app switches to that tab instead of opening the page again",
+              keys: ["links.little.tabs"], words: ["switch to tab", "already open", "duplicate", "existing tab"]),
         .init(id: "reader.twins", group: "reading", icon: "doc.text",
               title: "Read the site's own Markdown", detail: "When a page has a Markdown copy, reading mode shows that",
               more: "⇧⌘R shows a page's article alone, in clean type. Most docs sites publish a Markdown copy; nothing in it can run, its text is escaped.",
@@ -452,9 +478,9 @@ enum SettingsIndex {
 
         // Spaces & Pins
         .init(id: "arc.setup", group: "arc", icon: "wand.and.stars",
-              title: "Set Up Like Arc", detail: "Tabs on the left, spaces, pinned rows and pins that keep their site",
-              more: "Also turns on New tab in a floating field. Undo puts back what you had.",
-              words: ["arc", "the browser company"]),
+              title: "Set Up Like Arc", detail: "Tabs on the left, spaces, pinned rows, and Arc's habits, like closing tabs after 12 hours",
+              more: "Also turns on New tab in a floating field, Float the video on its own, Swipe back closes a tab a link opened, and Peek at a link with a Shift-click. Only what is off changes. Undo puts back what you had.",
+              words: ["arc", "the browser company", "auto archive", "archive", "peek", "picture in picture", "swipe back"]),
         .init(id: "arc.import", group: "arc", icon: "square.and.arrow.down",
               title: "Bring Arc's spaces and pins over", detail: "Your spaces, pinned tabs and folders, read from Arc on this Mac",
               words: ["arc", "import"]),
@@ -484,9 +510,9 @@ enum SettingsIndex {
               keys: ["profiles.oneWindow"], words: ["arc", "profiles", "single window", "merge"], parent: "profiles"),
         .init(id: "spaces.links", group: "spaces", icon: "arrow.triangle.branch",
               title: "Send links to a space", detail: "Links to sites you choose open in their space, with its sign-ins",
-              more: "Links from other apps, and links a page in another space opens in a new tab. A site includes its subdomains. Typed addresses, links followed in their own tab and private tabs stay where they are. Right-click a tab to send its site to the space it is in.",
-              keys: [SpaceRoutes.key, SpaceRoutes.rulesKey],
-              words: ["arc", "air traffic control", "route", "routing", "rules", "domain", "site", "open in space", "default space", "links from other apps"],
+              more: "Links from other apps, and links a page in another space opens in a new tab. A site includes its subdomains. Typed addresses, links followed in their own tab and private tabs stay where they are. Right-click a tab to send its site to the space it is in. Everything else sends links from other apps that no site matches to one space.",
+              keys: [SpaceRoutes.key, SpaceRoutes.rulesKey, SpaceRoutes.otherKey],
+              words: ["arc", "air traffic control", "route", "routing", "rules", "domain", "site", "open in space", "default space", "default profile", "everything else", "links from other apps"],
               parent: "spaces"),
         .init(id: "links.ask", group: "spaces", icon: "questionmark.square.dashed",
               title: "Ask which space for links from other apps",
@@ -521,10 +547,20 @@ enum SettingsIndex {
               more: "As in Arc: ⌘-clicking a pin opens a new tab at its address; on a pin that has wandered from its page, the wandered page is kept in loose tabs and the pin gets a fresh tab at home. Off, ⌘-click adds the pin to your tab selection.",
               keys: ["pins.commandNewTab"],
               words: ["command click", "cmd click", "pinned", "arc", "selection", "multi select"]),
+        .init(id: "pins.linksNewTab", group: "pins", icon: "arrow.up.forward.square",
+              title: "Links from pinned tabs open in a new tab",
+              detail: "A link clicked in a pin opens beside the loose tabs, and the pin stays on its page",
+              more: "For pins in folders and loose pins alike, and links to the pin's own site as well as to others. A redirect, a form, a jump within the page and the site's own sign-in pages still go in the pin. Off, a link within the site goes in the pin, as in Arc.",
+              keys: ["pins.linksNewTab"],
+              words: ["pinned", "pinned folder", "links", "new tab", "arc", "pin stays", "open links"]),
         .init(id: "newtab.floating", group: "opening", icon: "rectangle.and.text.magnifyingglass",
               title: "New tab in a floating field", detail: "⌘T raises the address field over the page, as in Arc",
               more: "Return opens what you typed in a new tab; Escape, ⌘W or a click outside puts it away.",
               keys: ["newtab.floating"], words: ["command bar", "cmd t", "spotlight"]),
+        .init(id: "field.window", group: "opening", icon: "rectangle.center.inset.filled",
+              title: "The field in the middle of the window", detail: "⌘T's and ⌘L's field over a page, centred on the window and higher up",
+              more: "As Arc and Zen place it, near where Spotlight comes: the column is dimmed with the page. Off, the field is centred on the page beside the column.",
+              keys: ["field.window"], words: ["command bar", "cmd t", "cmd l", "spotlight", "centre", "center", "position", "arc", "zen"]),
         .init(id: "newtab.recent", group: "opening", icon: "clock.arrow.circlepath",
               title: "Recent places in the new tab", detail: "Before you type, ⌘T's field lists the last three places you went",
               more: "From History on this Mac, leaving out pages already open, which ⌘K finds. Nothing is picked until an arrow key picks it, and a private tab lists nothing.",
@@ -550,6 +586,11 @@ enum SettingsIndex {
         .init(id: "passwords.fill", group: "passwords", icon: "rectangle.and.pencil.and.ellipsis",
               title: "Fill in sign-ins", detail: "Click a sign-in box and your accounts for the site hang from it",
               keys: ["passwords.fill"], words: ["autofill", "login"]),
+        .init(id: "passwords.fill.prove", group: "passwords", icon: "touchid",
+              title: "Ask for Touch ID before filling", detail: "Or your Mac's password, before a saved password goes into a page",
+              more: "Once you've said yes, Search doesn't ask again for a minute, until your Mac sleeps or locks. Apple Passwords and extensions ask in their own way.",
+              keys: ["passwords.fill.prove"], words: ["touch id", "authenticate", "autofill", "lock", "biometric", "fingerprint", "password", "secure"],
+              parent: "passwords.fill"),
         .init(id: "passkeys", group: "passwords", icon: "person.badge.key",
               title: "Offer passkeys", detail: "Touch ID or an iCloud passkey, on sites that offer one",
               keys: ["passkeys"], words: ["webauthn", "touch id"]),
@@ -611,6 +652,10 @@ enum SettingsIndex {
         .init(id: "autoscroll", group: "mouse", icon: "arrow.up.and.down.circle",
               title: "Scroll with the middle button", detail: "Click the wheel, then move the mouse to scroll, as on Windows",
               keys: ["autoscroll"], words: ["middle click", "autoscroll", "wheel"]),
+        .init(id: "wheel.smooth", group: "mouse", icon: "computermouse",
+              title: "Smooth scrolling with a mouse wheel", detail: "Each notch of the wheel glides over a few frames, as in Chrome, instead of jumping",
+              more: "A trackpad, and a mouse that scrolls smoothly on its own, are left as they are. With ⌘, ⌃ or ⌥ held a notch goes to the page as it comes, for zooming.",
+              keys: ["wheel.smooth"], words: ["smooth scrolling", "mouse wheel", "notch", "logitech", "jumpy", "choppy", "chrome"]),
         .init(id: "pages.bounce", group: "mouse", icon: "arrow.up.and.down",
               title: "Bounce at the top and bottom", detail: "A page stretches a little past its ends and springs back, as in Safari",
               keys: ["pages.bounce"], words: ["elastic", "rubber band", "overscroll", "bounce", "smooth scrolling", "safari"]),
@@ -688,6 +733,12 @@ enum SettingsIndex {
               keys: ["extensions.sites"],
               words: ["site access", "sites", "permissions", "host", "on click", "activetab", "memory", "extension"],
               kind: .note, findOnly: true),
+        .init(id: "extensions.safariApps", group: "extensions", icon: "safari",
+              title: "From Safari apps", detail: "Off unless you turn it on, at the foot of Settings › Extensions",
+              more: "Lists the Safari extensions that came inside apps in Applications, to add as unpacked extensions. Only their JavaScript runs: native messaging and content blockers don't work.",
+              keys: [SafariApps.key],
+              words: ["safari", "safari extension", "app extension", "appex", "mac app"],
+              kind: .note, findOnly: true),
         .init(id: "note.awake", group: "memory", icon: "sun.max",
               title: "Keep selected sites awake", detail: "Always there: Keep This Site Awake, on the site's card",
               keys: ["tabs.keepAwake"], words: ["awake", "sleep"], kind: .note, findOnly: true),
@@ -764,12 +815,13 @@ enum SettingsIndex {
         case "pins.folders": return prefs.sidebar && prefs.listsPins
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "bookmarks.side": return prefs.sidebar && prefs.bookmarksBar
+        case "bookmarks.iconsOnly": return prefs.bookmarksBar && !prefs.sideBookmarks
+        case "passwords.fill.prove": return prefs.fillsPasswords
         case "toolbar.left", "tabs.compact": return !prefs.sidebar
         case "profiles.oneWindow": return Profiles.shared.several
         case "spaces.links", "links.ask", "spaces.buttons": return prefs.usesSpaces
         case "tabs.frontBeside": return prefs.newTabPlace == .next
         case "newtab.recent", "newtab.arc": return prefs.floatingNewTab
-        case "links.little.tabs": return prefs.littleLinks
         case "mail.default": return prefs.webmail != .none
         case "links.peek.stays": return prefs.peeksLinks || prefs.pinsPeek
         case "launcher.key": return prefs.launcher
@@ -795,7 +847,6 @@ enum SettingsIndex {
         case "sidebar.player": return "Only with titles in the sidebar"
         case "tabs.frontBeside": return "Only with New tab position on After current"
         case "newtab.recent", "newtab.arc": return "Only with the new tab in a floating field"
-        case "links.little.tabs": return "Only with links from other apps in a small window"
         case "mail.default": return "Only with a webmail chosen for email links"
         case "links.peek.stays": return "Only when links or pins open peeks"
         case "launcher.key": return "Only with the address field from any app on"
@@ -908,19 +959,33 @@ extension Preferences {
     /// Set Up Like Arc: what it turns on, and what was there before, so
     /// Undo can put it back.
     struct ArcSetup {
-        var layout: TabsLayout
+        /// The three keys the tabs' layout is made of, so Undo puts back
+        /// the side and icons a top layout kept underneath.
+        var side: (shown: Bool, icons: Bool, position: SidebarPosition)
         var spaces: Bool
         var rows: Bool
         var keep: (home: Bool, peek: Bool)
         var floating: Bool
+        /// Arc's habits, added after 1.0.7: tabs that close themselves,
+        /// the video that floats out, swipe back closing a link's tab, and
+        /// peek. Kept key by key, so Undo puts back the exact choice.
+        var life: TabLife
+        var float: (leave: Bool, away: Bool)
+        var swipeCloses: Bool
+        var peek: (on: Bool, click: PeekClick)
     }
 
     var arcSnapshot: ArcSetup {
-        ArcSetup(layout: tabsLayout, spaces: usesSpaces, rows: listsPins, keep: (pinsGoHome, pinsPeek), floating: floatingNewTab)
+        ArcSetup(side: (sidebar, sideIcons, sidePosition), spaces: usesSpaces, rows: listsPins, keep: (pinsGoHome, pinsPeek), floating: floatingNewTab,
+                 life: tabLife, float: (floatsOnLeave, floatsAway), swipeCloses: swipeBackCloses, peek: (peeksLinks, peekClick))
     }
 
+    /// Any duration, float or click someone chose counts: Set Up only
+    /// turns on what is off, with Arc's own (12 hours, on leaving a tab,
+    /// Shift-click), and leaves a choice already made alone.
     var looksLikeArc: Bool {
         tabsLayout == .left && usesSpaces && listsPins && pinsGoHome && pinsPeek && floatingNewTab
+            && tabLife != .never && floatOwn != .never && swipeBackCloses && peeksLinks
     }
 
     /// Turns Arc's way on and says what changed.
@@ -932,16 +997,63 @@ extension Preferences {
         if !listsPins { listsPins = true; changed.append("pinned rows") }
         if !(pinsGoHome && pinsPeek) { pinsKeepSite = true; changed.append("pins keep their site") }
         if !floatingNewTab { floatingNewTab = true; changed.append("the floating new tab") }
+        if tabLife == .never { tabLife = .halfDay; changed.append("tabs close after 12 hours") }
+        if floatOwn == .never { floatOwn = .tabs; changed.append("the video floats on its own") }
+        if !swipeBackCloses { swipeBackCloses = true; changed.append("swipe back closes a link's tab") }
+        if !peeksLinks { peekChoice = .shift; changed.append("Shift-click peeks at a link") }
         return changed
     }
 
+    /// Only what differs is written back, so a key Set Up never touched
+    /// stays as unwritten as it was.
     func restore(_ before: ArcSetup) {
-        tabsLayout = before.layout
-        usesSpaces = before.spaces
-        listsPins = before.rows
-        pinsGoHome = before.keep.home
-        pinsPeek = before.keep.peek
-        floatingNewTab = before.floating
+        if sidePosition != before.side.position { sidePosition = before.side.position }
+        if sideIcons != before.side.icons { sideIcons = before.side.icons }
+        if sidebar != before.side.shown { sidebar = before.side.shown }
+        if usesSpaces != before.spaces { usesSpaces = before.spaces }
+        if listsPins != before.rows { listsPins = before.rows }
+        if pinsGoHome != before.keep.home { pinsGoHome = before.keep.home }
+        if pinsPeek != before.keep.peek { pinsPeek = before.keep.peek }
+        if floatingNewTab != before.floating { floatingNewTab = before.floating }
+        if tabLife != before.life { tabLife = before.life }
+        if floatsOnLeave != before.float.leave { floatsOnLeave = before.float.leave }
+        if floatsAway != before.float.away { floatsAway = before.float.away }
+        if swipeBackCloses != before.swipeCloses { swipeBackCloses = before.swipeCloses }
+        if peekClick != before.peek.click { peekClick = before.peek.click }
+        if peeksLinks != before.peek.on { peeksLinks = before.peek.on }
+    }
+
+}
+
+/// Set Up Like Arc, wherever it is offered (Settings, the welcome, after
+/// Arc's spaces are brought over): what was there before it, for one Undo
+/// shared by all three.
+@MainActor
+final class LikeArc: ObservableObject {
+    static let shared = LikeArc()
+    @Published private(set) var before: Preferences.ArcSetup?
+
+    /// Sets it up, keeps what was there, and says what changed.
+    @discardableResult
+    func setUp(_ prefs: Preferences) -> [String] {
+        let was = prefs.arcSnapshot
+        let changed = prefs.setUpLikeArc()
+        if !changed.isEmpty { before = was }
+        return changed
+    }
+
+    func undo(_ prefs: Preferences) {
+        guard let before else { return }
+        prefs.restore(before)
+        self.before = nil
+    }
+
+    /// Undo is there while it is still set up like Arc: changed by hand
+    /// since, there is nothing to undo.
+    func undoable(_ prefs: Preferences) -> Bool { before != nil && prefs.looksLikeArc }
+
+    static func said(_ changed: [String]) -> String {
+        changed.isEmpty ? "Already set up like Arc" : "Turned on: " + changed.joined(separator: ", ")
     }
 }
 
@@ -958,6 +1070,7 @@ extension SettingsIndex {
             "pins.keep": prefs.pinsKeepSite,
             "pins.home": prefs.pinsGoHome,
             "pins.peek": prefs.pinsPeek,
+            "pins.linksNewTab": prefs.pinLinksOpenTabs,
             "links.peek": prefs.peekChoice.rawValue,
             "pages.120": prefs.fastPages.rawValue,
             "swipe.history": prefs.holdsHistory,
@@ -1000,6 +1113,9 @@ extension SettingsIndex {
         case "pins.folders":
             guard let on = value as? Bool else { return false }
             prefs.pinFolders = on
+        case "pins.linksNewTab":
+            guard let on = value as? Bool else { return false }
+            prefs.pinLinksOpenTabs = on
         case "sidebar.slides":
             guard let on = value as? Bool else { return false }
             prefs.slidesColumn = on
@@ -1010,7 +1126,9 @@ extension SettingsIndex {
             guard let choice = (value as? String).flatMap(PeekChoice.init) else { return false }
             prefs.peekChoice = choice
         case "arc.setup":
-            prefs.setUpLikeArc()
+            LikeArc.shared.setUp(prefs)
+        case "arc.undo":
+            LikeArc.shared.undo(prefs)
         default:
             return false
         }

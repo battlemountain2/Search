@@ -1,12 +1,20 @@
 import SwiftUI
 
 // The bookmarks bar: the top of the bookmarks, in a thin row above the page,
-// as Chrome and Safari have one. A folder opens as a menu. More than the row
-// holds scrolls sideways.
+// as Chrome and Safari have one. A folder opens as a menu. What the row can't
+// hold goes into a » at its end, a menu of the rest, as in Chrome and Safari
+// (idea 958): the row once scrolled sideways, with nothing to show it did,
+// and only a trackpad could scroll it.
 //
 // Off unless asked for — Settings › Tabs, or Bookmarks › Show Bookmarks Bar
 // — since the page gives up a strip of its height to it. It goes with the
 // tabs when they fold away (⌘S) and when a video takes the screen.
+//
+// Icons only (idea 980), also off unless asked for: every bookmark as its
+// icon alone, its name on hover, as Edge's "Show icons only" and Vivaldi's
+// "Icon only" do, rather than emptying each one's name (idea 334). Folders
+// keep their names: every folder has the same icon, so a row of them would
+// be a row of guesses, where a site's icon tells one from another.
 
 struct BookmarksBar: View {
     @ObservedObject var browser: Browser
@@ -16,14 +24,44 @@ struct BookmarksBar: View {
     /// being the line (see CardEdge).
     var onFrame = false
 
-    static let height: CGFloat = 24
+    static let height: CGFloat = 26
+    /// The space between two on the bar, and the air at its ends.
+    static let gap: CGFloat = 2
+    static let air: CGFloat = 8
+    /// The » at the end, and the space before it.
+    static let more: CGFloat = 22 + 4
+
+    /// Each one's width as laid out, by id.
+    @State private var widths: [Bookmark.ID: CGFloat] = [:]
+    /// The bar's own width.
+    @State private var room: CGFloat = 0
+
+    /// How many, from the first, the bar holds in `room`, given their
+    /// widths: all of them if they fit, or as many as fit beside the ».
+    static func fit(_ widths: [CGFloat], room: CGFloat) -> Int {
+        let open = room - 2 * air
+        let all = widths.reduce(0, +) + gap * CGFloat(max(widths.count - 1, 0))
+        guard all > open else { return widths.count }
+        var end: CGFloat = 0
+        for (index, width) in widths.enumerated() {
+            end += (index == 0 ? 0 : gap) + width
+            if end > open - more { return index }
+        }
+        return widths.count
+    }
 
     var body: some View {
         let _ = Bench.count("bar")
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 2) {
-                ForEach(bookmarks.roots) { node in
-                    Item(node: node) {
+        let roots = bookmarks.roots
+        let shown = room > 0 ? BookmarksBar.fit(roots.map { widths[$0.id] ?? 0 }, room: room) : roots.count
+        let hidden = Array(roots.dropFirst(shown))
+        let _ = Bench.barHides(browser, hidden)
+        // The row over the bar rather than in it: a row longer than the
+        // window leaves the bar as wide as the window, held at its start.
+        Color.clear.overlay(alignment: .leading) {
+            HStack(spacing: BookmarksBar.gap) {
+                ForEach(Array(roots.enumerated()), id: \.element.id) { index, node in
+                    Item(node: node, iconsOnly: browser.prefs.bookmarksIconsOnly) {
                         if node.isFolder {
                             BookmarkMenu.shared.popUp(node)
                         } else if let text = node.url, let url = URL(string: text) {
@@ -31,21 +69,47 @@ struct BookmarksBar: View {
                         }
                     }
                     .overlay {
+                        // A middle-click: a bookmark in a new tab behind, a
+                        // folder's bookmarks each in one (idea 959), as Brave
+                        // and Firefox do; a folder's ⌘-click too, as Chrome
+                        // does. A plain click still opens its menu, and a
+                        // bookmark's ⌘-click is its own (openBookmark).
                         if let url = node.url.flatMap(URL.init(string:)) {
                             MiddleClick { browser.pickBookmark(url, inNewTab: true) }
+                        } else if node.isFolder {
+                            MiddleClick(command: true) { browser.openAll(node) }
                         }
                     }
                     .contextMenu { BookmarkActions(browser: browser, bookmarks: bookmarks, node: node) }
+                    .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) {
+                        widths[node.id] = $0.width
+                        Bench.barLaid(node.id, $0)
+                    }
+                    .opacity(index < shown ? 1 : 0)
+                    .allowsHitTesting(index < shown)
+                    .accessibilityHidden(index >= shown)
                 }
             }
-            .padding(.horizontal, 8)
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.horizontal, BookmarksBar.air)
         }
+        .clipped()
+        .overlay(alignment: .trailing) {
+            if !hidden.isEmpty {
+                More { BookmarkMenu.shared.popUp(hidden, title: "More Bookmarks") }
+                    .padding(.trailing, BookmarksBar.air - 4)
+            }
+        }
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { room = $0 }
         .frame(height: BookmarksBar.height)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .contextMenu {
             Button("New Folder…") { bookmarks.askNewFolder(in: nil) }
             Divider()
+            Toggle("Show Icons Only", isOn: Binding(
+                get: { browser.prefs.bookmarksIconsOnly },
+                set: { browser.prefs.bookmarksIconsOnly = $0 }))
             Button("Show Bookmarks…") { browser.bookmarking = true }
             Toggle("Show on New Tab Only", isOn: Binding(
                 get: { browser.prefs.bookmarksBarOnNewTab },
@@ -79,15 +143,50 @@ struct BookmarksBar: View {
         }
     }
 
-    /// One on the bar. A bookmark without a name is its icon alone, in a
-    /// square as tall as the others, its address on hover.
-    struct Item: View {
-        let node: Bookmark
+    /// The » at the bar's end, when some don't fit: a menu of those.
+    struct More: View {
         let act: () -> Void
         @State private var hovering = false
 
         var body: some View {
-            HStack(spacing: 4.5) {
+            Image(systemName: "chevron.right.2")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Palette.muted)
+                .frame(width: 22, height: 22)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hovering ? Palette.hover : .clear))
+                .contentShape(Rectangle())
+                .onTapGesture(perform: act)
+                .onHover { hovering = $0 }
+                .help("More bookmarks")
+                .accessibilityLabel("More Bookmarks")
+                .accessibilityAddTraits(.isButton)
+        }
+    }
+
+    /// One on the bar. A bookmark without a name is its icon alone, in a
+    /// square as tall as the others, its address on hover; with icons only
+    /// (idea 980) every bookmark is, its name on hover.
+    struct Item: View {
+        let node: Bookmark
+        var iconsOnly = false
+        let act: () -> Void
+        @State private var hovering = false
+
+        /// Its icon alone: renamed to nothing, or every bookmark with icons
+        /// only. A folder keeps its name.
+        static func bare(_ node: Bookmark, iconsOnly: Bool) -> Bool {
+            node.unnamed || (iconsOnly && !node.isFolder)
+        }
+
+        /// What hovering it says: with icons only its name (or, without one,
+        /// its address); otherwise its address, as before.
+        static func tip(_ node: Bookmark, iconsOnly: Bool) -> String {
+            iconsOnly && !node.isFolder ? node.label : (node.url ?? node.title)
+        }
+
+        var body: some View {
+            let bare = Item.bare(node, iconsOnly: iconsOnly)
+            HStack(spacing: 6) {
                 if node.isFolder {
                     Image(systemName: "folder.fill")
                         .font(.system(size: 10, weight: .medium))
@@ -95,7 +194,7 @@ struct BookmarksBar: View {
                 } else {
                     Mark(icon: Favicons.shared.cached(for: node.address), letter: String((node.host ?? "•").prefix(1)).uppercased(), size: 11.5)
                 }
-                if !node.unnamed {
+                if !bare {
                     Text(node.title)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Palette.ink.opacity(0.85))
@@ -109,8 +208,8 @@ struct BookmarksBar: View {
                         .foregroundStyle(Palette.ink.opacity(0.35))
                 }
             }
-            .padding(.horizontal, node.unnamed ? 4 : 6)
-            .frame(minWidth: node.unnamed ? 20 : nil)
+            .padding(.horizontal, bare ? 4 : 6)
+            .frame(minWidth: bare ? 20 : nil)
             .frame(height: 20)
             .background(
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
@@ -125,7 +224,10 @@ struct BookmarksBar: View {
             .onHover { h in
                 withAnimation(Motion.quick) { hovering = h }
             }
-            .help(node.url ?? node.title)
+            .help(Item.tip(node, iconsOnly: iconsOnly))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(node.label)
+            .accessibilityAddTraits(node.isFolder ? .isButton : .isLink)
         }
     }
 }
@@ -168,9 +270,7 @@ struct BookmarkActions: View {
     @ViewBuilder
     func folderMenu(_ node: Bookmark) -> some View {
         let urls = (node.children ?? []).compactMap { $0.url.flatMap(URL.init(string:)) }
-        Button("Open All in New Tabs") {
-            for url in urls { browser.open(url, foreground: false, atEnd: true, from: browser.active, mayWait: true) }
-        }
+        Button("Open All in New Tabs") { browser.openAll(node) }
         .disabled(urls.isEmpty)
         Button("Open All in New Window") { browser.openInNewWindow(urls) }
             .disabled(urls.isEmpty)
@@ -287,7 +387,11 @@ struct SideBookmarks: View {
                 }
             }
             .overlay {
-                if let url { MiddleClick { browser.pickBookmark(url, inNewTab: true) } }
+                if let url {
+                    MiddleClick { browser.pickBookmark(url, inNewTab: true) }
+                } else if node.isFolder {
+                    MiddleClick(command: true) { browser.openAll(node) }
+                }
             }
             .onHover { hovering = $0 }
             .contextMenu { BookmarkActions(browser: browser, bookmarks: bookmarks, node: node) }

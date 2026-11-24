@@ -620,6 +620,18 @@ extension Browser {
         goToSpace(list[index].id)
     }
 
+    /// Next Space and Previous Space (Settings › Shortcuts): the space
+    /// after or before the one on screen, in the menu's order, every
+    /// profile's with profiles in one window. Stops at the ends, as the
+    /// swipe does (idea 761).
+    func stepSpace(_ step: Int) {
+        guard prefs.usesSpaces else { return }
+        let list = everySpace
+        let shown = spaceComing ?? spaceID
+        guard let here = list.firstIndex(where: { $0.id == shown }) else { return }
+        switchSpace(index: here + step)
+    }
+
     /// ⌃1–⌃9 and the space's menu: the space's page in front at once, its
     /// rows sliding in, and the column taking it once they stand still
     /// (SpaceSwipe.bring). Taken at once, the column's whole row was made
@@ -894,6 +906,7 @@ struct SpaceWash: View {
 
 struct SpaceDot: View {
     @ObservedObject var browser: Browser
+    @Environment(\.greys) private var greys
     @State private var hovering = false
     /// What is drawn, a step behind the browser: the space changes in a
     /// frame with nothing animated (see SpaceSwipe.slide), and the icon
@@ -907,17 +920,24 @@ struct SpaceDot: View {
 
     static let width: CGFloat = 26
 
-    private var symbol: String { browser.makingSpace ? "plus" : browser.space.symbol }
-    private var key: String { browser.makingSpace ? "new" : "\(browser.spaceID.uuidString)-\(browser.space.symbol)" }
+    /// The space on its way in, from the moment its rows and colour come
+    /// (Browser.spaceHeading), or the one on screen. By spaceID, the icon
+    /// turned over only once the space was taken, when the hand had been
+    /// still a moment, under rows and a colour that were already the new
+    /// space's (idea 954).
+    private var space: Space { browser.washSpace }
+    private var symbol: String { browser.makingSpace ? "plus" : space.symbol }
+    private var key: String { browser.makingSpace ? "new" : "\(space.id.uuidString)-\(space.symbol)" }
     /// The space's colour, if it has one; none while a new one is being made.
-    private var tint: Color? { browser.makingSpace ? nil : browser.space.tint }
+    private var tint: Color? { browser.makingSpace ? nil : space.tint }
 
     var body: some View {
         Button { SpaceMenu.show(for: browser) } label: {
             ZStack {
                 Image(systemName: shown?.symbol ?? symbol)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(tint ?? (hovering ? Palette.ink : Palette.muted))
+                    // Hovered as the doors beside it are (Door, idea 1034).
+                    .foregroundStyle(tint ?? (hovering ? Palette.ink.opacity(0.7) : Palette.muted))
                     .id(shown?.key ?? key)
                     // The way the tabs go: sideways in the column; in the bar
                     // across the top, up for the next space, down going back.
@@ -931,13 +951,13 @@ struct SpaceDot: View {
                 // A coloured space's dot sits on a wash of its colour, enough
                 // to tell spaces apart at the edge of the eye.
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(tint.map { $0.opacity(hovering ? 0.24 : 0.14) } ?? (hovering ? Palette.hover : .clear))
+                    .fill(tint.map { $0.opacity(hovering ? 0.24 : 0.14) } ?? (hovering ? greys.hover : .clear))
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .animation(Motion.quick, value: browser.space.look)
+        .animation(Motion.quick, value: space.look)
         .help("\(browser.space.name) — \(KeyCombo.spacesOnCommand ? "⌘1–⌘9" : "⌃1–⌃9"), or two fingers \(browser.prefs.sidebar ? "sideways" : "up or down") over the tabs, to switch")
         .onChange(of: key) { _, now in
             let symbol = symbol
@@ -996,6 +1016,9 @@ struct SpaceButtons: View {
     @ObservedObject var browser: Browser
     /// One above the other, in the column of icons.
     var vertical = false
+    /// Narrower than 26 each, down to 20, where the row has less room than
+    /// that: the column's foot, narrowed (idea 1010).
+    var squeezes = false
 
     /// How many buttons are drawn, for the foot to make room for them.
     /// One space still has its button: it is the way to the menu, and to
@@ -1009,7 +1032,8 @@ struct SpaceButtons: View {
             let layout = vertical ? AnyLayout(VStackLayout(spacing: 2)) : AnyLayout(HStackLayout(spacing: 2))
             layout {
                 ForEach(Array(browser.spaces.enumerated()), id: \.element.id) { index, space in
-                    SpaceButton(browser: browser, space: space, index: index, current: space.id == (browser.spaceHeading ?? browser.spaceID))
+                    SpaceButton(browser: browser, space: space, index: index, current: space.id == (browser.spaceHeading ?? browser.spaceID),
+                                squeezes: squeezes)
                 }
             }
         }
@@ -1017,10 +1041,12 @@ struct SpaceButtons: View {
 }
 
 private struct SpaceButton: View {
+    @Environment(\.greys) private var greys
     let browser: Browser
     let space: Space
     let index: Int
     let current: Bool
+    var squeezes = false
     @State private var hovering = false
 
     var body: some View {
@@ -1032,15 +1058,16 @@ private struct SpaceButton: View {
                 // Its colour only while it's the one on screen: the others
                 // all grey alike, coloured or not, so a coloured space's
                 // button didn't read as the one you're in.
-                .foregroundStyle(current ? (space.tint ?? Palette.ink) : hovering ? Palette.ink : Palette.muted)
+                // Hovered as the doors beside it are (Door, idea 1034).
+                .foregroundStyle(current ? (space.tint ?? Palette.ink) : hovering ? Palette.ink.opacity(0.7) : Palette.muted)
                 .opacity(current || hovering ? 1 : 0.75)
-                .frame(width: 26, height: 26)
+                .frame(minWidth: squeezes ? 20 : 26, idealWidth: 26, maxWidth: 26, minHeight: 26, maxHeight: 26)
                 .background(
                     // The one on screen on a wash, of its colour if it has one.
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(current
-                              ? (space.tint.map { $0.opacity(0.18) } ?? Palette.hover)
-                              : (hovering ? Palette.hover : .clear))
+                              ? (space.tint.map { $0.opacity(0.18) } ?? greys.wash)
+                              : (hovering ? greys.hover : .clear))
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
@@ -1119,11 +1146,13 @@ enum SpaceMenu {
         menu.addItem(.separator())
         menu.addItem(item("New Space…") { browser.askForSpace() })
         // The profiles, once there is more than one (see Profiles.swift).
+        // It switches the window's profile, the one ticked; it doesn't move
+        // the space, so it isn't named like one of the space's own settings.
         if Profiles.shared.several {
             menu.addItem(.separator())
             let profiles = NSMenu()
             for entry in ProfileMenu.items(for: browser) { profiles.addItem(entry) }
-            let holder = NSMenuItem(title: "Profile: \(Profiles.shared.profile(browser.profileID).name)", action: nil, keyEquivalent: "")
+            let holder = NSMenuItem(title: "Switch to Profile", action: nil, keyEquivalent: "")
             holder.submenu = profiles
             menu.addItem(holder)
         }
