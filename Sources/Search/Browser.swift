@@ -5047,6 +5047,8 @@ final class Browser: NSObject, ObservableObject {
         else if closePanel() { return }
         else if !pickedTabs.isEmpty { closePickedTabs() }
         else if let tab = active { closeTab(tab) }
+        else if let nextSpace = otherSpaceWithTabs { goToSpace(nextSpace) }
+        else { closeWindow() }
     }
 
     /// Close Tab as a hand asks for it: ⌘W, the cross or a middle click on
@@ -5188,9 +5190,14 @@ final class Browser: NSObject, ObservableObject {
         if tabs.count == 1 {
             if tab.isBlank {
                 if let nextSpace = otherSpaceWithTabs {
+                    remember(tab, at: 0)
+                    tab.close()
+                    tabs = []
+                    activeID = nil
                     typed = ""
                     tab.draft = ""
                     editing = false
+                    removeEmptyGroup(tab.groupID)
                     goToSpace(nextSpace)
                 } else {
                     NSApp.keyWindow?.performClose(nil)
@@ -5198,10 +5205,8 @@ final class Browser: NSObject, ObservableObject {
             } else if !prefs.newTabAfterLast, let nextSpace = otherSpaceWithTabs {
                 remember(tab, at: 0)
                 tab.close()
-                let fresh = Tab(configuration: Web.configuration(space: spaceID))
-                adopt(fresh)
-                tabs = [fresh]
-                activeID = fresh.id
+                tabs = []
+                activeID = nil
                 removeEmptyGroup(tab.groupID)
                 goToSpace(nextSpace)
             } else {
@@ -5243,6 +5248,11 @@ final class Browser: NSObject, ObservableObject {
                     editing = false
                     focusRequest += 1
                 } else if let nextSpace = otherSpaceWithTabs {
+                    remember(tab, at: index)
+                    tab.close()
+                    tabs.remove(at: index)
+                    removeEmptyGroup(tab.groupID)
+                    activeID = tabs.first?.id
                     typed = ""
                     tab.draft = ""
                     editing = false
@@ -8183,8 +8193,10 @@ final class Browser: NSObject, ObservableObject {
         if launching {
             // The floating new tab, as Return: a tab of its own.
             open(url, foreground: true, from: active, loose: true)
+        } else if let tab = active ?? tabs.first {
+            tab.go(to: url)
         } else {
-            (active ?? tabs.first)?.go(to: url)
+            open(url, foreground: true)
         }
         editing = false
         typed = ""
@@ -8270,8 +8282,10 @@ final class Browser: NSObject, ObservableObject {
             // Opened behind the page by hand, as a ⌘-clicked link is: it may
             // wait to load (Settings › Tabs › Load background tabs…).
             open(url, foreground: front, from: active, mayWait: true)
+        } else if let tab = active ?? tabs.first {
+            tab.go(to: url)
         } else {
-            (active ?? tabs.first)?.go(to: url)
+            open(url, foreground: true)
         }
         editing = false
         typed = ""

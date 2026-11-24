@@ -197,6 +197,36 @@ struct ZenTopBar: View {
                     .strokeBorder(tab.shy ? Color(red: 0.78, green: 0.65, blue: 1.0).opacity(0.32) : Color.clear, lineWidth: 0.5)
             )
             .onHover { capsuleHovered = $0 }
+        } else {
+            HStack(spacing: 5) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: 15, height: 15)
+
+                Button {
+                    Haptics.tap()
+                    browser.launch()
+                } label: {
+                    Text("Search or enter address")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .focusEffectDisabled()
+                .help("Search or enter address   ⌘L")
+            }
+            .padding(.leading, 7)
+            .padding(.trailing, 3)
+            .frame(minWidth: 170, maxWidth: 320, maxHeight: 22)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(capsuleHovered ? Color.white.opacity(0.08) : Color.white.opacity(0.04))
+            )
+            .onHover { capsuleHovered = $0 }
         }
     }
 
