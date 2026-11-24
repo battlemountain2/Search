@@ -39,13 +39,8 @@ extension Browser {
     /// edge for a frame.
     func paintGround(_ window: NSWindow?) {
         guard let window else { return }
-        if glassy {
-            window.isOpaque = false
-            window.backgroundColor = .clear
-        } else {
-            window.isOpaque = true
-            window.backgroundColor = asCards ? Palette.NS.frame : Palette.NS.ground
-        }
+        window.isOpaque = false
+        window.backgroundColor = .clear
     }
 }
 

@@ -5,7 +5,11 @@ extension Browser {
     /// Settings › Show the bookmarks bar only on new tabs, only while that
     /// tab is a new one (idea 1082).
     var bookmarksBarForTab: Bool {
-        prefs.bookmarksBar && (!prefs.bookmarksNewTabOnly || (active?.isBlank ?? true))
+        let isNew = active == nil || (active?.isBlank ?? true)
+        if prefs.bookmarksBarOnNewTab || prefs.bookmarksNewTabOnly {
+            return isNew
+        }
+        return prefs.bookmarksBar
     }
 }
 
@@ -121,10 +125,11 @@ struct BookmarksBar: View {
                 set: { browser.prefs.bookmarksIconsOnly = $0 }))
             Button("Show Bookmarks…") { browser.bookmarking = true }
             Toggle("Show on New Tab Only", isOn: Binding(
-                get: { browser.prefs.bookmarksBarOnNewTab },
+                get: { browser.prefs.bookmarksBarOnNewTab || browser.prefs.bookmarksNewTabOnly },
                 set: { on in
                     withAnimation(Motion.glide) {
                         browser.prefs.bookmarksBarOnNewTab = on
+                        browser.prefs.bookmarksNewTabOnly = on
                         if on { browser.prefs.bookmarksBar = false }
                     }
                 }
@@ -134,6 +139,7 @@ struct BookmarksBar: View {
                 withAnimation(Motion.glide) {
                     browser.prefs.bookmarksBar = false
                     browser.prefs.bookmarksBarOnNewTab = false
+                    browser.prefs.bookmarksNewTabOnly = false
                 }
             }
         }

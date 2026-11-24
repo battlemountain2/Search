@@ -943,11 +943,6 @@ enum DeveloperApplication {
 
     /// Fetch only the cookies matching this URL without loading the profile's jar.
     private static func cookies(for address: URL, in web: WKWebView) async -> [HTTPCookie]? {
-#if compiler(>=6.4)
-        if #available(macOS 27, *) {
-            return await web.configuration.websiteDataStore.httpCookieStore.cookies(for: address)
-        }
-#endif
         return nil
     }
 

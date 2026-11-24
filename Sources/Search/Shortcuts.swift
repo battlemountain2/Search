@@ -336,12 +336,14 @@ struct Command: Identifiable {
         Command("bookmarks.show", "Show Bookmarks…", .bookmarks, nil) { $0.bookmarking = true },
         Command("bookmarks.bar", "Show Bookmarks Bar", .bookmarks, KeyCombo("b", shift: true)) { browser in
             withAnimation(Motion.glide) {
-                if browser.prefs.bookmarksBar || browser.prefs.bookmarksBarOnNewTab {
+                if browser.prefs.bookmarksBar || browser.prefs.bookmarksBarOnNewTab || browser.prefs.bookmarksNewTabOnly {
                     browser.prefs.bookmarksBar = false
                     browser.prefs.bookmarksBarOnNewTab = false
+                    browser.prefs.bookmarksNewTabOnly = false
                 } else {
                     browser.prefs.bookmarksBar = true
                     browser.prefs.bookmarksBarOnNewTab = false
+                    browser.prefs.bookmarksNewTabOnly = false
                 }
             }
         },

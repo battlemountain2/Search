@@ -421,20 +421,24 @@ struct SearchApp: App {
                 Button("Show Bookmarks…") { browser.bookmarking = true }
                     .shortcut("bookmarks.show")
                 Toggle("Show Bookmarks Bar", isOn: Binding(
-                    get: { browser.prefs.bookmarksBar && !browser.prefs.bookmarksBarOnNewTab },
+                    get: { browser.prefs.bookmarksBar && !browser.prefs.bookmarksBarOnNewTab && !browser.prefs.bookmarksNewTabOnly },
                     set: { on in
                         withAnimation(Motion.glide) {
                             browser.prefs.bookmarksBar = on
-                            if on { browser.prefs.bookmarksBarOnNewTab = false }
+                            if on {
+                                browser.prefs.bookmarksBarOnNewTab = false
+                                browser.prefs.bookmarksNewTabOnly = false
+                            }
                         }
                     }
                 ))
                 .shortcut("bookmarks.bar")
                 Toggle("Show on New Tab Only", isOn: Binding(
-                    get: { browser.prefs.bookmarksBarOnNewTab },
+                    get: { browser.prefs.bookmarksBarOnNewTab || browser.prefs.bookmarksNewTabOnly },
                     set: { on in
                         withAnimation(Motion.glide) {
                             browser.prefs.bookmarksBarOnNewTab = on
+                            browser.prefs.bookmarksNewTabOnly = on
                             if on { browser.prefs.bookmarksBar = false }
                         }
                     }
@@ -853,7 +857,7 @@ struct ContentView: View {
 
         if cards {
             let gap = edgeToEdge ? 0 : Metrics.cardGap
-            let width = sidebar ? sideWidth : gap
+            let width = sidebar ? sideWidth + gap : gap
             let height: CGFloat
             if showZenTopBar && barShown {
                 height = topGap + zenHeight + 2 + barHeight + gap

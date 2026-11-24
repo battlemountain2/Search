@@ -972,7 +972,12 @@ final class Preferences: ObservableObject {
     }
     /// Show bookmarks bar only on new blank tabs. Off unless asked for.
     @Published var bookmarksBarOnNewTab: Bool {
-        didSet { store.set(bookmarksBarOnNewTab, forKey: "bookmarks.bar.newTab") }
+        didSet {
+            store.set(bookmarksBarOnNewTab, forKey: "bookmarks.bar.newTab")
+            if bookmarksBarOnNewTab != bookmarksNewTabOnly {
+                bookmarksNewTabOnly = bookmarksBarOnNewTab
+            }
+        }
     }
     /// The bookmarks bar at the top of the column instead of above the page:
     /// a row for each of its bookmarks and folders, in every space, before
@@ -984,7 +989,12 @@ final class Preferences: ObservableObject {
     /// new one, as Chrome's and Edge's "Only on new tab" (idea 1082). Off
     /// unless asked for.
     @Published var bookmarksNewTabOnly: Bool {
-        didSet { store.set(bookmarksNewTabOnly, forKey: "bookmarks.newTabOnly") }
+        didSet {
+            store.set(bookmarksNewTabOnly, forKey: "bookmarks.newTabOnly")
+            if bookmarksNewTabOnly != bookmarksBarOnNewTab {
+                bookmarksBarOnNewTab = bookmarksNewTabOnly
+            }
+        }
     }
     /// Whether the bookmarks bar is in the column now: the bar shown, asked
     /// for there, and the tabs down a side. With the bar hidden it is hidden

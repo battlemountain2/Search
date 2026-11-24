@@ -2792,7 +2792,6 @@ final class Browser: NSObject, ObservableObject {
         board.setString(url.absoluteString, forType: .string)
         announce(prefs.autoCleanUrl && url != rawUrl ? "Clean address copied" : "Address copied")
     }
-    }
 
     /// Edit › Paste and Match Style: the clipboard as plain text, in the
     /// field or page being typed in (idea 814), as ⇧⌘V there already does.
