@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import WebKit
 
 // MARK: - PWA Configuration
@@ -10,10 +11,33 @@ struct PWAConfig: Codable {
     let themeColorHex: String?
 }
 
+// MARK: - Action Router
+
+final class PWAActionRouter: NSObject {
+    static let shared = PWAActionRouter()
+    weak var model: PWAWebViewModel?
+}
+
+// MARK: - Color Parser
+
+func parseHexColor(_ hex: String) -> NSColor? {
+    var text = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+    if text.hasPrefix("#") { text.removeFirst() }
+    var rgbValue: UInt64 = 0
+    guard Scanner(string: text).scanHexInt64(&rgbValue) else { return nil }
+    if text.count == 6 {
+        let r = CGFloat((rgbValue & 0xFF0000) >> 16) / 255.0
+        let g = CGFloat((rgbValue & 0x00FF00) >> 8) / 255.0
+        let b = CGFloat(rgbValue & 0x0000FF) / 255.0
+        return NSColor(srgbRed: r, green: g, blue: b, alpha: 1.0)
+    }
+    return nil
+}
+
 // MARK: - Main Application Delegate
 
 @main
-final class PWARunnerApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate {
+final class PWARunnerApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
     static func main() {
         let app = NSApplication.shared
         let delegate = PWARunnerApp()
@@ -22,22 +46,15 @@ final class PWARunnerApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
     }
 
     private var window: NSWindow!
-    private var webView: WKWebView!
-    private var headerBar: NSView!
-    private var titleLabel: NSTextField!
-    private var backButton: NSButton!
-    private var forwardButton: NSButton!
-    private var reloadButton: NSButton!
     private var config: PWAConfig!
-    private var edgeToEdge: Bool = false
 
     private static let smallest = NSSize(width: 500, height: 400)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
         loadConfig()
         setupMainMenu()
         buildWindow()
-        loadPage()
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -48,7 +65,6 @@ final class PWARunnerApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
     // MARK: - Config Loading
 
     private func loadConfig() {
-        // Try locating PWA.json next to binary or in bundle resources
         let bundle = Bundle.main
         var data: Data?
 
@@ -64,7 +80,6 @@ final class PWARunnerApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
         if let data, let decoded = try? JSONDecoder().decode(PWAConfig.self, from: data) {
             self.config = decoded
         } else {
-            // Fallback from Info.plist
             let info = bundle.infoDictionary ?? [:]
             let name = info["CFBundleDisplayName"] as? String ?? info["CFBundleName"] as? String ?? "Web App"
             let startString = info["PWAStartURL"] as? String ?? "https://about:blank"
@@ -73,9 +88,6 @@ final class PWARunnerApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
             let color = info["PWAThemeColor"] as? String
             self.config = PWAConfig(name: name, host: host, startURL: startURL, themeColorHex: color)
         }
-
-        let savedEdge = UserDefaults.standard.bool(forKey: "pwa.edgetoedge." + config.host)
-        self.edgeToEdge = savedEdge
     }
 
     // MARK: - Menu Setup
@@ -117,8 +129,7 @@ final class PWARunnerApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
         mainMenu.addItem(viewMenuItem)
         let viewMenu = NSMenu(title: "View")
         viewMenuItem.submenu = viewMenu
-        let reload = NSMenuItem(title: "Reload", action: #selector(reloadAction), keyEquivalent: "r")
-        viewMenu.addItem(reload)
+        viewMenu.addItem(withTitle: "Reload", action: #selector(reloadAction), keyEquivalent: "r")
         let hardReload = NSMenuItem(title: "Force Reload", action: #selector(forceReloadAction), keyEquivalent: "r")
         hardReload.keyEquivalentModifierMask = [.command, .shift]
         viewMenu.addItem(hardReload)
@@ -138,10 +149,18 @@ final class PWARunnerApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
         windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
     }
 
+    // MARK: - Action Selectors
+
+    @objc func reloadAction() { PWAActionRouter.shared.model?.reload() }
+    @objc func forceReloadAction() { PWAActionRouter.shared.model?.reloadFromOrigin() }
+    @objc func actualSizeAction() { PWAActionRouter.shared.model?.setZoom(1.0) }
+    @objc func zoomInAction() { PWAActionRouter.shared.model?.zoomIn() }
+    @objc func zoomOutAction() { PWAActionRouter.shared.model?.zoomOut() }
+
     // MARK: - Window Construction
 
     private func buildWindow() {
-        let rect = NSRect(x: 0, y: 0, width: 1080, height: 750)
+        let rect = NSRect(x: 0, y: 0, width: 1100, height: 780)
         window = NSWindow(
             contentRect: rect,
             styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
@@ -151,11 +170,18 @@ final class PWARunnerApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
         window.title = config.name
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.isOpaque = false
-        window.backgroundColor = .clear
         window.isMovableByWindowBackground = true
         window.minSize = Self.smallest
         window.delegate = self
+
+        // Seamless solid background to prevent awkward translucent seams
+        if let hex = config.themeColorHex, let color = parseHexColor(hex) {
+            window.backgroundColor = color
+            window.isOpaque = true
+        } else {
+            window.backgroundColor = .windowBackgroundColor
+            window.isOpaque = true
+        }
 
         // Restore frame
         if let frameString = UserDefaults.standard.string(forKey: "pwa.frame." + config.host) {
@@ -169,250 +195,9 @@ final class PWARunnerApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
             window.center()
         }
 
-        let contentView = NSView(frame: window.contentView!.bounds)
-        contentView.autoresizingMask = [.width, .height]
-        window.contentView = contentView
-
-        // Configure WebKit with default persistent data store (shared with Search!)
-        let webConfig = WKWebViewConfiguration()
-        webConfig.websiteDataStore = .default()
-        webConfig.preferences.setValue(true, forKey: "developerExtrasEnabled")
-        webConfig.defaultWebpagePreferences.allowsContentJavaScript = true
-
-        let webFrame = NSRect(
-            x: 0,
-            y: 0,
-            width: contentView.bounds.width,
-            height: contentView.bounds.height - (edgeToEdge ? 0 : 32)
-        )
-        webView = WKWebView(frame: webFrame, configuration: webConfig)
-        webView.autoresizingMask = [.width, .height]
-        webView.navigationDelegate = self
-        webView.uiDelegate = self
-        webView.allowsBackForwardNavigationGestures = true
-        contentView.addSubview(webView)
-
-        // Custom Header Bar (32pt)
-        buildHeaderBar(in: contentView)
-
-        updateLayout()
+        let rootView = PWARunnerRootView(config: config, window: window)
+        window.contentView = NSHostingView(rootView: rootView)
         window.makeKeyAndOrderFront(nil)
-    }
-
-    private func buildHeaderBar(in container: NSView) {
-        let headerFrame = NSRect(x: 0, y: container.bounds.height - 32, width: container.bounds.width, height: 32)
-        headerBar = NSView(frame: headerFrame)
-        headerBar.autoresizingMask = [.width, .minYMargin]
-        headerBar.wantsLayer = true
-
-        applyHeaderBackground()
-
-        // Space for native traffic lights is 0...72
-
-        // Back button
-        backButton = NSButton(image: NSImage(systemSymbolName: "chevron.left", accessibilityDescription: "Back")!, target: self, action: #selector(backAction))
-        backButton.bezelStyle = .regularSquare
-        backButton.isBordered = false
-        backButton.frame = NSRect(x: 74, y: 6, width: 20, height: 20)
-        backButton.toolTip = "Back (⌘[)"
-        headerBar.addSubview(backButton)
-
-        // Forward button
-        forwardButton = NSButton(image: NSImage(systemSymbolName: "chevron.right", accessibilityDescription: "Forward")!, target: self, action: #selector(forwardAction))
-        forwardButton.bezelStyle = .regularSquare
-        forwardButton.isBordered = false
-        forwardButton.frame = NSRect(x: 98, y: 6, width: 20, height: 20)
-        forwardButton.toolTip = "Forward (⌘])"
-        headerBar.addSubview(forwardButton)
-
-        // Reload button
-        reloadButton = NSButton(image: NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "Reload")!, target: self, action: #selector(reloadAction))
-        reloadButton.bezelStyle = .regularSquare
-        reloadButton.isBordered = false
-        reloadButton.frame = NSRect(x: 122, y: 6, width: 20, height: 20)
-        reloadButton.toolTip = "Reload (⌘R)"
-        headerBar.addSubview(reloadButton)
-
-        // App Title in Center
-        titleLabel = NSTextField(labelWithString: config.name)
-        titleLabel.font = NSFont.systemFont(ofSize: 11.5, weight: .semibold)
-        titleLabel.textColor = .labelColor
-        titleLabel.alignment = .center
-        titleLabel.frame = NSRect(x: 160, y: 6, width: container.bounds.width - 320, height: 20)
-        titleLabel.autoresizingMask = [.width]
-        headerBar.addSubview(titleLabel)
-
-        // Options Menu Button on trailing edge
-        let optionsButton = NSPopUpButton(frame: NSRect(x: container.bounds.width - 36, y: 6, width: 24, height: 20), pullsDown: true)
-        optionsButton.autoresizingMask = [.minXMargin]
-        optionsButton.bezelStyle = .regularSquare
-        optionsButton.isBordered = false
-        optionsButton.menu = makeOptionsMenu()
-        headerBar.addSubview(optionsButton)
-
-        container.addSubview(headerBar)
-    }
-
-    private func applyHeaderBackground() {
-        guard let layer = headerBar.layer else { return }
-        if let hex = config.themeColorHex, let color = parseColor(hex: hex) {
-            layer.backgroundColor = color.cgColor
-        } else {
-            layer.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.85).cgColor
-        }
-    }
-
-    private func makeOptionsMenu() -> NSMenu {
-        let menu = NSMenu()
-        let iconItem = NSMenuItem()
-        iconItem.image = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "Options")
-        menu.addItem(iconItem)
-
-        let edgeItem = NSMenuItem(title: edgeToEdge ? "Show Title Bar" : "Full Edge-to-Edge Canvas", action: #selector(toggleEdgeToEdge), keyEquivalent: "")
-        edgeItem.target = self
-        menu.addItem(edgeItem)
-
-        menu.addItem(NSMenuItem.separator())
-
-        let copyURLItem = NSMenuItem(title: "Copy Address", action: #selector(copyAddressAction), keyEquivalent: "")
-        copyURLItem.target = self
-        menu.addItem(copyURLItem)
-
-        let openBrowserItem = NSMenuItem(title: "Open in Default Browser", action: #selector(openInDefaultBrowser), keyEquivalent: "o")
-        openBrowserItem.target = self
-        menu.addItem(openBrowserItem)
-
-        menu.addItem(NSMenuItem.separator())
-
-        let reloadItem = NSMenuItem(title: "Reload Page", action: #selector(reloadAction), keyEquivalent: "")
-        reloadItem.target = self
-        menu.addItem(reloadItem)
-
-        let clearReloadItem = NSMenuItem(title: "Clear Cache & Reload", action: #selector(forceReloadAction), keyEquivalent: "")
-        clearReloadItem.target = self
-        menu.addItem(clearReloadItem)
-
-        menu.addItem(NSMenuItem.separator())
-
-        let closeItem = NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "")
-        menu.addItem(closeItem)
-
-        return menu
-    }
-
-    private func updateLayout() {
-        if edgeToEdge {
-            headerBar.isHidden = true
-            webView.frame = window.contentView!.bounds
-        } else {
-            headerBar.isHidden = false
-            let height = window.contentView!.bounds.height
-            let width = window.contentView!.bounds.width
-            headerBar.frame = NSRect(x: 0, y: height - 32, width: width, height: 32)
-            webView.frame = NSRect(x: 0, y: 0, width: width, height: height - 32)
-        }
-    }
-
-    @objc private func toggleEdgeToEdge() {
-        edgeToEdge.toggle()
-        UserDefaults.standard.set(edgeToEdge, forKey: "pwa.edgetoedge." + config.host)
-        updateLayout()
-    }
-
-    // MARK: - Actions
-
-    @objc private func backAction() { if webView.canGoBack { webView.goBack() } }
-    @objc private func forwardAction() { if webView.canGoForward { webView.goForward() } }
-    @objc private func reloadAction() { webView.reload() }
-    @objc private func forceReloadAction() { webView.reloadFromOrigin() }
-    @objc private func actualSizeAction() { webView.pageZoom = 1.0 }
-    @objc private func zoomInAction() { webView.pageZoom *= 1.1 }
-    @objc private func zoomOutAction() { webView.pageZoom /= 1.1 }
-
-    @objc private func copyAddressAction() {
-        if let url = webView.url {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(url.absoluteString, forType: .string)
-        }
-    }
-
-    @objc private func openInDefaultBrowser() {
-        if let url = webView.url ?? config.startURL as URL? {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
-    // MARK: - Page Loading
-
-    private func loadPage() {
-        var request = URLRequest(url: config.startURL)
-        request.timeoutInterval = 30
-        webView.load(request)
-    }
-
-    // MARK: - WKNavigationDelegate
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        backButton.isEnabled = webView.canGoBack
-        forwardButton.isEnabled = webView.canGoForward
-        if let title = webView.title, !title.isEmpty {
-            titleLabel.stringValue = title
-            window.title = title
-        }
-        // Sample dynamic theme color if available
-        if #available(macOS 12.0, *), let color = webView.themeColor {
-            headerBar.layer?.backgroundColor = color.cgColor
-        }
-    }
-
-    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        guard let url = navigationAction.request.url else {
-            decisionHandler(.allow)
-            return
-        }
-
-        // External link trapping: out-of-scope links open in default browser
-        if navigationAction.navigationType == .linkActivated, navigationAction.targetFrame?.isMainFrame == true {
-            if !inScope(url, host: config.host) {
-                decisionHandler(.cancel)
-                NSWorkspace.shared.open(url)
-                return
-            }
-        }
-
-        decisionHandler(.allow)
-    }
-
-    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        // Popups: if external, open in browser; if internal, open in default browser or load in place
-        if let url = navigationAction.request.url {
-            if !inScope(url, host: config.host) {
-                NSWorkspace.shared.open(url)
-                return nil
-            } else {
-                webView.load(navigationAction.request)
-                return nil
-            }
-        }
-        return nil
-    }
-
-    private func inScope(_ target: URL, host: String) -> Bool {
-        guard let targetHost = target.host?.lowercased() else { return false }
-        let cleanHost = host.lowercased()
-        if targetHost == cleanHost || targetHost.hasSuffix("." + cleanHost) {
-            return true
-        }
-        // Authentication / SSO origins
-        if cleanHost.contains("outlook") || cleanHost.contains("microsoft") {
-            if targetHost.contains("login.microsoftonline.com") || targetHost.contains("login.live.com") {
-                return true
-            }
-        }
-        if cleanHost.contains("github.com") && (targetHost == "github.githubassets.com" || targetHost == "api.github.com") {
-            return true
-        }
-        return false
     }
 
     // MARK: - Window Delegate
@@ -429,20 +214,336 @@ final class PWARunnerApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
         guard !window.styleMask.contains(.fullScreen) else { return }
         UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: "pwa.frame." + config.host)
     }
+}
 
-    // MARK: - Color Helper
+// MARK: - SwiftUI Root View for Standalone PWA
 
-    private func parseColor(hex: String) -> NSColor? {
-        var text = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.hasPrefix("#") { text.removeFirst() }
-        var rgbValue: UInt64 = 0
-        guard Scanner(string: text).scanHexInt64(&rgbValue) else { return nil }
-        if text.count == 6 {
-            let r = CGFloat((rgbValue & 0xFF0000) >> 16) / 255.0
-            let g = CGFloat((rgbValue & 0x00FF00) >> 8) / 255.0
-            let b = CGFloat(rgbValue & 0x0000FF) / 255.0
-            return NSColor(srgbRed: r, green: g, blue: b, alpha: 1.0)
+struct PWARunnerRootView: View {
+    let config: PWAConfig
+    let window: NSWindow
+
+    @StateObject private var model = PWAWebViewModel()
+    @State private var edgeToEdge: Bool = false
+    @State private var hoveringBack = false
+    @State private var hoveringForward = false
+    @State private var hoveringReload = false
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            // Web App View
+            PWAWebViewRepresentable(model: model, startURL: config.startURL, host: config.host)
+                .padding(.top, edgeToEdge ? 0 : 34)
+
+            if !edgeToEdge {
+                headerBar
+                    .frame(height: 34)
+            } else {
+                floatingControls
+            }
         }
-        return nil
+        .onAppear {
+            let host = config.host.isEmpty ? "default" : config.host
+            edgeToEdge = UserDefaults.standard.bool(forKey: "pwa.edgetoedge." + host)
+        }
+        .ignoresSafeArea()
+    }
+
+    // MARK: - Header Bar
+
+    private var headerBar: some View {
+        HStack(spacing: 8) {
+            // Space for native macOS traffic lights (red, yellow, green)
+            Spacer().frame(width: 76)
+
+            // Back button
+            Button {
+                model.goBack()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(model.canGoBack ? Color.white : Color.white.opacity(0.35))
+                    .frame(width: 22, height: 22)
+                    .background(hoveringBack && model.canGoBack ? Color.white.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
+            }
+            .buttonStyle(.plain)
+            .disabled(!model.canGoBack)
+            .onHover { hoveringBack = $0 }
+            .help("Back (⌘[)")
+
+            // Forward button
+            Button {
+                model.goForward()
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(model.canGoForward ? Color.white : Color.white.opacity(0.35))
+                    .frame(width: 22, height: 22)
+                    .background(hoveringForward && model.canGoForward ? Color.white.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
+            }
+            .buttonStyle(.plain)
+            .disabled(!model.canGoForward)
+            .onHover { hoveringForward = $0 }
+            .help("Forward (⌘])")
+
+            // Reload button
+            Button {
+                model.reload()
+            } label: {
+                Image(systemName: model.isLoading ? "xmark" : "arrow.clockwise")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.85))
+                    .frame(width: 22, height: 22)
+                    .background(hoveringReload ? Color.white.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
+            }
+            .buttonStyle(.plain)
+            .onHover { hoveringReload = $0 }
+            .help("Reload (⌘R)")
+
+            Spacer(minLength: 0)
+
+            // Title in center (App Name: "Outlook")
+            HStack(spacing: 5) {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(Color.white.opacity(0.75))
+                Text(config.name)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(Color.white)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 3)
+            .background(Color.white.opacity(0.12), in: Capsule())
+
+            Spacer(minLength: 0)
+
+            // Options Menu Button
+            Menu {
+                Button(edgeToEdge ? "Show Title Bar" : "Full Edge-to-Edge Canvas") {
+                    edgeToEdge.toggle()
+                    UserDefaults.standard.set(edgeToEdge, forKey: "pwa.edgetoedge." + config.host)
+                }
+                Divider()
+                Button("Copy Address") {
+                    if let url = model.currentURL {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                    }
+                }
+                Button("Open in Default Browser (⌘O)") {
+                    if let url = model.currentURL ?? config.startURL as URL? {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                Divider()
+                Button("Reload (⌘R)") { model.reload() }
+                Button("Clear Site Cache & Reload") { model.reloadFromOrigin() }
+                Divider()
+                Button("Close Window (⌘W)") { window.performClose(nil) }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Color.white.opacity(0.85))
+                    .frame(width: 24, height: 24)
+                    .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: 24, height: 24)
+            .help("App Options")
+            .padding(.trailing, 10)
+        }
+        .padding(.horizontal, 4)
+        .background {
+            if let hex = config.themeColorHex, let color = parseHexColor(hex) {
+                Color(nsColor: color)
+            } else {
+                Color(nsColor: .windowBackgroundColor)
+            }
+        }
+    }
+
+    // MARK: - Floating Controls (Edge-to-Edge Mode)
+
+    private var floatingControls: some View {
+        HStack {
+            Spacer()
+            Menu {
+                Button("Show Title Bar") {
+                    edgeToEdge = false
+                    UserDefaults.standard.set(false, forKey: "pwa.edgetoedge." + config.host)
+                }
+                Divider()
+                Button("Back (⌘[)") { model.goBack() }.disabled(!model.canGoBack)
+                Button("Forward (⌘])") { model.goForward() }.disabled(!model.canGoForward)
+                Button("Reload (⌘R)") { model.reload() }
+                Divider()
+                Button("Open in Default Browser (⌘O)") {
+                    if let url = model.currentURL ?? config.startURL as URL? {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                Button("Close Window (⌘W)") { window.performClose(nil) }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(Color.primary.opacity(0.7))
+                    .frame(width: 22, height: 22)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: 22, height: 22)
+            .padding(.trailing, 12)
+            .padding(.top, 8)
+        }
+    }
+}
+
+// MARK: - WebViewModel
+
+final class PWAWebViewModel: ObservableObject {
+    @Published var canGoBack: Bool = false
+    @Published var canGoForward: Bool = false
+    @Published var isLoading: Bool = false
+    @Published var currentURL: URL?
+
+    weak var webView: WKWebView?
+
+    init() {
+        PWAActionRouter.shared.model = self
+    }
+
+    func goBack() { webView?.goBack() }
+    func goForward() { webView?.goForward() }
+    func reload() { webView?.reload() }
+    func reloadFromOrigin() { webView?.reloadFromOrigin() }
+    func setZoom(_ zoom: Double) { webView?.pageZoom = zoom }
+    func zoomIn() { if let z = webView?.pageZoom { webView?.pageZoom = z * 1.1 } }
+    func zoomOut() { if let z = webView?.pageZoom { webView?.pageZoom = z / 1.1 } }
+}
+
+// MARK: - NSViewRepresentable for WKWebView
+
+struct PWAWebViewRepresentable: NSViewRepresentable {
+    @ObservedObject var model: PWAWebViewModel
+    let startURL: URL
+    let host: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(model: model, host: host)
+    }
+
+    func makeNSView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = .default()
+        config.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        config.defaultWebpagePreferences.allowsContentJavaScript = true
+
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.navigationDelegate = context.coordinator
+        webView.uiDelegate = context.coordinator
+        webView.allowsBackForwardNavigationGestures = true
+        model.webView = webView
+
+        var request = URLRequest(url: startURL)
+        request.timeoutInterval = 30
+        webView.load(request)
+        return webView
+    }
+
+    func updateNSView(_ nsView: WKWebView, context: Context) {}
+
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+        let model: PWAWebViewModel
+        let host: String
+
+        init(model: PWAWebViewModel, host: String) {
+            self.model = model
+            self.host = host
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            model.canGoBack = webView.canGoBack
+            model.canGoForward = webView.canGoForward
+            model.isLoading = false
+            model.currentURL = webView.url
+        }
+
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            model.isLoading = true
+        }
+
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            guard let url = navigationAction.request.url else {
+                decisionHandler(.allow)
+                return
+            }
+
+            // In-scope stays in PWA; out-of-scope opens in default browser
+            if navigationAction.navigationType == .linkActivated, navigationAction.targetFrame?.isMainFrame == true {
+                if !inScope(url, host: host) {
+                    decisionHandler(.cancel)
+                    NSWorkspace.shared.open(url)
+                    return
+                }
+            }
+            decisionHandler(.allow)
+        }
+
+        func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+            if let url = navigationAction.request.url {
+                if !inScope(url, host: host) {
+                    NSWorkspace.shared.open(url)
+                    return nil
+                } else {
+                    webView.load(navigationAction.request)
+                    return nil
+                }
+            }
+            return nil
+        }
+
+        private func inScope(_ target: URL, host: String) -> Bool {
+            guard let targetHost = target.host?.lowercased() else { return false }
+            let cleanHost = host.lowercased()
+            if targetHost == cleanHost || targetHost.hasSuffix("." + cleanHost) {
+                return true
+            }
+            // Microsoft & Outlook SSO
+            if cleanHost.contains("outlook") || cleanHost.contains("microsoft") {
+                if targetHost.contains("login.microsoftonline.com")
+                    || targetHost.contains("login.live.com")
+                    || targetHost.contains("account.activedirectory.windowsazure.com")
+                    || targetHost.contains("login.microsoft.com")
+                    || targetHost.contains("mysignins.microsoft.com")
+                    || targetHost.contains("microsoftonline.com")
+                    || targetHost.contains("unm.edu") {
+                    return true
+                }
+            }
+            // Canvas SSO (UNM CAS / Shibboleth)
+            if cleanHost.contains("canvas") {
+                if targetHost.contains("unm.edu") || targetHost.contains("instructure.com") {
+                    return true
+                }
+            }
+            // Google Accounts SSO
+            if cleanHost.contains("google.com") || cleanHost.contains("youtube.com") {
+                if targetHost.contains("accounts.google.com") || targetHost.contains("google.com") || targetHost.contains("youtube.com") {
+                    return true
+                }
+            }
+            // Meta / Instagram SSO
+            if cleanHost.contains("instagram.com") {
+                if targetHost.contains("facebook.com") || targetHost.contains("instagram.com") {
+                    return true
+                }
+            }
+            if cleanHost.contains("github.com") && (targetHost == "github.githubassets.com" || targetHost == "api.github.com") {
+                return true
+            }
+            return false
+        }
     }
 }
