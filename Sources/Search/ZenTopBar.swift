@@ -163,6 +163,25 @@ struct ZenTopBar: View {
                 .focusEffectDisabled()
                 .help("Click to edit URL or search   ⌘L")
 
+                // Subtle PWA Standalone App Window launcher icon
+                if let pwa = tab.pwa {
+                    Button {
+                        Haptics.tap()
+                        PWAWindow.show(for: tab, browser: browser)
+                    } label: {
+                        Image(systemName: "arrow.down.app")
+                            .font(.system(size: 9.5, weight: .medium))
+                            .foregroundStyle(Palette.muted)
+                            .frame(width: 17, height: 17)
+                            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 3.5))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .focusEffectDisabled()
+                    .help("Open \(pwa.name) in Standalone App Window")
+                }
+
                 // Zen-style Page Actions & Settings button (triggers URL toolbox popover)
                 Button {
                     Haptics.tap()
@@ -430,6 +449,18 @@ struct UrlToolboxView: View {
                     ) {
                         Haptics.tap()
                         browser.toggleCinema()
+                        onDismiss()
+                    }
+
+                    // Standalone App Window Row
+                    ToolboxSettingRow(
+                        icon: "arrow.down.app",
+                        title: "Standalone App Window",
+                        subtitle: "Frameless canvas with dynamic tinting",
+                        actionTitle: "Open"
+                    ) {
+                        Haptics.tap()
+                        PWAWindow.show(for: tab, browser: browser)
                         onDismiss()
                     }
                 }

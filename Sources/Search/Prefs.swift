@@ -1462,7 +1462,7 @@ final class Preferences: ObservableObject {
         aiProvider = store.string(forKey: "ai.provider").flatMap(AIProvider.init(rawValue:))
         aiModels = store.dictionary(forKey: "ai.models") as? [String: String] ?? [:]
         commandBar = store.bool(forKey: "commandbar")
-        handoff = store.bool(forKey: "handoff")
+        handoff = store.object(forKey: "handoff") == nil ? true : store.bool(forKey: "handoff")
         floatingNewTab = store.bool(forKey: "newtab.floating")
         fieldOnWindow = store.bool(forKey: "field.window")
         let launcherOn = store.bool(forKey: "launcher.on")

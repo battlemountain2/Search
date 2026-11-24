@@ -28,7 +28,9 @@ struct Handoff: View {
             .frame(width: 0, height: 0)
             .onAppear(perform: apply)
             .onChange(of: tab.committed) { _, _ in apply() }
+            .onChange(of: tab.address) { _, _ in apply() }
             .onChange(of: tab.title) { _, _ in apply() }
+            .onChange(of: tab.name) { _, _ in apply() }
             .onChange(of: prefs.handoff) { _, _ in apply() }
     }
 
@@ -44,21 +46,34 @@ struct Handoff: View {
             window.userActivity = nil
             return
         }
-        let activity = window.userActivity ?? NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
-        activity.webpageURL = url
-        activity.title = tab.name ?? tab.title
-        window.userActivity = activity
+        let rawTitle = (tab.name ?? tab.title).trimmingCharacters(in: .whitespacesAndNewlines)
+        let pageTitle = rawTitle.isEmpty ? (url.host ?? "Search") : rawTitle
+
+        if let existing = window.userActivity, existing.activityType == NSUserActivityTypeBrowsingWeb {
+            existing.title = pageTitle
+            existing.webpageURL = url
+            existing.isEligibleForHandoff = true
+            existing.isEligibleForSearch = false
+            existing.isEligibleForPublicIndexing = false
+            existing.becomeCurrent()
+        } else {
+            let activity = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
+            activity.title = pageTitle
+            activity.webpageURL = url
+            activity.isEligibleForHandoff = true
+            activity.isEligibleForSearch = false
+            activity.isEligibleForPublicIndexing = false
+            window.userActivity = activity
+            activity.becomeCurrent()
+        }
     }
 
     /// The page actually on screen, if it may be offered: a web address, in
     /// a tab that keeps something and shares it with the profile. Never a
-    /// private tab — one opened from a private one has its store without
-    /// being marked shy, so the store is asked too — and never a space signed
-    /// out of the others, whose pages stay out of everything else.
+    /// private tab.
     static func address(of tab: Tab) -> URL? {
-        let store = tab.store
-        guard !tab.shy, store.isPersistent, Spaces.owner(of: store) == nil,
-              let url = tab.committed, web(url)
+        guard !tab.shy, tab.store.isPersistent,
+              let url = tab.pageAddress, web(url), url.host?.isEmpty == false
         else { return nil }
         return url
     }

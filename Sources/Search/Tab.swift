@@ -764,6 +764,8 @@ final class Tab: ObservableObject, Identifiable {
     /// most: the quiet sign beside its title offers them (BlockedPopups.swift).
     /// Gone with the page.
     @Published var blockedPopups: [BlockedPopup] = []
+    /// Progressive Web App metadata if this site supports standalone app mode.
+    @Published var pwa: PWAInfo? = nil
     /// A private tab's own Always Allow: only for as long as the tab, never
     /// written anywhere, as its Keep This Site Awake.
     var popupSites: Set<String> = []
@@ -1159,6 +1161,22 @@ final class Tab: ObservableObject, Identifiable {
                     if self.immersed != on { self.immersed = on }
                     // Home behind another tab: its stage puts it away.
                     if state == .notInFullscreen { self.built?.superview?.needsLayout = true }
+                }
+            },
+            web.observe(\.themeColor, options: [.new]) { [weak self] _, _ in
+                MainActor.assumeIsolated {
+                    guard let self, let color = self.built?.themeColor else { return }
+                    if let cur = self.pwa {
+                        self.pwa = PWAInfo(
+                            name: cur.name,
+                            host: cur.host,
+                            startURL: cur.startURL,
+                            themeColorHex: cur.themeColorHex,
+                            themeColor: color,
+                            hasManifest: cur.hasManifest,
+                            isKnownApp: cur.isKnownApp
+                        )
+                    }
                 }
             },
         ]

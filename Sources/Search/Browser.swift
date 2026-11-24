@@ -6116,6 +6116,11 @@ final class Browser: NSObject, ObservableObject {
         writeSession(now: true)
     }
 
+    /// Lifts a tab out of the browser window into a dedicated standalone PWA window.
+    func detachForPWA(_ tab: Tab) {
+        detach(tab)
+    }
+
     /// A tab from another window, in front here. The empty tab a new window
     /// starts with makes way for it.
     func receive(_ tab: Tab) {
@@ -8767,6 +8772,21 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // Should a WebKit ever hand one over for the middle button after all,
         // it is cancelled: MiddleRelay has already opened the link in a tab of
         // its own, and letting this one through would take the page there too.
+        // A link clicked inside a standalone PWA window:
+        // In-scope links stay in the PWA window.
+        // Out-of-scope external links are trapped and routed to the main Search browser window.
+        if let currentTab = anyTab(for: webView), let pwaWindow = PWAWindow.holding(currentTab.id) {
+            if action.navigationType == .linkActivated, action.targetFrame?.isMainFrame == true {
+                if !PWA.inScope(url, host: pwaWindow.pwa.host) {
+                    decisionHandler(.cancel)
+                    DispatchQueue.main.async {
+                        pwaWindow.routeExternalLink(url)
+                    }
+                    return
+                }
+            }
+        }
+
         if action.navigationType == .linkActivated, action.buttonNumber == 4 {
             decisionHandler(.cancel)
             return
@@ -9116,6 +9136,15 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         tab.popup = popup
         tab.opener = from
         if clicked { opener.popupGesture.opened(tab.id) }
+        // A link opened from a standalone PWA window:
+        if let pwa = PWAWindow.holding(opener.id) {
+            if let targetUrl = action.request.url, !PWA.inScope(targetUrl, host: pwa.pwa.host) {
+                DispatchQueue.main.async { [weak self] in
+                    self?.open(targetUrl, foreground: true)
+                }
+                return nil
+            }
+        }
         // A small window's page opening another (X's links out, by way of
         // t.co): a small window of its own, a step down from this one, not a
         // tab in the browser's window, which came forward over it (#1041).
@@ -9870,6 +9899,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // And again once it has all come in, for a page that drew its look
         // late, or never had a first frame to say so.
         duskLook(tab)
+        PWA.detect(for: tab)
         // The find bar still open over a page that has just come in: look
         // for the same words on it.
         if tab.id == activeID, finding, findSpec == nil,
@@ -9955,13 +9985,19 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         return anyTab(for: webView)
             ?? (peekTab?.built === webView ? peekTab : nil)
             ?? littleTab(for: webView)
+            ?? pwaTab(for: webView)
+    }
+
+    /// A standalone PWA window's tab.
+    private func pwaTab(for webView: WKWebView) -> Tab? {
+        PWAWindow.open.first { $0.tab.built === webView }?.tab
     }
 
     /// The tab a page belongs to, in the space on screen or another: a page
     /// still loading when you went to another space finishes there, and
     /// still goes into History with its icon.
     func anyTab(for webView: WKWebView) -> Tab? {
-        tab(for: webView) ?? parkedTabs.first { $0.built === webView }
+        tab(for: webView) ?? parkedTabs.first { $0.built === webView } ?? pwaTab(for: webView)
     }
 }
 
