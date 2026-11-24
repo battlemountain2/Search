@@ -18,7 +18,7 @@ final class PWAActionRouter: NSObject {
     weak var model: PWAWebViewModel?
 }
 
-// MARK: - Color Parser
+// MARK: - Color Parsers
 
 func parseHexColor(_ hex: String) -> NSColor? {
     var text = hex.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -30,6 +30,23 @@ func parseHexColor(_ hex: String) -> NSColor? {
         let g = CGFloat((rgbValue & 0x00FF00) >> 8) / 255.0
         let b = CGFloat(rgbValue & 0x0000FF) / 255.0
         return NSColor(srgbRed: r, green: g, blue: b, alpha: 1.0)
+    }
+    return nil
+}
+
+func parseCSSColor(_ string: String) -> NSColor? {
+    let s = string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if s.hasPrefix("#") {
+        return parseHexColor(s)
+    }
+    if s.hasPrefix("rgb") {
+        let nums = s.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
+        if nums.count >= 3,
+           let r = Double(nums[0]),
+           let g = Double(nums[1]),
+           let b = Double(nums[2]) {
+            return NSColor(srgbRed: r / 255.0, green: g / 255.0, blue: b / 255.0, alpha: 1.0)
+        }
     }
     return nil
 }
@@ -174,14 +191,9 @@ final class PWARunnerApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.minSize = Self.smallest
         window.delegate = self
 
-        // Seamless solid background to prevent awkward translucent seams
-        if let hex = config.themeColorHex, let color = parseHexColor(hex) {
-            window.backgroundColor = color
-            window.isOpaque = true
-        } else {
-            window.backgroundColor = .windowBackgroundColor
-            window.isOpaque = true
-        }
+        let initialBg = config.themeColorHex.flatMap(parseHexColor) ?? .windowBackgroundColor
+        window.backgroundColor = initialBg
+        window.isOpaque = true
 
         // Restore frame
         if let frameString = UserDefaults.standard.string(forKey: "pwa.frame." + config.host) {
@@ -228,6 +240,25 @@ struct PWARunnerRootView: View {
     @State private var hoveringForward = false
     @State private var hoveringReload = false
 
+    private var activeBackgroundColor: NSColor {
+        if let pageColor = model.pageThemeColor {
+            return pageColor
+        }
+        if let hex = config.themeColorHex, let color = parseHexColor(hex) {
+            return color
+        }
+        return NSColor.windowBackgroundColor
+    }
+
+    private var isDarkHeader: Bool {
+        let color = activeBackgroundColor.usingColorSpace(.sRGB) ?? activeBackgroundColor
+        let r = color.redComponent
+        let g = color.greenComponent
+        let b = color.blueComponent
+        let luminance = 0.299 * r + 0.587 * g + 0.114 * b
+        return luminance < 0.65
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             // Web App View
@@ -245,6 +276,11 @@ struct PWARunnerRootView: View {
             let host = config.host.isEmpty ? "default" : config.host
             edgeToEdge = UserDefaults.standard.bool(forKey: "pwa.edgetoedge." + host)
         }
+        .onChange(of: model.pageThemeColor) { newColor in
+            if let newColor {
+                window.backgroundColor = newColor
+            }
+        }
         .ignoresSafeArea()
     }
 
@@ -261,9 +297,9 @@ struct PWARunnerRootView: View {
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(model.canGoBack ? Color.white : Color.white.opacity(0.35))
+                    .foregroundStyle(model.canGoBack ? (isDarkHeader ? Color.white : Color.primary) : (isDarkHeader ? Color.white.opacity(0.35) : Color.primary.opacity(0.25)))
                     .frame(width: 22, height: 22)
-                    .background(hoveringBack && model.canGoBack ? Color.white.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
+                    .background(hoveringBack && model.canGoBack ? (isDarkHeader ? Color.white.opacity(0.18) : Color.black.opacity(0.08)) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
             }
             .buttonStyle(.plain)
             .disabled(!model.canGoBack)
@@ -276,9 +312,9 @@ struct PWARunnerRootView: View {
             } label: {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(model.canGoForward ? Color.white : Color.white.opacity(0.35))
+                    .foregroundStyle(model.canGoForward ? (isDarkHeader ? Color.white : Color.primary) : (isDarkHeader ? Color.white.opacity(0.35) : Color.primary.opacity(0.25)))
                     .frame(width: 22, height: 22)
-                    .background(hoveringForward && model.canGoForward ? Color.white.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
+                    .background(hoveringForward && model.canGoForward ? (isDarkHeader ? Color.white.opacity(0.18) : Color.black.opacity(0.08)) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
             }
             .buttonStyle(.plain)
             .disabled(!model.canGoForward)
@@ -291,30 +327,15 @@ struct PWARunnerRootView: View {
             } label: {
                 Image(systemName: model.isLoading ? "xmark" : "arrow.clockwise")
                     .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.85))
+                    .foregroundStyle(isDarkHeader ? Color.white.opacity(0.85) : Color.primary.opacity(0.75))
                     .frame(width: 22, height: 22)
-                    .background(hoveringReload ? Color.white.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
+                    .background(hoveringReload ? (isDarkHeader ? Color.white.opacity(0.18) : Color.black.opacity(0.08)) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
             }
             .buttonStyle(.plain)
             .onHover { hoveringReload = $0 }
             .help("Reload (⌘R)")
 
-            Spacer(minLength: 0)
-
-            // Title in center (App Name: "Outlook")
-            HStack(spacing: 5) {
-                Image(systemName: "lock.fill")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(Color.white.opacity(0.75))
-                Text(config.name)
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(Color.white)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 3)
-            .background(Color.white.opacity(0.12), in: Capsule())
-
-            Spacer(minLength: 0)
+            Spacer()
 
             // Options Menu Button
             Menu {
@@ -342,9 +363,9 @@ struct PWARunnerRootView: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Color.white.opacity(0.85))
+                    .foregroundStyle(isDarkHeader ? Color.white.opacity(0.85) : Color.primary.opacity(0.75))
                     .frame(width: 24, height: 24)
-                    .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+                    .background(isDarkHeader ? Color.white.opacity(0.12) : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 5))
                     .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
@@ -354,13 +375,14 @@ struct PWARunnerRootView: View {
             .padding(.trailing, 10)
         }
         .padding(.horizontal, 4)
-        .background {
-            if let hex = config.themeColorHex, let color = parseHexColor(hex) {
-                Color(nsColor: color)
-            } else {
-                Color(nsColor: .windowBackgroundColor)
-            }
+        .overlay(alignment: .center) {
+            // True Mathematical Center - Clean title, NO capsule bubble
+            Text(config.name)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(isDarkHeader ? Color.white : Color.primary)
+                .allowsHitTesting(false)
         }
+        .background(Color(nsColor: activeBackgroundColor))
     }
 
     // MARK: - Floating Controls (Edge-to-Edge Mode)
@@ -407,6 +429,7 @@ final class PWAWebViewModel: ObservableObject {
     @Published var canGoForward: Bool = false
     @Published var isLoading: Bool = false
     @Published var currentURL: URL?
+    @Published var pageThemeColor: NSColor?
 
     weak var webView: WKWebView?
 
@@ -440,6 +463,9 @@ struct PWAWebViewRepresentable: NSViewRepresentable {
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         config.defaultWebpagePreferences.allowsContentJavaScript = true
 
+        // Enable 120Hz ProMotion smooth rendering
+        Self.enable120HzProMotion(on: config.preferences)
+
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
@@ -450,6 +476,18 @@ struct PWAWebViewRepresentable: NSViewRepresentable {
         request.timeoutInterval = 30
         webView.load(request)
         return webView
+    }
+
+    private static func enable120HzProMotion(on preferences: WKPreferences) {
+        let listSel = NSSelectorFromString("_features")
+        let type: AnyObject = WKPreferences.self
+        guard type.responds(to: listSel),
+              let all = type.perform(listSel)?.takeUnretainedValue() as? [NSObject],
+              let flag = all.first(where: { ($0.value(forKey: "key") as? String) == "PreferPageRenderingUpdatesNear60FPSEnabled" }) else { return }
+        let setSel = NSSelectorFromString("_setEnabled:forFeature:")
+        guard preferences.responds(to: setSel) else { return }
+        typealias Setter = @convention(c) (AnyObject, Selector, Bool, AnyObject) -> Void
+        unsafeBitCast(preferences.method(for: setSel), to: Setter.self)(preferences, setSel, false, flag)
     }
 
     func updateNSView(_ nsView: WKWebView, context: Context) {}
@@ -468,6 +506,31 @@ struct PWAWebViewRepresentable: NSViewRepresentable {
             model.canGoForward = webView.canGoForward
             model.isLoading = false
             model.currentURL = webView.url
+
+            // Dynamic theme color sampling from WebKit
+            if #available(macOS 12.0, *), let tc = webView.themeColor {
+                model.pageThemeColor = tc
+            } else {
+                let js = """
+                (function() {
+                    let meta = document.querySelector('meta[name="theme-color"]');
+                    if (meta && meta.content) return meta.content;
+                    let header = document.querySelector('header') || document.querySelector('#o365header') || document.querySelector('.ms-Fabric');
+                    if (header) {
+                        let bg = window.getComputedStyle(header).backgroundColor;
+                        if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return bg;
+                    }
+                    return window.getComputedStyle(document.body).backgroundColor;
+                })()
+                """
+                webView.evaluateJavaScript(js) { [weak model] result, _ in
+                    if let str = result as? String, let parsed = parseCSSColor(str) {
+                        DispatchQueue.main.async {
+                            model?.pageThemeColor = parsed
+                        }
+                    }
+                }
+            }
         }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {

@@ -259,9 +259,10 @@ final class Browser: NSObject, ObservableObject {
 
     /// ⇧⌘B. The page you are on, at the end of the list, and the card off
     /// the button to name it and file it — or the card for it, if it was
-    /// kept already. Without the button on screen (the tabs folded away)
+    /// kept already. Without the button on screen (the tabs folded away,
+    /// or the button taken out in Settings › Buttons under the column)
     /// there is nothing to hang the card from, and a word says what
-    /// happened instead.
+    /// happened instead (#1496).
     func bookmarkCurrent() {
         guard let tab = active, let url = tab.address else { return }
         let kept = bookmarks.bookmark(for: url)
@@ -270,7 +271,7 @@ final class Browser: NSObject, ObservableObject {
         // top level every time. One kept before stays where it is.
         let folder = kept == nil ? bookmarks.lastFolder : nil
         if let folder { bookmarks.move(id, into: folder) }
-        guard !folded else {
+        guard !folded, !prefs.hidesBookmarksDoor else {
             let name = folder.flatMap { bookmarks.bookmark($0)?.title }
             announce(kept == nil ? name.map { "Bookmarked in \($0)" } ?? "Bookmarked" : "Already a bookmark")
             return
@@ -2608,8 +2609,17 @@ final class Browser: NSObject, ObservableObject {
     /// only" on; always for Site Information… (SiteCardPanel.follow).
     private(set) var tabEditCard = true
 
+    /// A click on the tab you're on does nothing: Settings' switch is on and
+    /// the address bar it needs is in sight. Not in the column of icons,
+    /// which has no address bar (Side.swift draws it with the titles).
+    var clickKeepsTabName: Bool { prefs.tabClickKeepsName && prefs.addressLine && !prefs.iconColumn }
+
     /// `card`: nil for a click on the tab, which follows the setting.
     func beginTabEdit(_ tab: Tab, card: Bool? = nil) {
+        // A click, with the address already in sight in its bar: the tab
+        // keeps its name (Settings › Tabs › Clicking the tab you're on keeps
+        // its name). Site Information… and ⌘L still open it.
+        if card == nil, clickKeepsTabName { return }
         // The column of icons has no row to type in: the field over the
         // page, with the address in it, as ⌘L brings it.
         guard let url = tab.shownURL, !prefs.iconColumn else {
@@ -2775,12 +2785,13 @@ final class Browser: NSObject, ObservableObject {
     let fetches = Shared.fetches
 
     /// ⌘⇧C. The address, in the clipboard, and a line that says as much.
-    func copyAddress() {
+    func copyAddress(to board: NSPasteboard = .general) {
         guard let rawUrl = active?.address else { return }
         let url = prefs.autoCleanUrl ? CleanLink.clean(rawUrl) : rawUrl
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        board.clearContents()
+        board.setString(url.absoluteString, forType: .string)
         announce(prefs.autoCleanUrl && url != rawUrl ? "Clean address copied" : "Address copied")
+    }
     }
 
     /// Edit › Paste and Match Style: the clipboard as plain text, in the
@@ -3560,6 +3571,18 @@ final class Browser: NSObject, ObservableObject {
                 for tab in tabs + parkedTabs {
                     tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
                     tab.built?.evaluateInSearch(on ? AutoScroll.script : AutoScroll.off)
+                }
+            }
+            .store(in: &bag)
+
+        // The same for the keys on a video's controls (see VideoKeys.swift).
+        prefs.$videoKeys
+            .dropFirst()
+            .sink { [weak self] on in
+                guard let self else { return }
+                for tab in tabs + parkedTabs {
+                    tab.arm(hiding: curtain.css(on: curtain.host(of: tab.address)))
+                    tab.built?.evaluateInSearch(on ? VideoKeys.script : VideoKeys.off)
                 }
             }
             .store(in: &bag)
@@ -5335,19 +5358,7 @@ final class Browser: NSObject, ObservableObject {
 
         if tabs.count == 1 {
             if tab.isBlank {
-                if let nextSpace = otherSpaceWithTabs {
-                    remember(tab, at: 0)
-                    tab.close()
-                    tabs = []
-                    activeID = nil
-                    typed = ""
-                    tab.draft = ""
-                    editing = false
-                    removeEmptyGroup(tab.groupID)
-                    goToSpace(nextSpace)
-                } else {
-                    NSApp.keyWindow?.performClose(nil)
-                }
+                closeEmptyWindow(tab)
             } else if !prefs.newTabAfterLast, let nextSpace = otherSpaceWithTabs {
                 remember(tab, at: 0)
                 tab.close()
@@ -5389,10 +5400,7 @@ final class Browser: NSObject, ObservableObject {
         if activeID == tab.id, onlyPins || onlyKept {
             if tab.isBlank {
                 if besideGroups {
-                    typed = ""
-                    tab.draft = ""
-                    editing = false
-                    focusRequest += 1
+                    keepEmpty(tab)
                 } else if let nextSpace = otherSpaceWithTabs {
                     remember(tab, at: index)
                     tab.close()
@@ -5404,7 +5412,7 @@ final class Browser: NSObject, ObservableObject {
                     editing = false
                     goToSpace(nextSpace)
                 } else {
-                    NSApp.keyWindow?.performClose(nil)
+                    closeEmptyWindow(tab)
                 }
                 return
             }
@@ -5427,7 +5435,7 @@ final class Browser: NSObject, ObservableObject {
         // A pin still open is gone back to, as before: ⌘T then ⌘W over it.
         if activeID == tab.id, tab.isBlank, !besideGroups,
            !tabs.contains(where: { $0.id != tab.id && ($0.pin == nil || !$0.asleep) }) {
-            NSApp.keyWindow?.performClose(nil)
+            closeEmptyWindow(tab)
             return
         }
 
@@ -5456,6 +5464,36 @@ final class Browser: NSObject, ObservableObject {
             select(partner ?? before ?? tabs[min(index, tabs.count - 1)])
         }
         rememberSession()
+    }
+
+    /// The empty tab left where closing it would close the window: its
+    /// field emptied and given the keyboard, as a new tab's.
+    private func keepEmpty(_ tab: Tab) {
+        typed = ""
+        tab.draft = ""
+        editing = false
+        focusRequest += 1
+    }
+
+    /// Closing the window's last tab, an empty one, closes the window, unless
+    /// Settings › Tabs › Keep the window when its last tab closes is on: then
+    /// the tab stays, as in Arc, and ⇧⌘W is how the window goes (idea 1102).
+    private func closeEmptyWindow(_ tab: Tab) {
+        if let nextSpace = otherSpaceWithTabs {
+            remember(tab, at: 0)
+            tab.close()
+            tabs = []
+            activeID = nil
+            typed = ""
+            tab.draft = ""
+            editing = false
+            removeEmptyGroup(tab.groupID)
+            goToSpace(nextSpace)
+        } else if prefs.keepWindowAfterLast {
+            keepEmpty(tab)
+        } else {
+            NSApp.keyWindow?.performClose(nil)
+        }
     }
 
     /// Everything but this one. Pinned tabs are put down rather than removed —
@@ -5758,6 +5796,7 @@ final class Browser: NSObject, ObservableObject {
         // bulk close's other tabs still to go.
         if let id = ghosts.last?.id {
             Browser.lastClose = LastClose(browser: self, ghost: id)
+            Browser.lastMove = nil
             DispatchQueue.main.async { [weak self] in
                 guard let self, Browser.lastClose?.ghost == id else { return }
                 Browser.lastClose?.scene = self.closeScene
@@ -6235,7 +6274,12 @@ final class Browser: NSObject, ObservableObject {
 
     /// Insert relative to a visible member, after removing the carried item.
     /// Assign the completed row once: tabs' normalization must not see a half move.
+    /// One step for ⌘Z, the tabs picked with it and all (see undoableMove).
     func move(_ tab: Tab, toGroup target: GroupDropTarget, detaching: Bool = false) {
+        undoableMove { carry(tab, toGroup: target, detaching: detaching) }
+    }
+
+    private func carry(_ tab: Tab, toGroup target: GroupDropTarget, detaching: Bool) {
         guard tabs.contains(where: { $0 === tab }),
               let groupIndex = tabGroups.firstIndex(where: { $0.id == target.group }) else { return }
         let moving = detaching ? [tab] : carried(with: tab)
@@ -6275,6 +6319,10 @@ final class Browser: NSObject, ObservableObject {
     /// goes too, as into a group: the tabs picked with it, a pair whole. A
     /// group left empty goes, as with Remove from Group.
     func move(_ tab: Tab, outOfGroupBefore loose: Tab.ID?) {
+        undoableMove { carry(tab, outOfGroupBefore: loose) }
+    }
+
+    private func carry(_ tab: Tab, outOfGroupBefore loose: Tab.ID?) {
         guard prefs.usesTabGroups, tabs.contains(where: { $0 === tab }) else { return }
         let moving = carried(with: tab)
         guard moving.allSatisfy({ $0.pin == nil && !$0.shy && !$0.bench }),
@@ -6912,8 +6960,9 @@ final class Browser: NSObject, ObservableObject {
     /// tab's menu opens with its name ready to be typed; this one is named
     /// already, so it doesn't. Used, for one, by the bookmarks bar's Open All
     /// in Tab Group.
-    func openInTabGroup(_ urls: [URL], named name: String) {
-        guard prefs.usesTabGroups, !urls.isEmpty else { return }
+    @discardableResult
+    func openInTabGroup(_ urls: [URL], named name: String) -> UUID? {
+        guard prefs.usesTabGroups, !urls.isEmpty else { return nil }
         let opened = urls.enumerated().map { index, url in
             open(url, foreground: index == 0, atEnd: true, mayWait: true)
         }
@@ -6921,6 +6970,7 @@ final class Browser: NSObject, ObservableObject {
         renameTabGroup(id, to: name)
         editingGroupID = nil
         for tab in opened.dropFirst() { move(tab, toGroup: id) }
+        return id
     }
 
     /// ⌘⇧N. A tab that keeps nothing — its own cookies, its own sign-ins, no
@@ -8074,7 +8124,8 @@ final class Browser: NSObject, ObservableObject {
         } else if Keyword.match(typed, in: prefs.keywords) != nil {
             return nil
         }
-        return EngineSuggest.url(for: words, engine: prefs.engine, test: EngineSuggest.testEndpoint)
+        return EngineSuggest.url(for: words, engine: prefs.engine, custom: prefs.customSuggest,
+                                 test: EngineSuggest.testEndpoint)
     }
 
     /// Where a suggestion taken from the list goes: the site in the field,
@@ -9265,6 +9316,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         decidePolicyFor response: WKNavigationResponse,
         decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
     ) {
+        if response.isForMainFrame { DevToolsPackages.heard(response.response, for: webView) }
         // An answer with nothing in it, no address and no type: WebKit hands
         // one over when a page that came past the site's service worker is
         // moved to a new process as it arrives. youtube.com does it on
@@ -9776,7 +9828,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         withError error: Error
     ) {
         tab(for: webView)?.extensionReturn.finished(navigation)
-        fail(webView, error)
+        fail(webView, error, provisional: true)
     }
 
     /// A page asking to close itself.
@@ -9928,7 +9980,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         }
     }
 
-    private func fail(_ webView: WKWebView, _ error: Error) {
+    private func fail(_ webView: WKWebView, _ error: Error, provisional: Bool = false) {
         let tab = tab(for: webView) ?? littleTab(for: webView)
         tab?.uncover()
         let nsError = error as NSError
@@ -9947,6 +9999,9 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
         // as in Safari, while the video plays. Answered as a failure, it
         // covered the playing video with "The page didn't load".
         guard !(nsError.domain == "WebKitErrorDomain" && code == 204) else { return }
+        // A page that never arrived: the tab says where it was going, as
+        // WebKit's error has it (idea 1080), before the failure goes up.
+        if provisional { tab?.failed(at: nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL) }
         tab?.failure = message(for: code)
     }
 

@@ -93,7 +93,8 @@ enum PWAInstaller {
             createIconFile(from: iconImage, at: resourcesURL.appendingPathComponent("AppIcon.icns"))
 
             // 5. Seed initial session data and cookies from Search
-            seedSessionData(for: bundleID)
+            let spaceID = Spaces.owner(of: tab.store) ?? browser?.space.id ?? Spaces.current
+            seedSessionData(for: bundleID, spaceID: spaceID)
 
             // 6. Ad-hoc codesign
             let signProcess = Process()
@@ -128,23 +129,53 @@ enum PWAInstaller {
 
     // MARK: - Session Seeding
 
-    private static func seedSessionData(for bundleID: String) {
+    private static func seedSessionData(for bundleID: String, spaceID: UUID? = nil) {
         let fileManager = FileManager.default
         let library = fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library", isDirectory: true)
 
-        // Seed binary cookies
-        let searchCookies = library.appendingPathComponent("HTTPStorages/com.officecommun.search.binarycookies")
         let targetCookies = library.appendingPathComponent("HTTPStorages/\(bundleID).binarycookies")
-        if fileManager.fileExists(atPath: searchCookies.path) && !fileManager.fileExists(atPath: targetCookies.path) {
-            try? fileManager.copyItem(at: searchCookies, to: targetCookies)
+        let targetData = library.appendingPathComponent("WebKit/\(bundleID)/WebsiteData")
+        try? fileManager.createDirectory(at: targetData.appendingPathComponent("Default"), withIntermediateDirectories: true)
+        try? fileManager.createDirectory(at: targetData.appendingPathComponent("Origins"), withIntermediateDirectories: true)
+
+        // Determine if the tab's space has its own dedicated data store (e.g. School space)
+        var sourceCookies: URL?
+        var sourceOrigins: URL?
+
+        if let spaceID = spaceID {
+            let spaceStoreDir = library.appendingPathComponent("WebKit/com.officecommun.search/WebsiteDataStore/\(spaceID.uuidString.lowercased())")
+            let spaceCookieFile = spaceStoreDir.appendingPathComponent("Cookies/Cookies.binarycookies")
+            if fileManager.fileExists(atPath: spaceCookieFile.path) {
+                sourceCookies = spaceCookieFile
+                sourceOrigins = spaceStoreDir.appendingPathComponent("Origins")
+            }
         }
 
-        // Seed WebsiteData (LocalStorage & IndexedDB)
-        let searchData = library.appendingPathComponent("WebKit/com.officecommun.search/WebsiteData")
-        let targetData = library.appendingPathComponent("WebKit/\(bundleID)/WebsiteData")
-        if fileManager.fileExists(atPath: searchData.path) && !fileManager.fileExists(atPath: targetData.path) {
-            try? fileManager.createDirectory(at: targetData.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? fileManager.copyItem(at: searchData, to: targetData)
+        // Fallback to default Personal space
+        if sourceCookies == nil {
+            let defaultCookieFile = library.appendingPathComponent("HTTPStorages/com.officecommun.search.binarycookies")
+            if fileManager.fileExists(atPath: defaultCookieFile.path) {
+                sourceCookies = defaultCookieFile
+                sourceOrigins = library.appendingPathComponent("WebKit/com.officecommun.search/WebsiteData/Default")
+            }
+        }
+
+        if let sourceCookies {
+            try? fileManager.removeItem(at: targetCookies)
+            try? fileManager.copyItem(at: sourceCookies, to: targetCookies)
+        }
+
+        if let sourceOrigins, fileManager.fileExists(atPath: sourceOrigins.path) {
+            if let origins = try? fileManager.contentsOfDirectory(at: sourceOrigins, includingPropertiesForKeys: nil) {
+                for item in origins {
+                    let destDefault = targetData.appendingPathComponent("Default").appendingPathComponent(item.lastPathComponent)
+                    let destOrigins = targetData.appendingPathComponent("Origins").appendingPathComponent(item.lastPathComponent)
+                    try? fileManager.removeItem(at: destDefault)
+                    try? fileManager.copyItem(at: item, to: destDefault)
+                    try? fileManager.removeItem(at: destOrigins)
+                    try? fileManager.copyItem(at: item, to: destOrigins)
+                }
+            }
         }
     }
 

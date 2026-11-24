@@ -374,6 +374,14 @@ final class Bench {
                 answer(["given": given, "answered": PointerLock.shared.answered])
             }
 
+        case "copyaddress":
+            // Copy Address (⇧⌘C) on the tab in front, onto a pasteboard of
+            // the bench's own, never the Mac's; what it holds then.
+            let board = NSPasteboard(name: NSPasteboard.Name("search.bench.address"))
+            board.clearContents()
+            browser.copyAddress(to: board)
+            answer(["copied": board.string(forType: .string) ?? ""])
+
         case "tabs":
             // A private tab is nobody's business but yours: a test run has none
             // of yours, so there every tab is listed.
@@ -500,6 +508,9 @@ final class Bench {
             }
             else if request["off"] as? Bool == true { browser.unpin(tab) }
             else if request["home"] as? Bool == true { browser.goHome(tab) }
+            // "icon": a click on a pinned row's icon (PinIconHome), as the
+            // icon's own tap does; "took" says whether it was armed.
+            else if request["icon"] as? Bool == true { taken = PinIconHome.clicked(tab, in: browser) }
             // "rehome": Replace Pinned Page with Current URL, as the pin's
             // menu does.
             else if request["rehome"] as? Bool == true { browser.rehome(tab) }
@@ -512,7 +523,10 @@ final class Bench {
             else { browser.pin(tab, listed: request["listed"] as? Bool ?? false) }
             answer(["pin": tab.pin ?? "", "listed": tab.listed, "everywhere": tab.everywhere, "pinned": browser.pinnedCount, "home": tab.home?.absoluteString ?? "",
                     "address": tab.address?.absoluteString ?? "", "editingLetter": browser.editingPin == tab.id,
-                    "taken": taken.map { $0 as Any } ?? NSNull()])
+                    "taken": taken.map { $0 as Any } ?? NSNull(),
+                    // A pinned row's icon while it takes the pin home
+                    // (PinIconHome): its centre, from the window's top left.
+                    "icon": PinIconHome.centre(of: tab.id).map { $0 as Any } ?? NSNull()])
 
         case "select":
             // Picking a tab takes the window over, which the bench never does
@@ -1328,6 +1342,7 @@ final class Bench {
                             "windowFullScreen": (browser.window ?? Links.window)?.styleMask.contains(.fullScreen) ?? false]
             out["lightsHidden"] = Fold.titlebar?.isHidden ?? false
             out["siteCard"] = SiteCardPanel.isShown
+            out["siteCardTab"] = SiteCardPanel.shownTab.map { String($0.id.uuidString.prefix(8)).lowercased() } ?? ""
             out["siteCardFrames"] = SiteCardPanel.geometry(browser)
             // The row across the top: its tabs as laid out, the run shown
             // (narrower only when it scrolls), and whether it scrolls.
@@ -1376,6 +1391,8 @@ final class Bench {
                 case "shift": flags.insert(.shift)
                 case "ctrl": flags.insert(.control)
                 case "opt": flags.insert(.option)
+                // An arrow key's own flags, as the keyboard sends them.
+                case "arrow": flags.formUnion([.numericPad, .function])
                 default: break
                 }
             }
@@ -2306,6 +2323,7 @@ final class Bench {
             guard Store.testing else { answer(["error": "bar only works on a --test run — it would size your window"]); return }
             guard let window = browser.window else { answer(["error": "no window"]); return }
             if let on = request["iconsOnly"] as? Bool { browser.prefs.bookmarksIconsOnly = on }
+            if let on = request["newTabOnly"] as? Bool { browser.prefs.bookmarksNewTabOnly = on }
             if let width = request["width"] as? Double {
                 var frame = window.frame
                 frame.size.width = width
@@ -2355,7 +2373,15 @@ final class Bench {
                             "bare": roots.map { BookmarksBar.Item.bare($0, iconsOnly: iconsOnly) },
                             "hidden": hidden.map(\.label), "menu": lines(menu.items, 0),
                             "tabsBefore": before, "tabsAfter": browser.tabs.count,
-                            "active": browser.active?.address?.absoluteString ?? ""])
+                            "active": browser.active?.address?.absoluteString ?? "",
+                            // How far down the window the page on screen starts:
+                            // the bar's height more while the bar is up.
+                            "pageTop": browser.active?.built.flatMap { web -> Double? in
+                                guard web.window === window, let content = window.contentView else { return nil }
+                                let r = web.convert(web.bounds, to: nil)
+                                return Double(content.bounds.height - r.maxY)
+                            } ?? -1,
+                            "barForTab": browser.bookmarksBarForTab])
                 }
             }
 
@@ -2706,7 +2732,15 @@ final class Bench {
             }
             // "entitled": the signature carries the container and CloudKit,
             // read from the process alone; nothing asks CloudKit.
-            answer(["on": icloud.on, "available": icloud.available, "entitled": ICloudSync.entitled,
+            // The open tabs as this Mac's device record would carry them,
+            // groups and all (idea 1093), whether or not sync is on.
+            let side = MacSide()
+            let pages = side.openTabs()
+            let record = DeviceTabs(name: "probe", platform: "macos", at: Date(timeIntervalSinceReferenceDate: 0),
+                                    tabs: pages, groups: side.openGroups(for: pages))
+            let published = ICloudMerge.outgoing(record, over: nil, shape: .device).map { String(decoding: $0, as: UTF8.self) } ?? ""
+            answer(["published": published,
+                    "on": icloud.on, "available": icloud.available, "entitled": ICloudSync.entitled,
                     "scheduled": icloud.isScheduled,
                     "engine": icloud.engine != nil, "joined": icloud.joined, "folderSync": Sync.shared.on,
                     "stored": Store.settings.object(forKey: ICloudSync.onKey) != nil,
@@ -4513,8 +4547,10 @@ final class Bench {
                     return
                 }
                 let size = top.bounds.size
-                // The column's side: the window's first 420 points across.
-                let w = Int(min(size.width, 420) * scale), h = Int(size.height * scale)
+                // The column's side: the window's first 420 points across,
+                // or with "wide" all of it.
+                let across = request["wide"] as? Bool == true ? size.width : min(size.width, 420)
+                let w = Int(across * scale), h = Int(size.height * scale)
                 let shot: [String: Any] = ["t": Int((CACurrentMediaTime() - started) * 1000), "space": browser.space.name]
                 if let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
                                        space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
@@ -4526,6 +4562,9 @@ final class Bench {
                 shots.append(shot)
                 if index == 0 {
                     switch request["action"] as? String {
+                    case "fold": browser.toggleFold()
+                    case "peek": browser.peek(true)
+                    case "unpeek": browser.peek(false)
                     case "space":
                         // Slid in through the map, as on screen.
                         SpaceSwipe.glidesHidden = true
@@ -4706,6 +4745,40 @@ final class Bench {
                 answer(worked ? ["saved": file.path] : ["error": "page wasn't exported"])
             }
 
+        case "devtools":
+            // Developer tools packages (DevToolsPackages) in a test run pointed
+            // at a feed of its own: `install`/`remove` an id, `pick` one,
+            // `open` a menu item of the picked one on the tab in front,
+            // `close` its tools there, `load` an installed one (its checks
+            // run again). Always what is offered, installed, loaded and why
+            // one failed, and whether the release checks apply.
+            guard Store.testing else { answer(["error": "devtools only works on a --test run"]); return }
+            let packages = DevToolsPackages.shared
+            let id = request["id"] as? String ?? ""
+            switch request["action"] as? String {
+            case "install": packages.install(id)
+            case "remove": packages.remove(id)
+            case "pick": packages.primaryID = id.isEmpty ? nil : id
+            case "load": _ = packages.plugin(id)
+            case "open": packages.open(request["item"] as? String ?? "", in: browser)
+            case "close":
+                if let web = browser.active?.built { packages.loaded.values.forEach { $0.close(webView: web) } }
+            default: break
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                let web = browser.active?.built
+                answer([
+                    "release": !DevToolsPackages.testing,
+                    "offered": packages.offered.map { ["id": $0.id, "version": $0.version, "url": $0.url.absoluteString] },
+                    "installed": packages.installed.keys.sorted(),
+                    "loaded": packages.loaded.keys.sorted(),
+                    "primary": packages.primary?.offer.id ?? "",
+                    "open": web.map { web in packages.loaded.filter { $0.value.isOpen(webView: web) }.keys.sorted() } ?? [],
+                    "states": packages.states.mapValues { String(describing: $0) },
+                    "folder": DevToolsPackages.folder.path,
+                ])
+            }
+
         case "update":
             // The updater, for a test run pointed at its own feed: `check`
             // is the menu's Check for Updates…, `disk` the Download button.
@@ -4714,6 +4787,20 @@ final class Bench {
             switch request["action"] as? String {
             case "check": updater.checkByHand()
             case "disk": updater.openDisk()
+            case "stage":
+                // The notice's stage as told (UpdateNotice): "ready" or
+                // "waiting" with a build, or "none".
+                let build = request["build"] as? Int ?? Updater.build + 1
+                let release = Updater.Release(version: "test \(build)", build: build,
+                                              archive: URL(fileURLWithPath: "/dev/null"), dmg: URL(fileURLWithPath: "/dev/null"),
+                                              sha256: nil, notes: nil, minimumSystemVersion: nil)
+                switch request["to"] as? String {
+                case "ready": updater.setStageForTest(.ready(release))
+                case "waiting": updater.setStageForTest(.waiting(release))
+                case "offered": updater.setStageForTest(.offered(release))
+                case "fetching": updater.setStageForTest(.fetching(release))
+                default: updater.setStageForTest(.none)
+                }
             default: break
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
@@ -4981,6 +5068,80 @@ final class Bench {
                 } catch { answer(["error": error.localizedDescription]) }
                 window.contentView = nil
             }
+
+        case "picked":
+            // Tabs picked in the column moved together (MovePicked.swift,
+            // idea 1092): into a pin folder or a group by the tab menu
+            // ("via": "menu") or by a drag of `id` let go there ("via":
+            // "drag"), and ⌘Z's undo of it. Test runs only.
+            guard Store.testing else { answer(["error": "picked only works on a --test run"]); return }
+            func find(_ key: String) -> Tab? {
+                guard let ref = (request[key] as? String)?.lowercased(), !ref.isEmpty else { return nil }
+                return browser.tabs.first { $0.id.uuidString.lowercased().hasPrefix(ref) }
+            }
+            let named = request["name"] as? String ?? ""
+            let drag = request["via"] as? String == "drag"
+            switch request["action"] as? String ?? "state" {
+            case "folder":
+                let into: UUID?
+                if named == "none" { into = nil }
+                else if let folder = browser.pinFolders.first(where: { $0.name == named }) { into = folder.id }
+                else { answer(["error": "no folder “\(named)”"]); return }
+                if drag {
+                    guard let tab = find("id") else { answer(["error": "a drag needs id"]); return }
+                    browser.movePin(tab, to: PinTree.Place(folder: into, anchor: find("anchor")?.id,
+                                                           after: request["after"] as? Bool ?? false))
+                } else {
+                    browser.movePins(browser.pickedTabs, into: into)
+                }
+            case "newFolder":
+                // New Folder with N Pins.
+                let picked = browser.pickedTabs
+                guard let first = picked.first else { answer(["error": "nothing picked"]); return }
+                browser.undoableMove {
+                    if let made = browser.newPinFolder(named: named.isEmpty ? "New Folder" : named, holding: first, rename: false) {
+                        browser.movePins(picked, into: made)
+                    }
+                }
+            case "group":
+                if drag {
+                    guard let tab = find("id"), let group = browser.tabGroups.first(where: { $0.name == named }) else {
+                        answer(["error": "a drag needs id and a group's name"]); return
+                    }
+                    browser.move(tab, toGroup: GroupDropTarget(group: group.id, member: find("member")?.id,
+                                                               after: request["after"] as? Bool ?? false))
+                } else if request["new"] as? Bool == true {
+                    guard let id = browser.addTabGroup(containing: browser.pickedTabs) else { answer(["error": "nothing picked"]); return }
+                    if !named.isEmpty { browser.renameTabGroup(id, to: named) }
+                    browser.editingGroupID = nil
+                } else if named == "none" {
+                    browser.move(browser.pickedTabs, toGroup: nil)
+                } else if let group = browser.tabGroups.first(where: { $0.name == named }) {
+                    browser.move(browser.pickedTabs, toGroup: group.id)
+                } else {
+                    answer(["error": "no group “\(named)”"]); return
+                }
+            case "undo":
+                browser.undoMove()
+            case "state":
+                break
+            default:
+                answer(["error": "picked: state, folder, newFolder, group or undo"]); return
+            }
+            let folders = browser.pinFolders, groups = browser.tabGroups
+            answer([
+                "row": browser.tabs.map { Bench.short($0) },
+                "folderOf": Dictionary(browser.tabs.filter { $0.pin != nil }.map {
+                    (Bench.short($0), $0.pinFolder.flatMap { id in folders.first { $0.id == id }?.name } ?? "")
+                }, uniquingKeysWith: { a, _ in a }),
+                "groupOf": Dictionary(browser.tabs.filter { $0.pin == nil }.map {
+                    (Bench.short($0), $0.groupID.flatMap { id in groups.first { $0.id == id }?.name } ?? "")
+                }, uniquingKeysWith: { a, _ in a }),
+                "groups": groups.map(\.name),
+                "folders": folders.map(\.name),
+                "selected": browser.pickedTabs.map { Bench.short($0) },
+                "canUndo": browser.canUndoMove,
+            ])
 
         case "pinfolder":
             // Folders in pinned rows (PinFolders.swift), as the setting,
@@ -5497,7 +5658,19 @@ final class Bench {
             // into nothing yet, the site card under it.
             if request["opentab"] as? Bool == true, let tab = browser.active { browser.beginTabEdit(tab) }
             // The tab's menu › Site Information… on the tab on screen.
-            if request["siteinfo"] as? Bool == true, let tab = browser.active { browser.beginTabEdit(tab, card: true) }
+            // `siteinfoid`: on that tab (a pin, say), as its own menu does.
+            if request["siteinfo"] as? Bool == true,
+               let tab = (request["siteinfoid"] as? String).flatMap({ id in browser.tabs.first { $0.id.uuidString.lowercased().hasPrefix(id.lowercased()) } }) ?? browser.active {
+                if Browser.offersSiteInformation(tab) { browser.showSiteInformation(tab) }
+                else { answer(["error": "Site Information… isn't offered for that tab"]); return }
+            }
+            // The card's Block Ads and Trackers line, switched as a click on
+            // its switch does: the setting for the site, the page reloaded.
+            if let on = request["cardblocker"] as? Bool, let tab = SiteCardPanel.shownTab,
+               let host = SiteCard.blockerHost(tab, browser) {
+                Shield.shared.pause(host, !on)
+                tab.reload()
+            }
             // Rename, as the tab's right-click menu and Tabs › Rename Tab begin it.
             if request["renametab"] as? Bool == true, let tab = browser.active { browser.beginTabRename(tab) }
             if request["finishedit"] as? Bool == true { browser.finishTabEdit() }
@@ -5666,9 +5839,9 @@ final class Bench {
 
         default:
             answer(["error": "unknown command “\(verb)”", "commands": [
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "agent", "kept", "eval", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "seam", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "agent", "kept", "eval", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "devtools", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "seam", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
 
-                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "player", "agent", "eval", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "seam", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
+                "tabs", "open", "go", "openmark", "close", "wait", "sleep", "select", "text", "nowplaying", "player", "agent", "eval", "click", "type", "submit", "shot", "snap", "probe", "key", "textcheck", "resize", "hit", "pointer", "film", "float", "window", "pages", "picture", "pdf", "place", "group", "tospace", "field", "bookmark", "marks", "menu", "keyeq", "fill", "pin", "middle", "windows", "alive", "quit", "towindow", "news", "pull", "magnify", "wheel", "notches", "space", "split", "strip", "column", "fold", "consent", "devtools", "update", "site", "little", "ui", "import", "import-preview", "import-file", "import-file-start", "import-file-status", "import-file-cancel", "remove-folder", "passwords", "accounts", "find", "answer", "visible", "seam", "ai", "notifications", "popups", "suggest", "translate", "profile", "settings",
             ]])
         }
     }
@@ -6401,6 +6574,8 @@ final class Bench {
             // The group it is in, by name, whether or not groups are on.
             "group": browser?.group(of: tab).flatMap { id in browser?.tabGroups.first { $0.id == id }?.name } ?? "",
             "loading": tab.loading,
+            // The failure up over the page instead of it, "" for none.
+            "failure": tab.failure ?? "",
             "hollow": tab.hollow,
             "view": tab.built?.url?.absoluteString ?? "",
             "bench": tab.bench,
