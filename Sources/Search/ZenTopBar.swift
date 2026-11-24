@@ -9,7 +9,7 @@ struct ZenTopBar: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
 
-    static let height: CGFloat = 26
+    static let height: CGFloat = 28
 
     @State private var capsuleHovered = false
     @State private var showToolbox = false
@@ -50,9 +50,9 @@ struct ZenTopBar: View {
                     browser.back()
                 } label: {
                     Image(systemName: "chevron.backward")
-                        .font(.system(size: 9.5, weight: .semibold))
+                        .font(.system(size: 9.75, weight: .semibold))
                         .foregroundStyle(back ? Palette.ink : Palette.muted.opacity(0.35))
-                        .frame(width: 20, height: 20)
+                        .frame(width: 21, height: 21)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -67,9 +67,9 @@ struct ZenTopBar: View {
                     browser.forward()
                 } label: {
                     Image(systemName: "chevron.forward")
-                        .font(.system(size: 9.5, weight: .semibold))
+                        .font(.system(size: 9.75, weight: .semibold))
                         .foregroundStyle(forward ? Palette.ink : Palette.muted.opacity(0.35))
-                        .frame(width: 20, height: 20)
+                        .frame(width: 21, height: 21)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -88,9 +88,9 @@ struct ZenTopBar: View {
                     }
                 } label: {
                     Image(systemName: tab.loading ? "xmark" : "arrow.clockwise")
-                        .font(.system(size: 9.5, weight: .medium))
+                        .font(.system(size: 9.75, weight: .medium))
                         .foregroundStyle(Palette.ink)
-                        .frame(width: 20, height: 20)
+                        .frame(width: 21, height: 21)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -99,7 +99,7 @@ struct ZenTopBar: View {
                 .help(tab.loading ? "Stop Loading   esc" : "Reload Page   ⌘R")
             }
         } else {
-            Color.clear.frame(width: 66, height: 20)
+            Color.clear.frame(width: 69, height: 21)
         }
     }
 
@@ -153,7 +153,7 @@ struct ZenTopBar: View {
                     browser.edit()
                 } label: {
                     Text(displayDomain(for: tab))
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(Palette.ink)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -169,9 +169,9 @@ struct ZenTopBar: View {
                     showToolbox.toggle()
                 } label: {
                     Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 9.5, weight: .medium))
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(showToolbox ? Color.accentColor : Palette.muted)
-                        .frame(width: 17, height: 17)
+                        .frame(width: 18, height: 18)
                         .background(showToolbox ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
                         .contentShape(Rectangle())
                 }
@@ -187,13 +187,13 @@ struct ZenTopBar: View {
             }
             .padding(.leading, 7)
             .padding(.trailing, 3)
-            .frame(minWidth: 160, maxWidth: 300, maxHeight: 20)
+            .frame(minWidth: 170, maxWidth: 320, maxHeight: 22)
             .background(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(tab.shy ? Color.purple.opacity(0.12) : (capsuleHovered || showToolbox ? Color.white.opacity(0.08) : Color.white.opacity(0.04)))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .strokeBorder(tab.shy ? Color(red: 0.78, green: 0.65, blue: 1.0).opacity(0.32) : Color.clear, lineWidth: 0.5)
             )
             .onHover { capsuleHovered = $0 }

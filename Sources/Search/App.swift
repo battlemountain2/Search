@@ -633,7 +633,7 @@ struct ContentView: View {
                 BookmarksBar(browser: browser, bookmarks: browser.bookmarks, onFrame: cards)
                     .padding(.leading, leadingGap)
                     .padding(.trailing, trailingGap)
-                    .padding(.top, showZenTopBar ? (4 + ZenTopBar.height + 2) : (cards ? 4 : band))
+                    .padding(.top, showZenTopBar ? (5 + ZenTopBar.height + 2) : (cards ? 5 : band))
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
@@ -644,7 +644,7 @@ struct ContentView: View {
                 ZenTopBar(browser: browser, prefs: browser.prefs)
                     .padding(.leading, leadingGap)
                     .padding(.trailing, trailingGap)
-                    .padding(.top, 4)
+                    .padding(.top, 5)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
@@ -736,7 +736,7 @@ struct ContentView: View {
     /// bar is there.
     private var chrome: CGSize {
         let barHeight: CGFloat = BookmarksBar.height
-        let topGap: CGFloat = 4
+        let topGap: CGFloat = 5
         let zenHeight: CGFloat = ZenTopBar.height
         let bottomGap: CGFloat = Metrics.cardGap
 
@@ -756,11 +756,11 @@ struct ContentView: View {
         }
         let height: CGFloat
         if showZenTopBar && barShown {
-            height = topGap + zenHeight + 2 + barHeight + 4
+            height = topGap + zenHeight + 2 + barHeight + 5
         } else if showZenTopBar {
-            height = topGap + zenHeight + 4
+            height = topGap + zenHeight + 5
         } else if barShown {
-            height = topGap + barHeight + 4
+            height = topGap + barHeight + 5
         } else {
             height = band
         }
