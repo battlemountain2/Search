@@ -167,7 +167,7 @@ struct ZenTopBar: View {
                 if let pwa = tab.pwa {
                     Button {
                         Haptics.tap()
-                        PWAWindow.show(for: tab, browser: browser)
+                        PWAInstaller.install(for: tab, browser: browser)
                     } label: {
                         Image(systemName: "arrow.down.app")
                             .font(.system(size: 9.5, weight: .medium))
@@ -179,7 +179,7 @@ struct ZenTopBar: View {
                     .buttonStyle(.plain)
                     .focusable(false)
                     .focusEffectDisabled()
-                    .help("Open \(pwa.name) in Standalone App Window")
+                    .help("Install \(pwa.name) as App")
                 }
 
                 // Zen-style Page Actions & Settings button (triggers URL toolbox popover)
@@ -455,12 +455,12 @@ struct UrlToolboxView: View {
                     // Standalone App Window Row
                     ToolboxSettingRow(
                         icon: "arrow.down.app",
-                        title: "Standalone App Window",
-                        subtitle: "Frameless canvas with dynamic tinting",
-                        actionTitle: "Open"
+                        title: "Install as Desktop App",
+                        subtitle: "Installs to ~/Applications with shared sign-ins & Dock icon",
+                        actionTitle: "Install"
                     ) {
                         Haptics.tap()
-                        PWAWindow.show(for: tab, browser: browser)
+                        PWAInstaller.install(for: tab, browser: browser)
                         onDismiss()
                     }
                 }

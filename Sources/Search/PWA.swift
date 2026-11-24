@@ -40,6 +40,43 @@ enum PWA {
         "notebook.google.com": "NotebookLM"
     ]
 
+    /// Known brand theme colors for desktop web apps to ensure seamless, unified header blending.
+    static let knownThemeColors: [String: String] = [
+        "outlook.office.com": "#0078D4",
+        "outlook.live.com": "#0078D4",
+        "outlook.cloud.microsoft": "#0078D4",
+        "github.com": "#010409",
+        "youtube.com": "#0F0F0F",
+        "music.youtube.com": "#030303",
+        "open.spotify.com": "#121212",
+        "discord.com": "#313338",
+        "chatgpt.com": "#212121",
+        "chat.openai.com": "#212121",
+        "notion.so": "#191919",
+        "linear.app": "#0F1015",
+        "instagram.com": "#000000",
+        "web.whatsapp.com": "#111B21",
+        "slack.com": "#1A1D21",
+        "teams.microsoft.com": "#1F1F1F",
+        "app.slack.com": "#1A1D21",
+        "figma.com": "#2C2C2C",
+        "canvas": "#2D3B45"
+    ]
+
+    /// Resolves brand theme color for a URL.
+    static func knownThemeColor(for url: URL) -> String? {
+        guard let host = url.host()?.lowercased() else { return nil }
+        for (pattern, color) in knownThemeColors {
+            if host == pattern || host.hasSuffix("." + pattern) {
+                return color
+            }
+        }
+        if host.contains("canvas.") || host.hasPrefix("canvas") {
+            return knownThemeColors["canvas"]
+        }
+        return nil
+    }
+
     /// Checks if a URL matches a known PWA or academic service (e.g., Canvas).
     static func knownApp(for url: URL) -> String? {
         guard let host = url.host()?.lowercased() else { return nil }
@@ -127,18 +164,19 @@ enum PWA {
                 let isKnown = knownName != nil
                 if hasManifest || hasPWA || isKnown {
                     let finalName = knownName ?? domName ?? (tab.title.isEmpty ? SiteCard.site(url) : tab.title)
+                    let resolvedHex = themeHex ?? knownThemeColor(for: url)
                     let nativeColor: NSColor?
                     if #available(macOS 12.0, *) {
-                        nativeColor = tab.built?.themeColor ?? parseColor(hex: themeHex)
+                        nativeColor = tab.built?.themeColor ?? parseColor(hex: resolvedHex)
                     } else {
-                        nativeColor = parseColor(hex: themeHex)
+                        nativeColor = parseColor(hex: resolvedHex)
                     }
 
                     tab.pwa = PWAInfo(
                         name: finalName,
                         host: host,
                         startURL: url,
-                        themeColorHex: themeHex,
+                        themeColorHex: resolvedHex,
                         themeColor: nativeColor,
                         hasManifest: hasManifest,
                         isKnownApp: isKnown

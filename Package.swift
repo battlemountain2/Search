@@ -13,6 +13,11 @@ let package = Package(
             // here but ceremony.
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        .executableTarget(
+            name: "PWARunner",
+            path: "Sources/PWARunner",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         // Test-only: keeps every window the unit tests make off the screen.
         .target(
             name: "NoWindows",

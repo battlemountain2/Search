@@ -2083,7 +2083,9 @@ struct TabMenu: View {
                 Button("Open in Small Window") { browser.openInLittleWindow(tab) }
                     .disabled(!browser.liftable(tab))
             }
-            Button("Open in Standalone App Window") { PWAWindow.show(for: tab, browser: browser) }
+            Button("Install as Desktop App...") { PWAInstaller.install(for: tab, browser: browser) }
+                .disabled(!browser.liftable(tab))
+            Button("Open in Standalone Window") { PWAWindow.show(for: tab, browser: browser) }
                 .disabled(!browser.liftable(tab))
         }
         Divider()

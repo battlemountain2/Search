@@ -77,6 +77,9 @@ final class PWAWindow: NSObject, NSWindowDelegate, ObservableObject {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.isMovableByWindowBackground = true
         window.minSize = Self.smallest
 
         let host = pwa.host.isEmpty ? "default" : pwa.host
@@ -228,14 +231,10 @@ struct PWAView: View {
     @State private var hoveringForward = false
     @State private var hoveringReload = false
     @State private var showMenu = false
+    @State private var edgeToEdge: Bool = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Dynamic theme_color glass header
-            headerBar
-                .frame(height: 32)
-                .background(WindowDragBar())
-
+        ZStack(alignment: .top) {
             // Edge-to-edge Web App Canvas
             ZStack {
                 WebStage(page: tab.built ?? tab.web)
@@ -245,10 +244,57 @@ struct PWAView: View {
                         .transition(.opacity)
                 }
             }
+            .padding(.top, edgeToEdge ? 0 : 32)
             .animation(Motion.quick, value: tab.failure)
+
+            if !edgeToEdge {
+                // Dynamic theme_color glass header
+                headerBar
+                    .frame(height: 32)
+                    .background(WindowDragBar())
+            } else {
+                // Floating subtle hover controls in edge-to-edge mode
+                floatingControls
+            }
         }
-        .background(Palette.ground)
+        .onAppear {
+            let host = pwa.host.isEmpty ? "default" : pwa.host
+            edgeToEdge = Store.settings.bool(forKey: "pwa.edgetoedge." + host)
+        }
         .ignoresSafeArea()
+    }
+
+    // MARK: - Floating Controls (Edge-to-Edge Mode)
+
+    private var floatingControls: some View {
+        HStack {
+            Spacer()
+            Menu {
+                Button("Show Title Bar") {
+                    edgeToEdge = false
+                    let host = pwa.host.isEmpty ? "default" : pwa.host
+                    Store.settings.set(false, forKey: "pwa.edgetoedge." + host)
+                }
+                Divider()
+                Button("Back (⌘[)") { if tab.canGoBack { tab.back() } }.disabled(!tab.canGoBack)
+                Button("Forward (⌘])") { if tab.canGoForward { tab.forward() } }.disabled(!tab.canGoForward)
+                Button("Reload (⌘R)") { tab.reload() }
+                Divider()
+                Button("Open in Main Browser (⌘O)") { openInBrowser() }
+                Button("Close Window (⌘W)") { closeWindow() }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(Palette.ink.opacity(0.7))
+                    .frame(width: 22, height: 22)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: 22, height: 22)
+            .padding(.trailing, 12)
+            .padding(.top, 8)
+        }
     }
 
     // MARK: - Header Bar
@@ -337,6 +383,12 @@ struct PWAView: View {
 
             // Right Actions Menu Button
             Menu {
+                Button(edgeToEdge ? "Show Title Bar" : "Full Edge-to-Edge Canvas") {
+                    edgeToEdge.toggle()
+                    let host = pwa.host.isEmpty ? "default" : pwa.host
+                    Store.settings.set(edgeToEdge, forKey: "pwa.edgetoedge." + host)
+                }
+                Divider()
                 Button("Copy Address") {
                     if let url = tab.address {
                         NSPasteboard.general.clearContents()
@@ -379,14 +431,15 @@ struct PWAView: View {
 
                 if let themeColor = tab.built?.themeColor ?? pwa.themeColor {
                     Color(nsColor: themeColor)
-                        .opacity(0.60)
                 } else {
-                    Palette.ground.opacity(0.20)
+                    Palette.ground.opacity(0.85)
                 }
             }
         }
         .overlay(alignment: .bottom) {
-            Rectangle().fill(Palette.hairline).frame(height: 0.5)
+            if (tab.built?.themeColor ?? pwa.themeColor) == nil {
+                Rectangle().fill(Palette.hairline).frame(height: 0.5)
+            }
         }
     }
 }

@@ -127,6 +127,15 @@ mv "$APP/Contents/MacOS/$NAME.sdk" "$APP/Contents/MacOS/$NAME"
 # and titles. The plist below points to it.
 cp Search.sdef "$APP/Contents/Resources/"
 
+# Standalone PWA Runner template for installed Progressive Web Apps (PWAInstaller.swift)
+PWARUNNER_BIN="$(swift build "${SWIFTFLAGS[@]}" --show-bin-path)/PWARunner"
+if [ -f "$PWARUNNER_BIN" ]; then
+  cp "$PWARUNNER_BIN" "$APP/Contents/Resources/PWARunner"
+  vtool -set-build-version macos "$MINIMUM" "$SDK" -replace \
+    -output "$APP/Contents/Resources/PWARunner.sdk" "$APP/Contents/Resources/PWARunner"
+  mv "$APP/Contents/Resources/PWARunner.sdk" "$APP/Contents/Resources/PWARunner"
+fi
+
 # Symbols stay out of the app. The linker leaves every function's name and a
 # map back to the source in the binary — 15,000 entries, more than half of
 # what the app weighed (6.5 MB of binary, 2.7 without them), and nothing the
