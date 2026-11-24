@@ -178,13 +178,17 @@ struct ZenTopBar: View {
                             .font(.system(size: 9.5, weight: isInstalled ? .semibold : .medium))
                             .foregroundStyle(isInstalled ? Color.accentColor : Palette.muted)
                             .frame(width: 17, height: 17)
-                            .background(isInstalled ? Color.accentColor.opacity(0.12) : Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 3.5))
+                            .background(isInstalled ? Color.accentColor.opacity(0.16) : Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 3.5))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 3.5)
+                                    .strokeBorder(isInstalled ? Color.accentColor.opacity(0.3) : Color.clear, lineWidth: 0.5)
+                            )
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .focusable(false)
                     .focusEffectDisabled()
-                    .help(isInstalled ? "Open in \(pwa.name)" : "Install \(pwa.name) as App")
+                    .help(isInstalled ? "Open in \(pwa.name) (Desktop App)" : "Install \(pwa.name) as Desktop App")
                 }
 
                 // Zen-style Page Actions & Settings button (triggers URL toolbox popover)

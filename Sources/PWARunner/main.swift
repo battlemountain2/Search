@@ -11,6 +11,50 @@ struct PWAConfig: Codable {
     let themeColorHex: String?
 }
 
+// MARK: - PWA Cookie Representation
+
+struct PWACookie: Codable {
+    let name: String
+    let value: String
+    let domain: String
+    let path: String
+    let isSecure: Bool
+    let isHTTPOnly: Bool
+    let expiresDate: Date?
+    let sameSitePolicy: String?
+
+    init(cookie: HTTPCookie) {
+        self.name = cookie.name
+        self.value = cookie.value
+        self.domain = cookie.domain
+        self.path = cookie.path
+        self.isSecure = cookie.isSecure
+        self.isHTTPOnly = cookie.isHTTPOnly
+        self.expiresDate = cookie.expiresDate
+        if #available(macOS 10.15, *) {
+            self.sameSitePolicy = cookie.sameSitePolicy?.rawValue
+        } else {
+            self.sameSitePolicy = nil
+        }
+    }
+
+    var httpCookie: HTTPCookie? {
+        var props: [HTTPCookiePropertyKey: Any] = [
+            .name: name,
+            .value: value,
+            .domain: domain,
+            .path: path.isEmpty ? "/" : path
+        ]
+        if isSecure { props[.secure] = "TRUE" }
+        if isHTTPOnly { props[HTTPCookiePropertyKey("HttpOnly")] = "TRUE" }
+        if let expiresDate = expiresDate { props[.expires] = expiresDate }
+        if #available(macOS 10.15, *), let sameSitePolicy = sameSitePolicy {
+            props[.sameSitePolicy] = HTTPCookieStringPolicy(rawValue: sameSitePolicy)
+        }
+        return HTTPCookie(properties: props)
+    }
+}
+
 // MARK: - Action Router
 
 final class PWAActionRouter: NSObject {
@@ -514,7 +558,8 @@ struct PWAWebViewRepresentable: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
-        config.websiteDataStore = .default()
+        let store = WKWebsiteDataStore.default()
+        config.websiteDataStore = store
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         config.defaultWebpagePreferences.allowsContentJavaScript = true
 
@@ -527,10 +572,82 @@ struct PWAWebViewRepresentable: NSViewRepresentable {
         webView.allowsBackForwardNavigationGestures = true
         model.webView = webView
 
-        var request = URLRequest(url: startURL)
-        request.timeoutInterval = 30
-        webView.load(request)
+        injectCookiesAndLoad(store: store, webView: webView, startURL: startURL)
         return webView
+    }
+
+    private func loadCookies() -> [HTTPCookie] {
+        let fileManager = FileManager.default
+        let cleanHost = host.filter { $0.isLetter || $0.isNumber || $0 == "." }
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.battlemountain2.search.pwa.\(cleanHost)"
+
+        var candidateURLs: [URL] = []
+
+        let appSupport = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Search/PWA/\(bundleID)/Cookies.json")
+        if fileManager.fileExists(atPath: appSupport.path) {
+            candidateURLs.append(appSupport)
+        }
+
+        let hostSupport = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Search/PWA/\(cleanHost)/Cookies.json")
+        if fileManager.fileExists(atPath: hostSupport.path) {
+            candidateURLs.append(hostSupport)
+        }
+
+        if let bundleRes = Bundle.main.url(forResource: "Cookies", withExtension: "json") {
+            candidateURLs.append(bundleRes)
+        }
+
+        guard let bestURL = candidateURLs.max(by: { url1, url2 in
+            let date1 = (try? url1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
+            let date2 = (try? url2.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
+            return date1 < date2
+        }) else {
+            return []
+        }
+
+        guard let data = try? Data(contentsOf: bestURL) else { return [] }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let pwaCookies = try? decoder.decode([PWACookie].self, from: data) else { return [] }
+        return pwaCookies.compactMap { $0.httpCookie }
+    }
+
+    private func injectCookiesAndLoad(store: WKWebsiteDataStore, webView: WKWebView, startURL: URL) {
+        let cookies = loadCookies()
+        guard !cookies.isEmpty else {
+            var request = URLRequest(url: startURL)
+            request.timeoutInterval = 30
+            webView.load(request)
+            return
+        }
+
+        let cookieStore = store.httpCookieStore
+        let group = DispatchGroup()
+        for cookie in cookies {
+            group.enter()
+            cookieStore.setCookie(cookie) {
+                group.leave()
+            }
+        }
+
+        var didLoad = false
+        func triggerLoad() {
+            guard !didLoad else { return }
+            didLoad = true
+            var request = URLRequest(url: startURL)
+            request.timeoutInterval = 30
+            webView.load(request)
+        }
+
+        group.notify(queue: .main) {
+            triggerLoad()
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            triggerLoad()
+        }
     }
 
     private static func enable120HzProMotion(on preferences: WKPreferences) {

@@ -9,6 +9,49 @@ struct PWAConfig: Codable {
     let themeColorHex: String?
 }
 
+/// Structured cookie representation for cross-process session persistence.
+struct PWACookie: Codable {
+    let name: String
+    let value: String
+    let domain: String
+    let path: String
+    let isSecure: Bool
+    let isHTTPOnly: Bool
+    let expiresDate: Date?
+    let sameSitePolicy: String?
+
+    init(cookie: HTTPCookie) {
+        self.name = cookie.name
+        self.value = cookie.value
+        self.domain = cookie.domain
+        self.path = cookie.path
+        self.isSecure = cookie.isSecure
+        self.isHTTPOnly = cookie.isHTTPOnly
+        self.expiresDate = cookie.expiresDate
+        if #available(macOS 10.15, *) {
+            self.sameSitePolicy = cookie.sameSitePolicy?.rawValue
+        } else {
+            self.sameSitePolicy = nil
+        }
+    }
+
+    var httpCookie: HTTPCookie? {
+        var props: [HTTPCookiePropertyKey: Any] = [
+            .name: name,
+            .value: value,
+            .domain: domain,
+            .path: path.isEmpty ? "/" : path
+        ]
+        if isSecure { props[.secure] = "TRUE" }
+        if isHTTPOnly { props[HTTPCookiePropertyKey("HttpOnly")] = "TRUE" }
+        if let expiresDate = expiresDate { props[.expires] = expiresDate }
+        if #available(macOS 10.15, *), let sameSitePolicy = sameSitePolicy {
+            props[.sameSitePolicy] = HTTPCookieStringPolicy(rawValue: sameSitePolicy)
+        }
+        return HTTPCookie(properties: props)
+    }
+}
+
 /// Generates and installs first-class native macOS `.app` bundles for Progressive Web Apps.
 /// Installs to `~/Applications/<AppName>.app`, registering with LaunchServices so the app
 /// immediately appears in Spotlight, Raycast, Launcher, and the macOS Dock.
@@ -96,27 +139,30 @@ enum PWAInstaller {
             let spaceID = Spaces.owner(of: tab.store) ?? browser?.space.id ?? Spaces.current
             seedSessionData(for: bundleID, spaceID: spaceID)
 
-            // 6. Ad-hoc codesign
-            let signProcess = Process()
-            signProcess.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-            signProcess.arguments = ["--force", "--deep", "--sign", "-", appBundleURL.path]
-            try? signProcess.run()
-            signProcess.waitUntilExit()
+            // Asynchronously sync live cookies from the space, then sign and launch
+            syncCookies(for: tab, appURL: appBundleURL) {
+                // 6. Ad-hoc codesign
+                let signProcess = Process()
+                signProcess.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+                signProcess.arguments = ["--force", "--deep", "--sign", "-", appBundleURL.path]
+                try? signProcess.run()
+                signProcess.waitUntilExit()
 
-            // 7. Register with LaunchServices
-            let lsregisterPath = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-            if fileManager.fileExists(atPath: lsregisterPath) {
-                let lsProcess = Process()
-                lsProcess.executableURL = URL(fileURLWithPath: lsregisterPath)
-                lsProcess.arguments = ["-f", appBundleURL.path]
-                try? lsProcess.run()
-                lsProcess.waitUntilExit()
-            }
+                // 7. Register with LaunchServices
+                let lsregisterPath = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+                if fileManager.fileExists(atPath: lsregisterPath) {
+                    let lsProcess = Process()
+                    lsProcess.executableURL = URL(fileURLWithPath: lsregisterPath)
+                    lsProcess.arguments = ["-f", appBundleURL.path]
+                    try? lsProcess.run()
+                    lsProcess.waitUntilExit()
+                }
 
-            // 8. Launch newly installed app
-            NSWorkspace.shared.openApplication(at: appBundleURL, configuration: NSWorkspace.OpenConfiguration()) { _, error in
-                if let error {
-                    NSLog("[PWAInstaller] Failed to launch installed app: \(error)")
+                // 8. Launch newly installed app
+                NSWorkspace.shared.openApplication(at: appBundleURL, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+                    if let error {
+                        NSLog("[PWAInstaller] Failed to launch installed app: \(error)")
+                    }
                 }
             }
 
@@ -180,9 +226,114 @@ enum PWAInstaller {
         if let currentURL = tab.address {
             config.arguments = [currentURL.absoluteString]
         }
-        NSWorkspace.shared.openApplication(at: appURL, configuration: config) { _, error in
-            if let error {
-                NSLog("[PWAInstaller] Failed to launch application: \(error)")
+        syncCookies(for: tab, appURL: appURL) {
+            NSWorkspace.shared.openApplication(at: appURL, configuration: config) { _, error in
+                if let error {
+                    NSLog("[PWAInstaller] Failed to launch application: \(error)")
+                }
+            }
+        }
+    }
+
+    // MARK: - Cookie Synchronization
+
+    /// Determines whether an HTTPCookie is relevant to a given host (including identity/SSO providers).
+    static func isCookie(_ cookie: HTTPCookie, relevantTo host: String) -> Bool {
+        let cookieDomain = cookie.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        let targetHost = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+
+        // Direct subdomain or parent domain match
+        if targetHost == cookieDomain || targetHost.hasSuffix("." + cookieDomain) || cookieDomain.hasSuffix("." + targetHost) {
+            return true
+        }
+
+        // Match root 2-level domain (e.g. soundcloud.com, youtube.com, github.com)
+        let hostParts = targetHost.split(separator: ".")
+        if hostParts.count >= 2 {
+            let rootDomain = hostParts.suffix(2).joined(separator: ".")
+            if cookieDomain == rootDomain || cookieDomain.hasSuffix("." + rootDomain) {
+                return true
+            }
+        }
+
+        // Shared Google / YouTube Identity SSO
+        if targetHost.contains("youtube.com") || targetHost.contains("google.com") {
+            if cookieDomain.contains("youtube.com") || cookieDomain.contains("google.com") || cookieDomain.contains("googleusercontent.com") {
+                return true
+            }
+        }
+
+        // Microsoft / Outlook / Office SSO
+        if targetHost.contains("outlook") || targetHost.contains("microsoft") || targetHost.contains("office") {
+            if cookieDomain.contains("microsoft.com") || cookieDomain.contains("live.com") ||
+               cookieDomain.contains("office.com") || cookieDomain.contains("office365.com") ||
+               cookieDomain.contains("microsoftonline.com") || cookieDomain.contains("windowsazure.com") ||
+               cookieDomain.contains("msftauth.net") || cookieDomain.contains("live.net") {
+                return true
+            }
+        }
+
+        // Canvas & Higher-Ed SSO
+        if targetHost.contains("canvas") || targetHost.contains("instructure.com") {
+            if cookieDomain.contains("instructure.com") || cookieDomain.contains("unm.edu") {
+                return true
+            }
+        }
+
+        // SoundCloud
+        if targetHost.contains("soundcloud.com") && cookieDomain.contains("soundcloud.com") {
+            return true
+        }
+
+        // Instagram / Meta SSO
+        if targetHost.contains("instagram.com") {
+            if cookieDomain.contains("instagram.com") || cookieDomain.contains("facebook.com") {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    /// Asynchronously extracts relevant cookies from the tab's space store and writes them to the PWA app.
+    static func syncCookies(for tab: Tab, appURL: URL? = nil, completion: @escaping @MainActor () -> Void) {
+        guard let host = tab.address?.host() ?? tab.pwa?.host else {
+            completion()
+            return
+        }
+
+        let cleanHost = host.filter { $0.isLetter || $0.isNumber || $0 == "." }
+        let bundleID = "com.battlemountain2.search.pwa.\(cleanHost)"
+
+        tab.store.httpCookieStore.getAllCookies { cookies in
+            MainActor.assumeIsolated {
+                let relevant = cookies.filter { isCookie($0, relevantTo: host) }
+                let pwaCookies = relevant.map { PWACookie(cookie: $0) }
+
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = .prettyPrinted
+                encoder.dateEncodingStrategy = .iso8601
+
+                if let data = try? encoder.encode(pwaCookies) {
+                    let fileManager = FileManager.default
+
+                    // 1. Write to Application Support/Search/PWA/<bundleID>/Cookies.json
+                    let appSupportDir = fileManager.homeDirectoryForCurrentUser
+                        .appendingPathComponent("Library/Application Support/Search/PWA/\(bundleID)", isDirectory: true)
+                    try? fileManager.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
+                    let appSupportFile = appSupportDir.appendingPathComponent("Cookies.json")
+                    try? data.write(to: appSupportFile, options: .atomic)
+
+                    // 2. Also write to Resources/Cookies.json in app bundle if available
+                    if let appURL = appURL ?? installedAppURL(for: tab) {
+                        let resDir = appURL.appendingPathComponent("Contents/Resources", isDirectory: true)
+                        try? fileManager.createDirectory(at: resDir, withIntermediateDirectories: true)
+                        let resFile = resDir.appendingPathComponent("Cookies.json")
+                        try? data.write(to: resFile, options: .atomic)
+                    }
+                }
+
+                completion()
             }
         }
     }
