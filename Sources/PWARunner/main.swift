@@ -57,7 +57,8 @@ final class PWARunnerApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
         } else {
             let execURL = URL(fileURLWithPath: CommandLine.arguments[0])
             let siblingURL = execURL.deletingLastPathComponent().appendingPathComponent("PWA.json")
-            data = try? Data(contentsOf: siblingURL)
+            let parentURL = execURL.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("PWA.json")
+            data = (try? Data(contentsOf: siblingURL)) ?? (try? Data(contentsOf: parentURL))
         }
 
         if let data, let decoded = try? JSONDecoder().decode(PWAConfig.self, from: data) {
@@ -67,9 +68,10 @@ final class PWARunnerApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
             let info = bundle.infoDictionary ?? [:]
             let name = info["CFBundleDisplayName"] as? String ?? info["CFBundleName"] as? String ?? "Web App"
             let startString = info["PWAStartURL"] as? String ?? "https://about:blank"
-            let host = info["PWAHost"] as? String ?? (URL(string: startString)?.host ?? "")
+            let startURL = URL(string: startString) ?? URL(string: "https://about:blank")!
+            let host = info["PWAHost"] as? String ?? (startURL.host ?? "")
             let color = info["PWAThemeColor"] as? String
-            self.config = PWAConfig(name: name, host: host, startURL: URL(string: startString)!, themeColorHex: color)
+            self.config = PWAConfig(name: name, host: host, startURL: startURL, themeColorHex: color)
         }
 
         let savedEdge = UserDefaults.standard.bool(forKey: "pwa.edgetoedge." + config.host)

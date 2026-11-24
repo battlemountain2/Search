@@ -92,14 +92,17 @@ enum PWAInstaller {
             let iconImage = Favicons.shared.cached(for: tab.address) ?? generateSquircleIcon(name: pwa.name, hex: pwa.themeColorHex)
             createIconFile(from: iconImage, at: resourcesURL.appendingPathComponent("AppIcon.icns"))
 
-            // 5. Ad-hoc codesign
+            // 5. Seed initial session data and cookies from Search
+            seedSessionData(for: bundleID)
+
+            // 6. Ad-hoc codesign
             let signProcess = Process()
             signProcess.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
             signProcess.arguments = ["--force", "--deep", "--sign", "-", appBundleURL.path]
             try? signProcess.run()
             signProcess.waitUntilExit()
 
-            // 6. Register with LaunchServices
+            // 7. Register with LaunchServices
             let lsregisterPath = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
             if fileManager.fileExists(atPath: lsregisterPath) {
                 let lsProcess = Process()
@@ -109,7 +112,7 @@ enum PWAInstaller {
                 lsProcess.waitUntilExit()
             }
 
-            // 7. Launch newly installed app
+            // 8. Launch newly installed app
             NSWorkspace.shared.openApplication(at: appBundleURL, configuration: NSWorkspace.OpenConfiguration()) { _, error in
                 if let error {
                     NSLog("[PWAInstaller] Failed to launch installed app: \(error)")
@@ -120,6 +123,28 @@ enum PWAInstaller {
         } catch {
             NSLog("[PWAInstaller] Installation error: \(error)")
             return nil
+        }
+    }
+
+    // MARK: - Session Seeding
+
+    private static func seedSessionData(for bundleID: String) {
+        let fileManager = FileManager.default
+        let library = fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library", isDirectory: true)
+
+        // Seed binary cookies
+        let searchCookies = library.appendingPathComponent("HTTPStorages/com.officecommun.search.binarycookies")
+        let targetCookies = library.appendingPathComponent("HTTPStorages/\(bundleID).binarycookies")
+        if fileManager.fileExists(atPath: searchCookies.path) && !fileManager.fileExists(atPath: targetCookies.path) {
+            try? fileManager.copyItem(at: searchCookies, to: targetCookies)
+        }
+
+        // Seed WebsiteData (LocalStorage & IndexedDB)
+        let searchData = library.appendingPathComponent("WebKit/com.officecommun.search/WebsiteData")
+        let targetData = library.appendingPathComponent("WebKit/\(bundleID)/WebsiteData")
+        if fileManager.fileExists(atPath: searchData.path) && !fileManager.fileExists(atPath: targetData.path) {
+            try? fileManager.createDirectory(at: targetData.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? fileManager.copyItem(at: searchData, to: targetData)
         }
     }
 
