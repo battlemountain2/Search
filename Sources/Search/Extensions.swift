@@ -697,6 +697,13 @@ final class Extensions: NSObject, ObservableObject {
             let undoRecovery = ExtensionWorkerRecovery.shared.register(context)
             do { try controller.load(context) }
             catch { undoRecovery(); throw error }
+            if context.webExtension.hasBackgroundContent {
+                context.loadBackgroundContent { error in
+                    if let error {
+                        NSLog("Extensions: loadBackgroundContent error for %@: %@", item.id, error.localizedDescription)
+                    }
+                }
+            }
             watch(context)
             if contexts[item.id] == nil, loadsThisRun.contains(item.id) { loadedBefore.insert(item.id); installing.remove(item.id) }
             loadsThisRun.insert(item.id)
@@ -1084,6 +1091,9 @@ final class Extensions: NSObject, ObservableObject {
             loadedBefore.insert(id)
             installing.remove(id)
             try controller.load(context)
+            if context.webExtension.hasBackgroundContent {
+                context.loadBackgroundContent { _ in }
+            }
             contexts[id] = context
             openAside(in: context)
             watch(context)

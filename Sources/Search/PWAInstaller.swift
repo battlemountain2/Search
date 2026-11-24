@@ -120,10 +120,70 @@ enum PWAInstaller {
                 }
             }
 
+            // Notify UI that the app is now installed
+            tab.objectWillChange.send()
+
             return appBundleURL
         } catch {
             NSLog("[PWAInstaller] Installation error: \(error)")
             return nil
+        }
+    }
+
+    // MARK: - Installed Detection & Launching
+
+    /// Checks if a dedicated desktop app is installed for the given tab or host.
+    static func isInstalled(for tab: Tab) -> Bool {
+        installedAppURL(for: tab) != nil
+    }
+
+    /// Resolves the installed app bundle URL on local disk if present.
+    static func installedAppURL(for tab: Tab) -> URL? {
+        guard let pwa = tab.pwa ?? makeFallbackPWA(for: tab) else { return nil }
+        return installedAppURL(for: pwa)
+    }
+
+    /// Resolves the installed app bundle URL for a PWAInfo.
+    static func installedAppURL(for pwa: PWAInfo) -> URL? {
+        let fileManager = FileManager.default
+        let safeName = sanitizeFilename(pwa.name)
+
+        // 1. Check user ~/Applications directory
+        let userApp = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent("Applications/\(safeName).app")
+        if fileManager.fileExists(atPath: userApp.path) {
+            return userApp
+        }
+
+        // 2. Check system /Applications directory
+        let sysApp = URL(fileURLWithPath: "/Applications/\(safeName).app")
+        if fileManager.fileExists(atPath: sysApp.path) {
+            return sysApp
+        }
+
+        // 3. Check LaunchServices for registered bundle ID
+        let cleanHost = pwa.host.filter { $0.isLetter || $0.isNumber || $0 == "." }
+        let bundleID = "com.battlemountain2.search.pwa.\(cleanHost)"
+        if let registeredURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID),
+           fileManager.fileExists(atPath: registeredURL.path) {
+            return registeredURL
+        }
+
+        return nil
+    }
+
+    /// Launches the installed desktop app, navigating to the current tab address if applicable.
+    static func launch(for tab: Tab) {
+        guard let appURL = installedAppURL(for: tab) else { return }
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        if let currentURL = tab.address {
+            config.arguments = [currentURL.absoluteString]
+        }
+        NSWorkspace.shared.openApplication(at: appURL, configuration: config) { _, error in
+            if let error {
+                NSLog("[PWAInstaller] Failed to launch application: \(error)")
+            }
         }
     }
 

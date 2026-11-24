@@ -3373,11 +3373,12 @@ final class Browser: NSObject, ObservableObject {
         tabs += restored.tabs
         twinsSoon()
         // No tab in front (a fresh start, see Session.startFresh): an empty
-        // one beside the pins.
-        let front = saved.tabs.isEmpty || saved.active < 0 ? nil
-            : restored.active.flatMap { id in tabs.first { $0.id == id } } ?? tabs.first { $0.pin == nil } ?? tabs.first
+        // space remains at 0 tabs, never falling back to pinned favorites (like Gmail).
+        let front = (saved.tabs.isEmpty || saved.active < 0) ? nil
+            : (restored.active.flatMap { id in tabs.first { $0.id == id } } ?? tabs.first { $0.pin == nil })
         guard let first = front else {
-            frontBlank()
+            activeID = nil
+            if let window { PaneStage.stages.object(forKey: window)?.show([], split: nil, focused: nil) }
             return
         }
         activeID = first.id

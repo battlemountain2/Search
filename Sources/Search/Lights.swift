@@ -16,8 +16,11 @@ import AppKit
 final class Lights: NSObject {
     /// Where the close button's centre goes, from the window's top-left: where
     /// a unified toolbar put it, which Metrics.lights and sideLights are
-    /// measured from. Down the strip's middle, however tall it is.
-    static var centre: CGPoint { CGPoint(x: 26, y: Metrics.strip / 2) }
+    /// measured from. When ZenTopBar is active, aligned exactly to its 19pt midline.
+    static var centre: CGPoint {
+        let y: CGFloat = Shared.prefs.zenTopBar ? 19 : (Metrics.strip / 2)
+        return CGPoint(x: 26, y: y)
+    }
 
     private static var kept: [ObjectIdentifier: Lights] = [:]
 
@@ -109,7 +112,9 @@ final class Lights: NSObject {
     /// How tall the title bar is: the strip's height, or, with the three
     /// stacked, as tall as they need.
     private func band(_ window: NSWindow) -> CGFloat {
-        vertical(window) ? Metrics.iconLights : Metrics.strip
+        if vertical(window) { return Metrics.iconLights }
+        if Shared.prefs.zenTopBar { return 38 }
+        return Metrics.strip
     }
 
     /// Where one button goes: along the row, or down the column, the

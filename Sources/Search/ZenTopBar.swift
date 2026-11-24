@@ -163,23 +163,28 @@ struct ZenTopBar: View {
                 .focusEffectDisabled()
                 .help("Click to edit URL or search   ⌘L")
 
-                // Subtle PWA Standalone App Window launcher icon
+                // Subtle PWA Desktop App Launcher / Installer icon
                 if let pwa = tab.pwa {
+                    let isInstalled = PWAInstaller.isInstalled(for: tab)
                     Button {
                         Haptics.tap()
-                        PWAInstaller.install(for: tab, browser: browser)
+                        if isInstalled {
+                            PWAInstaller.launch(for: tab)
+                        } else {
+                            PWAInstaller.install(for: tab, browser: browser)
+                        }
                     } label: {
-                        Image(systemName: "arrow.down.app")
-                            .font(.system(size: 9.5, weight: .medium))
-                            .foregroundStyle(Palette.muted)
+                        Image(systemName: isInstalled ? "arrow.up.forward.app.fill" : "arrow.down.app")
+                            .font(.system(size: 9.5, weight: isInstalled ? .semibold : .medium))
+                            .foregroundStyle(isInstalled ? Color.accentColor : Palette.muted)
                             .frame(width: 17, height: 17)
-                            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 3.5))
+                            .background(isInstalled ? Color.accentColor.opacity(0.12) : Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 3.5))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .focusable(false)
                     .focusEffectDisabled()
-                    .help("Install \(pwa.name) as App")
+                    .help(isInstalled ? "Open in \(pwa.name)" : "Install \(pwa.name) as App")
                 }
 
                 // Zen-style Page Actions & Settings button (triggers URL toolbox popover)
@@ -452,16 +457,38 @@ struct UrlToolboxView: View {
                         onDismiss()
                     }
 
-                    // Standalone App Window Row
+                    // Standalone Desktop App Row
+                    let isInstalled = PWAInstaller.isInstalled(for: tab)
+                    let pwaName = tab.pwa?.name ?? "Desktop App"
                     ToolboxSettingRow(
-                        icon: "arrow.down.app",
-                        title: "Install as Desktop App",
-                        subtitle: "Installs to ~/Applications with shared sign-ins & Dock icon",
-                        actionTitle: "Install"
+                        icon: isInstalled ? "arrow.up.forward.app.fill" : "arrow.down.app",
+                        title: isInstalled ? "Open in \(pwaName)" : "Install as Desktop App",
+                        subtitle: isInstalled ? "Dedicated app bundle in ~/Applications" : "Installs to ~/Applications with shared sign-ins & Dock icon",
+                        actionTitle: isInstalled ? "Open" : "Install"
                     ) {
                         Haptics.tap()
-                        PWAInstaller.install(for: tab, browser: browser)
+                        if isInstalled {
+                            PWAInstaller.launch(for: tab)
+                        } else {
+                            PWAInstaller.install(for: tab, browser: browser)
+                        }
                         onDismiss()
+                    }
+
+                    if isInstalled {
+                        Button {
+                            Haptics.tap()
+                            PWAInstaller.install(for: tab, browser: browser)
+                            onDismiss()
+                        } label: {
+                            Text("Reinstall Desktop App...")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(Palette.muted)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(6)

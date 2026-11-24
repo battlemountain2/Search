@@ -42,9 +42,6 @@ enum PWA {
 
     /// Known brand theme colors for desktop web apps to ensure seamless, unified header blending.
     static let knownThemeColors: [String: String] = [
-        "outlook.office.com": "#0078D4",
-        "outlook.live.com": "#0078D4",
-        "outlook.cloud.microsoft": "#0078D4",
         "github.com": "#010409",
         "youtube.com": "#0F0F0F",
         "music.youtube.com": "#030303",

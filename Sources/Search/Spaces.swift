@@ -508,16 +508,20 @@ extension Browser {
             // Nothing in front there (a fresh start, see Session.startFresh):
             // an empty tab beside its pins, as at launch, not the first pin.
             // One that has gone from the row falls to its first tab that isn't a pin.
-            let front = back.active.map { active in
-                back.tabs.contains { $0.id == active } ? active : (back.tabs.first { $0.pin == nil } ?? back.tabs[0]).id
-            }
+            let front = back.active.flatMap { active in
+                back.tabs.contains { $0.id == active } ? active : back.tabs.first { $0.pin == nil }?.id
+            } ?? back.tabs.first { $0.pin == nil }?.id
             showRow(back.tabs, active: front, splits: back.splits, blank: false)
             for tab in tabs where visibleTabIDs.contains(tab.id) {
                 if !tab.wake() { tab.revive() }
             }
             // The page now, as a tab switch does (see PaneStage.show(now:)),
             // rather than after the whole column has been built again.
-            if activeSplit == nil, let active, let window { PaneStage.stages.object(forKey: window)?.show(now: active) }
+            if activeSplit == nil, let active, let window {
+                PaneStage.stages.object(forKey: window)?.show(now: active)
+            } else if front == nil, let window {
+                PaneStage.stages.object(forKey: window)?.show([], split: nil, focused: nil)
+            }
         } else if let back = parked.removeValue(forKey: id) {
             // Space was parked empty (tabs: [])! Preserve empty space.
             showRow([], active: nil, splits: [], blank: false)

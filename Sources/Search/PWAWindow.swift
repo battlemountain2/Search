@@ -99,6 +99,42 @@ final class PWAWindow: NSObject, NSWindowDelegate, ObservableObject {
         ))
 
         installKeyMonitor()
+
+        DispatchQueue.main.async { [weak self] in
+            self?.alignTrafficLights()
+        }
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        alignTrafficLights()
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        alignTrafficLights()
+    }
+
+    func alignTrafficLights() {
+        guard !window.styleMask.contains(.fullScreen) else { return }
+        let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap { window.standardWindowButton($0) }
+        guard buttons.count == 3, let bar = buttons[0].superview, let container = bar.superview else { return }
+
+        let targetCenterY: CGFloat = 17
+        let height: CGFloat = 34
+        var frame = container.frame
+        if frame.height != height || frame.maxY != window.frame.height {
+            frame.size.height = height
+            frame.origin.y = window.frame.height - height
+            container.frame = frame
+        }
+
+        let spacing: CGFloat = 20
+        let startX: CGFloat = 18
+        for (index, button) in buttons.enumerated() {
+            let size = button.frame.size
+            let origin = NSPoint(x: startX + CGFloat(index) * spacing,
+                                 y: bar.bounds.height - targetCenterY - size.height / 2)
+            button.setFrameOrigin(origin)
+        }
     }
 
     private func installKeyMonitor() {
@@ -244,13 +280,13 @@ struct PWAView: View {
                         .transition(.opacity)
                 }
             }
-            .padding(.top, edgeToEdge ? 0 : 32)
+            .padding(.top, edgeToEdge ? 0 : 34)
             .animation(Motion.quick, value: tab.failure)
 
             if !edgeToEdge {
                 // Dynamic theme_color glass header
                 headerBar
-                    .frame(height: 32)
+                    .frame(height: 34)
                     .background(WindowDragBar())
             } else {
                 // Floating subtle hover controls in edge-to-edge mode
@@ -303,7 +339,7 @@ struct PWAView: View {
     private var headerBar: some View {
         HStack(spacing: 6) {
             // Space for native macOS traffic lights (red, yellow, green)
-            Spacer().frame(width: 68)
+            Spacer().frame(width: 76)
 
             // Back button
             Button {
@@ -313,7 +349,7 @@ struct PWAView: View {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(tab.canGoBack ? Palette.ink : Palette.muted.opacity(0.4))
-                    .frame(width: 20, height: 20)
+                    .frame(width: 22, height: 22)
                     .background(hoveringBack && tab.canGoBack ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
             }
             .buttonStyle(.plain)
@@ -329,7 +365,7 @@ struct PWAView: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(tab.canGoForward ? Palette.ink : Palette.muted.opacity(0.4))
-                    .frame(width: 20, height: 20)
+                    .frame(width: 22, height: 22)
                     .background(hoveringForward && tab.canGoForward ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
             }
             .buttonStyle(.plain)
@@ -345,41 +381,14 @@ struct PWAView: View {
                 Image(systemName: tab.loading ? "xmark" : "arrow.clockwise")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(Palette.ink.opacity(0.75))
-                    .frame(width: 20, height: 20)
+                    .frame(width: 22, height: 22)
                     .background(hoveringReload ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
             }
             .buttonStyle(.plain)
             .onHover { hoveringReload = $0 }
             .help("Reload   ⌘R")
 
-            Spacer(minLength: 0)
-
-            // Center Title & Domain Cluster
-            HStack(spacing: 5) {
-                Mark(icon: Favicons.shared.cached(for: tab.address),
-                     letter: String((pwa.name.isEmpty ? "A" : pwa.name).prefix(1)).uppercased(),
-                     size: 13)
-
-                Text(pwa.name)
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(Palette.ink)
-                    .lineLimit(1)
-
-                // Optional unread count badge
-                if let unreadCount = tab.unread {
-                    Text(unreadCount)
-                        .font(.system(size: 8.5, weight: .bold).monospacedDigit())
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(Capsule().fill(Color(red: 0.93, green: 0.24, blue: 0.21)))
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2)
-            .background(Color.white.opacity(0.04), in: Capsule())
-
-            Spacer(minLength: 0)
+            Spacer()
 
             // Right Actions Menu Button
             Menu {
@@ -424,12 +433,35 @@ struct PWAView: View {
             .padding(.trailing, 8)
         }
         .padding(.horizontal, 4)
+        .overlay(alignment: .center) {
+            // True Mathematical Center - Clean title, NO capsule bubble
+            HStack(spacing: 5) {
+                Mark(icon: Favicons.shared.cached(for: tab.address),
+                     letter: String((pwa.name.isEmpty ? "A" : pwa.name).prefix(1)).uppercased(),
+                     size: 13)
+
+                Text(pwa.name)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+                    .lineLimit(1)
+
+                if let unreadCount = tab.unread {
+                    Text(unreadCount)
+                        .font(.system(size: 8.5, weight: .bold).monospacedDigit())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color(red: 0.93, green: 0.24, blue: 0.21)))
+                }
+            }
+            .allowsHitTesting(false)
+        }
         .background {
             // Dynamic Tinting: Uses WebKit themeColor or falls back to frosted glass
             ZStack {
                 VisualEffectView(material: .headerView, blendingMode: .behindWindow)
 
-                if let themeColor = tab.built?.themeColor ?? pwa.themeColor {
+                if let themeColor = tab.built?.themeColor {
                     Color(nsColor: themeColor)
                 } else {
                     Palette.ground.opacity(0.85)
@@ -437,7 +469,7 @@ struct PWAView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if (tab.built?.themeColor ?? pwa.themeColor) == nil {
+            if tab.built?.themeColor == nil {
                 Rectangle().fill(Palette.hairline).frame(height: 0.5)
             }
         }

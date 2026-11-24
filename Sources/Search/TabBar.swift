@@ -2110,8 +2110,16 @@ struct TabMenu: View {
                 Button("Open in Small Window") { browser.openInLittleWindow(tab) }
                     .disabled(!browser.liftable(tab))
             }
-            Button("Install as Desktop App...") { PWAInstaller.install(for: tab, browser: browser) }
-                .disabled(!browser.liftable(tab))
+            if PWAInstaller.isInstalled(for: tab) {
+                let name = tab.pwa?.name ?? "Desktop App"
+                Button("Open in \(name)") { PWAInstaller.launch(for: tab) }
+                    .disabled(!browser.liftable(tab))
+                Button("Reinstall Desktop App...") { PWAInstaller.install(for: tab, browser: browser) }
+                    .disabled(!browser.liftable(tab))
+            } else {
+                Button("Install as Desktop App...") { PWAInstaller.install(for: tab, browser: browser) }
+                    .disabled(!browser.liftable(tab))
+            }
             Button("Open in Standalone Window") { PWAWindow.show(for: tab, browser: browser) }
                 .disabled(!browser.liftable(tab))
         }

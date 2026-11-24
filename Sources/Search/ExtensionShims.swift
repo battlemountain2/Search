@@ -51,7 +51,7 @@ enum ExtensionShims {
     nonisolated static let stamp = ".search-shim"
     /// Raised when `prepare` changes what it does to a package, so that
     /// extensions prepared before are prepared again.
-    nonisolated private static let preparation = "8"
+    nonisolated private static let preparation = "9"
     nonisolated static let version: String = {
         SHA256.hash(data: Data((script + PasskeyRelay.page + preparation).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() + (Store.testing ? "-test" : "")
     }()
@@ -2379,7 +2379,19 @@ enum ExtensionShims {
               try { f(port); } catch (e) { setTimeout(() => { throw e; }); }
             }
           };
-          port.onDisconnect.addListener(() => finish());
+          port.onDisconnect.addListener(() => {
+            if (inContent) {
+              const err = port.error || runtime.lastError;
+              const msg = err && (err.message || String(err));
+              if (msg && msg.includes("No runtime.onConnect listeners found")) {
+                try {
+                  root.webkit?.messageHandlers?.searchWorkerRecovery?.postMessage({ generation: workerGeneration, token: workerObserver + ":retry" });
+                } catch (e) {}
+                return;
+              }
+            }
+            finish();
+          });
           const set = (key, value) => Object.defineProperty(port, key, { value, configurable: true, writable: true });
           set("onDisconnect", disconnected);
           set("postMessage", (message) => {
@@ -2403,7 +2415,24 @@ enum ExtensionShims {
           // WebKit selects the connection's background before the following
           // observation reads its identity. An absent/loading background is
           // bound to the next creation, never to a retired worker.
-          return track(connect(...args));
+          let p;
+          try {
+            p = connect(...args);
+          } catch (e) {
+            if (inContent) {
+              try { root.webkit?.messageHandlers?.searchWorkerRecovery?.postMessage({ generation: workerGeneration, token: workerObserver + ":wake" }); } catch (_) {}
+              const synthetic = {
+                name: (args[0] && args[0].name) || "",
+                postMessage: () => {},
+                disconnect: () => {},
+                onMessage: event(),
+                onDisconnect: event(),
+              };
+              return track(synthetic);
+            }
+            throw e;
+          }
+          return track(p);
         });
         const incoming = runtime.onConnect;
         if (incoming && typeof incoming.addListener === "function") {
@@ -5113,7 +5142,23 @@ enum ExtensionShims {
         // sender, so the worker leaves it plain; numbering one end only hides
         // its messages from the extension.
         put(runtime, "connect", (...args) => {
-          const port = connect.apply(runtime, args);
+          let port;
+          try {
+            port = connect.apply(runtime, args);
+          } catch (e) {
+            if (inContent) {
+              const synthetic = {
+                name: (args[0] && args[0].name) || "",
+                postMessage: () => {},
+                disconnect: () => {},
+                onMessage: event(),
+                onDisconnect: event(),
+              };
+              pin(synthetic, synthetic);
+              return synthetic;
+            }
+            throw e;
+          }
           const kept = inContent || (typeof args[0] === "string" && args[0] !== runtime.id) ? port : number(port);
           pin(kept, kept);
           return kept;
@@ -5123,6 +5168,19 @@ enum ExtensionShims {
         const wrapped = new WeakMap();
         // The worker's sender is the bare origin, with no slash after it.
         const fromOwn = (port) => !!port && !!port.sender && (String(port.sender.url) + "/").startsWith(own);
+        const registeredListeners = new Set();
+        const earlyPorts = [];
+        if (background && typeof add === "function") {
+          add.call(onConnect, (port) => {
+            if (registeredListeners.size === 0) {
+              earlyPorts.push(port);
+            } else {
+              for (const l of registeredListeners) {
+                try { l(port); } catch (e) { setTimeout(() => { throw e; }); }
+              }
+            }
+          });
+        }
         put(onConnect, "addListener", (listener, ...rest) => {
           if (typeof listener !== "function") return add.call(onConnect, listener, ...rest);
           let w = wrapped.get(listener);
@@ -5145,10 +5203,28 @@ enum ExtensionShims {
             };
             wrapped.set(listener, w);
           }
+          if (background) {
+            registeredListeners.add(w);
+            if (earlyPorts.length > 0) {
+              const flushed = earlyPorts.splice(0, earlyPorts.length);
+              for (const p of flushed) {
+                try { w(p); } catch (e) { setTimeout(() => { throw e; }); }
+              }
+            }
+            return;
+          }
           return add.call(onConnect, w, ...rest);
         });
-        put(onConnect, "removeListener", (listener) => remove.call(onConnect, wrapped.get(listener) || listener));
-        put(onConnect, "hasListener", (listener) => has.call(onConnect, wrapped.get(listener) || listener));
+        put(onConnect, "removeListener", (listener) => {
+          const w = wrapped.get(listener) || listener;
+          if (background) { registeredListeners.delete(w); return; }
+          return remove.call(onConnect, w);
+        });
+        put(onConnect, "hasListener", (listener) => {
+          const w = wrapped.get(listener) || listener;
+          if (background) return registeredListeners.has(w);
+          return has.call(onConnect, w);
+        });
       }
 
       // Members of namespaces WebKit has.

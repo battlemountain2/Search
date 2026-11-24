@@ -583,6 +583,12 @@ extension ShortcutStore {
     /// without one, for you to give it one in Settings if you like.
     func adopt(_ context: WKWebExtensionContext, id ext: String) {
         for command in context.commands {
+            if command.modifierFlags.contains(.control), !command.modifierFlags.contains(.command) {
+                var flags = command.modifierFlags
+                flags.remove(.control)
+                flags.insert(.command)
+                command.modifierFlags = flags
+            }
             let id = "ext:\(ext):\(command.id)"
             // What WebKit holds is the manifest's on a fresh load, or an
             // update's; once applied here, it is ours, and not taken again.

@@ -105,6 +105,19 @@ final class PWARunnerApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let color = info["PWAThemeColor"] as? String
             self.config = PWAConfig(name: name, host: host, startURL: startURL, themeColorHex: color)
         }
+
+        // Support passing target URL as launch argument from Search
+        if CommandLine.arguments.count > 1,
+           let argURL = URL(string: CommandLine.arguments[1]),
+           argURL.scheme == "http" || argURL.scheme == "https" {
+            self.config = PWAConfig(name: self.config.name, host: self.config.host, startURL: argURL, themeColorHex: self.config.themeColorHex)
+        }
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        if let target = urls.first {
+            PWAActionRouter.shared.model?.load(url: target)
+        }
     }
 
     // MARK: - Menu Setup
@@ -191,8 +204,7 @@ final class PWARunnerApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.minSize = Self.smallest
         window.delegate = self
 
-        let initialBg = config.themeColorHex.flatMap(parseHexColor) ?? .windowBackgroundColor
-        window.backgroundColor = initialBg
+        window.backgroundColor = .windowBackgroundColor
         window.isOpaque = true
 
         // Restore frame
@@ -210,16 +222,54 @@ final class PWARunnerApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let rootView = PWARunnerRootView(config: config, window: window)
         window.contentView = NSHostingView(rootView: rootView)
         window.makeKeyAndOrderFront(nil)
+
+        DispatchQueue.main.async { [weak self] in
+            self?.alignTrafficLights()
+        }
     }
 
     // MARK: - Window Delegate
 
     func windowDidMove(_ notification: Notification) {
         saveFrame()
+        alignTrafficLights()
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
         saveFrame()
+        alignTrafficLights()
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        alignTrafficLights()
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        alignTrafficLights()
+    }
+
+    func alignTrafficLights() {
+        guard let window, !window.styleMask.contains(.fullScreen) else { return }
+        let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap { window.standardWindowButton($0) }
+        guard buttons.count == 3, let bar = buttons[0].superview, let container = bar.superview else { return }
+
+        let targetCenterY: CGFloat = 17
+        let height: CGFloat = 34
+        var frame = container.frame
+        if frame.height != height || frame.maxY != window.frame.height {
+            frame.size.height = height
+            frame.origin.y = window.frame.height - height
+            container.frame = frame
+        }
+
+        let spacing: CGFloat = 20
+        let startX: CGFloat = 18
+        for (index, button) in buttons.enumerated() {
+            let size = button.frame.size
+            let origin = NSPoint(x: startX + CGFloat(index) * spacing,
+                                 y: bar.bounds.height - targetCenterY - size.height / 2)
+            button.setFrameOrigin(origin)
+        }
     }
 
     private func saveFrame() {
@@ -243,9 +293,6 @@ struct PWARunnerRootView: View {
     private var activeBackgroundColor: NSColor {
         if let pageColor = model.pageThemeColor {
             return pageColor
-        }
-        if let hex = config.themeColorHex, let color = parseHexColor(hex) {
-            return color
         }
         return NSColor.windowBackgroundColor
     }
@@ -277,9 +324,7 @@ struct PWARunnerRootView: View {
             edgeToEdge = UserDefaults.standard.bool(forKey: "pwa.edgetoedge." + host)
         }
         .onChange(of: model.pageThemeColor) { newColor in
-            if let newColor {
-                window.backgroundColor = newColor
-            }
+            window.backgroundColor = newColor ?? .windowBackgroundColor
         }
         .ignoresSafeArea()
     }
@@ -382,6 +427,11 @@ struct PWARunnerRootView: View {
                 .foregroundStyle(isDarkHeader ? Color.white : Color.primary)
                 .allowsHitTesting(false)
         }
+        .overlay(alignment: .bottom) {
+            if model.pageThemeColor == nil {
+                Divider().opacity(0.35)
+            }
+        }
         .background(Color(nsColor: activeBackgroundColor))
     }
 
@@ -441,6 +491,11 @@ final class PWAWebViewModel: ObservableObject {
     func goForward() { webView?.goForward() }
     func reload() { webView?.reload() }
     func reloadFromOrigin() { webView?.reloadFromOrigin() }
+    func load(url: URL) {
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 30
+        webView?.load(req)
+    }
     func setZoom(_ zoom: Double) { webView?.pageZoom = zoom }
     func zoomIn() { if let z = webView?.pageZoom { webView?.pageZoom = z * 1.1 } }
     func zoomOut() { if let z = webView?.pageZoom { webView?.pageZoom = z / 1.1 } }
@@ -520,13 +575,17 @@ struct PWAWebViewRepresentable: NSViewRepresentable {
                         let bg = window.getComputedStyle(header).backgroundColor;
                         if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return bg;
                     }
-                    return window.getComputedStyle(document.body).backgroundColor;
+                    return null;
                 })()
                 """
                 webView.evaluateJavaScript(js) { [weak model] result, _ in
                     if let str = result as? String, let parsed = parseCSSColor(str) {
                         DispatchQueue.main.async {
                             model?.pageThemeColor = parsed
+                        }
+                    } else {
+                        DispatchQueue.main.async {
+                            model?.pageThemeColor = nil
                         }
                     }
                 }
@@ -535,6 +594,11 @@ struct PWAWebViewRepresentable: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             model.isLoading = true
+            if #available(macOS 12.0, *), let tc = webView.themeColor {
+                model.pageThemeColor = tc
+            } else {
+                model.pageThemeColor = nil
+            }
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
