@@ -248,7 +248,7 @@ final class PWARunnerApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.minSize = Self.smallest
         window.delegate = self
 
-        window.backgroundColor = .windowBackgroundColor
+        window.backgroundColor = config.themeColorHex.flatMap(parseCSSColor) ?? .windowBackgroundColor
         window.isOpaque = true
 
         // Restore frame
@@ -366,6 +366,7 @@ struct PWARunnerRootView: View {
                 floatingControls
             }
         }
+        .background(Color(nsColor: activeBackgroundColor))
         .onAppear {
             let host = config.host.isEmpty ? "default" : config.host
             edgeToEdge = UserDefaults.standard.bool(forKey: "pwa.edgetoedge." + host)
