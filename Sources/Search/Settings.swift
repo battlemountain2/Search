@@ -18,10 +18,10 @@ struct SettingsPanel: View {
     var found: String? = nil
     @Environment(\.asTab) private var asTab
 
-    @ObservedObject private var updater = Updater.shared
-    @ObservedObject private var shield = Shield.shared
-    @ObservedObject private var sync = Sync.shared
-    @ObservedObject private var icloud = ICloudSync.shared
+    private var updater: Updater { .shared }
+    private var shield: Shield { .shared }
+    private var sync: Sync { .shared }
+    private var icloud: ICloudSync { .shared }
     /// The keys rows name, as Settings › Shortcuts has them now.
     @ObservedObject private var shortcuts = ShortcutStore.shared
     @State private var isDefault = false
@@ -40,7 +40,7 @@ struct SettingsPanel: View {
     /// A row gone to from a result, lit for a moment.
     @State private var lit: String?
     /// What Set Up Like Arc changed, for Undo.
-    @ObservedObject private var likeArc = LikeArc.shared
+    private var likeArc: LikeArc { .shared }
 
     enum Page: String, CaseIterable, Identifiable {
         case general, appearance, themes, tabs, browsing, spaces, passwords, privacy, ai, extensions, keyboard, about
@@ -577,20 +577,9 @@ struct SettingsPanel: View {
             // Coming from another browser, now or any time later: the same
             // page as File › Bring Things Over… and the Welcome's.
             Pill("Bring Things Over…") { browser.lead(to: InternalPage(.importing)) }
-        case "sync":
-            // On asks for the folder first; cancelled, it stays off.
-            // Never with Sync with iCloud: the two would undo each other.
-            Switch(on: Binding(get: { sync.on }, set: { $0 ? sync.choose() : sync.turnOff() }))
-                .disabled(icloud.on && !sync.on)
-                .opacity(icloud.on && !sync.on ? 0.4 : 1)
+        case "sync": SyncSwitchRow()
         case "handoff": Switch(on: $prefs.handoff)
-        case "icloud":
-            // Off limits in a build not signed for iCloud, and while the
-            // folder sync is on.
-            let locked = !icloud.on && (!icloud.available || sync.on)
-            Switch(on: Binding(get: { icloud.on }, set: { $0 ? icloud.turnOn() : icloud.turnOff() }))
-                .disabled(locked)
-                .opacity(locked ? 0.4 : 1)
+        case "icloud": ICloudSwitchRow()
         case "icloud.erase":
             Pill("Delete…") {
                 let alert = NSAlert()
@@ -836,16 +825,7 @@ struct SettingsPanel: View {
     private func spacesControl(_ id: String) -> some View {
         switch id {
         case "arc.setup":
-            if likeArc.undoable(prefs) {
-                Pill("Undo") {
-                    withAnimation(Motion.glide) { likeArc.undo(prefs) }
-                    browser.announce("Put back as it was")
-                }
-            } else if prefs.looksLikeArc {
-                Always(text: "Set up")
-            } else {
-                Pill("Set Up", filled: true) { setUpLikeArc() }
-            }
+            LikeArcControlRow(prefs: prefs, browser: browser, onSetUp: setUpLikeArc)
         case "arc.import":
             Pill("Bring Over…") { browser.lead(to: InternalPage(.importing, "Arc")) }
                 .disabled(!arcHere)
@@ -950,7 +930,7 @@ struct SettingsPanel: View {
         case "launcher.key": LauncherKeyBox(prefs: prefs)
         case "launcher.little": Switch(on: $prefs.launcherLittle)
         case "note.switcher": Always()
-        case "updates.version": versionControl
+        case "updates.version": UpdaterVersionControl(browser: browser)
         case "updates.auto": Switch(on: $prefs.installsUpdates)
         case "updates.notice": Switch(on: $prefs.showsUpdateReady)
         case "about.feedback": Pill("Send Feedback") { Links.writeFeedback() }
@@ -982,14 +962,7 @@ struct SettingsPanel: View {
             // What ⌘T opens to, and the way back after an extension took
             // it. Only there while an extension offers a page.
             if !searched { HomePageLine() }
-        case "shield":
-            if let trouble = shield.trouble {
-                Rule()
-                Line(trouble, "Nothing is being blocked until this clears. Try again, or restart Search") {
-                    Pill("Try again") { shield.compile() }
-                }
-                .under()
-            }
+        case "shield": ShieldTroubleBanner()
         case "privacy.forget":
             if !searched {
                 Group {
@@ -1261,6 +1234,85 @@ struct SettingsPanel: View {
 
     @ViewBuilder
     private var versionControl: some View {
+        UpdaterVersionControl(browser: browser)
+    }
+
+    // MARK: - doing
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.directoryURL = prefs.downloads
+        panel.prompt = "Use this folder"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        prefs.downloads = url
+    }
+}
+
+private struct SyncSwitchRow: View {
+    @ObservedObject private var sync = Sync.shared
+    @ObservedObject private var icloud = ICloudSync.shared
+
+    var body: some View {
+        Switch(on: Binding(get: { sync.on }, set: { $0 ? sync.choose() : sync.turnOff() }))
+            .disabled(icloud.on && !sync.on)
+            .opacity(icloud.on && !sync.on ? 0.4 : 1)
+    }
+}
+
+private struct ICloudSwitchRow: View {
+    @ObservedObject private var sync = Sync.shared
+    @ObservedObject private var icloud = ICloudSync.shared
+
+    var body: some View {
+        let locked = !icloud.on && (!icloud.available || sync.on)
+        Switch(on: Binding(get: { icloud.on }, set: { $0 ? icloud.turnOn() : icloud.turnOff() }))
+            .disabled(locked)
+            .opacity(locked ? 0.4 : 1)
+    }
+}
+
+private struct ShieldTroubleBanner: View {
+    @ObservedObject private var shield = Shield.shared
+
+    var body: some View {
+        if let trouble = shield.trouble {
+            Rule()
+            Line(trouble, "Nothing is being blocked until this clears. Try again, or restart Search") {
+                Pill("Try again") { shield.compile() }
+            }
+            .under()
+        }
+    }
+}
+
+private struct LikeArcControlRow: View {
+    @ObservedObject var prefs: Preferences
+    @ObservedObject var browser: Browser
+    @ObservedObject private var likeArc = LikeArc.shared
+    let onSetUp: () -> Void
+
+    var body: some View {
+        if likeArc.undoable(prefs) {
+            Pill("Undo") {
+                withAnimation(Motion.glide) { likeArc.undo(prefs) }
+                browser.announce("Put back as it was")
+            }
+        } else if prefs.looksLikeArc {
+            Always(text: "Set up")
+        } else {
+            Pill("Set Up", filled: true) { onSetUp() }
+        }
+    }
+}
+
+private struct UpdaterVersionControl: View {
+    @ObservedObject var browser: Browser
+    @ObservedObject private var updater = Updater.shared
+
+    var body: some View {
         switch updater.stage {
         case .none:
             Pill(updater.checking ? "Checking…" : "Check now") {
@@ -1279,19 +1331,6 @@ struct SettingsPanel: View {
         case .waiting:
             Pill("Install", filled: true) { updater.install() }
         }
-    }
-
-    // MARK: - doing
-
-    private func chooseFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.directoryURL = prefs.downloads
-        panel.prompt = "Use this folder"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        prefs.downloads = url
     }
 }
 

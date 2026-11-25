@@ -82,6 +82,18 @@ enum Web {
         return pool
     }()
 
+    /// Keeps one lightweight standby WebView sharing `Web.pool` alive after launch
+    /// so opening a new tab doesn't pay a cold WebContent XPC spawn.
+    @MainActor private static var warmStandby: WKWebView?
+    @MainActor static func prewarm() {
+        guard warmStandby == nil else { return }
+        let config = WKWebViewConfiguration()
+        config.processPool = pool
+        config.websiteDataStore = .nonPersistent()
+        let view = WKWebView(frame: .zero, configuration: config)
+        warmStandby = view
+    }
+
     /// `space`: the space the tab belongs to, when it is not the one on
     /// screen — a parked row made ahead of time (see Spaces.swift).
     /// `store`: a shy tab's own, for one opened from it — a link followed

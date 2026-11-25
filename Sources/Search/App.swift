@@ -1238,6 +1238,11 @@ struct ContentView: View {
                 // The ground the page's card sits on, or the page's own.
                 browser.paintGround(window)
             }
+            .onAppear {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    Web.prewarm()
+                }
+            }
             .onChange(of: browser.glassy) { _, _ in browser.paintGround(window) }
             // The lights sit on the strip's middle, which moves with its height.
             .onChange(of: browser.prefs.compactStrip) { _, _ in

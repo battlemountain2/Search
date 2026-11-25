@@ -50,6 +50,21 @@ enum Trim {
         }
     }
 
+    private static var spaceTrimWork: DispatchWorkItem?
+
+    /// Debounced cache purge after a Space switch completes so the slide animation
+    /// stays at 120 Hz while background Space memory is reclaimed right after.
+    @MainActor
+    static func scheduleSpaceTrim() {
+        spaceTrimWork?.cancel()
+        let work = DispatchWorkItem {
+            look()
+            purgeWebContent()
+        }
+        spaceTrimWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+    }
+
     /// An extension's rules were just built; what building them took can go.
     /// A moment later, for the last of the work WebKit does after answering.
     static func rulesBuilt() {

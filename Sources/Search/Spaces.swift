@@ -459,6 +459,7 @@ extension Browser {
 
     func enter(_ id: UUID) {
         guard let to = spaces.firstIndex(where: { $0.id == id }) else { return }
+        Trim.scheduleSpaceTrim()
         // Which way the icon at the foot turns over: the way the spaces lie.
         // The card for a new space lies past the last one.
         let here = makingSpace ? spaces.count : (spaces.firstIndex { $0.id == spaceID } ?? 0)
