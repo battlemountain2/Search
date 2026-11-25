@@ -7288,7 +7288,7 @@ final class Browser: NSObject, ObservableObject {
         splits = restored
         tabs = row
         if active == nil, blank { return frontBlank() }
-        activeID = active ?? row.first?.id
+        activeID = active
     }
 
     private func replaceSplitMember(_ old: Tab.ID, with new: Tab.ID) {
