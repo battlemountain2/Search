@@ -762,6 +762,11 @@ struct FetchDoor: View {
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
             .shortcutHelp("Downloads", "history.downloads")
+            .contextMenu {
+                Button("Show Downloads") { browser.showDownloads() }
+                Button("Clear Downloads") { browser.loot.forgetAll() }
+                    .disabled(browser.loot.kept.isEmpty)
+            }
             .background(ButtonSpot { spot.view = $0; if browser.downloadsHanging { float(true) } })
             .onChange(of: browser.downloadsHanging) { _, on in float(on) }
             // The doors moving while the list hangs: it follows them.

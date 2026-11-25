@@ -898,6 +898,10 @@ final class Preferences: ObservableObject {
             FrameRate.smoothScroll = smoothScrollAnimator
         }
     }
+    /// Warn when a background tab keeps the CPU busy (e.g. >45% of a core).
+    @Published var cpuWarning: Bool {
+        didSet { store.set(cpuWarning, forKey: "tabs.cpuWarning") }
+    }
     /// Unwraps tracking/redirect links (t.co, l.instagram.com, google.com/url, etc.) before loading.
     @Published var redirectBypass: Bool {
         didSet { store.set(redirectBypass, forKey: "privacy.redirectBypass") }
@@ -1598,6 +1602,7 @@ final class Preferences: ObservableObject {
         let smooth = store.object(forKey: "scroll.smoothAnimator") as? Bool ?? true
         smoothScrollAnimator = smooth
         FrameRate.smoothScroll = smooth
+        cpuWarning = store.object(forKey: "tabs.cpuWarning") as? Bool ?? true
         redirectBypass = store.object(forKey: "privacy.redirectBypass") as? Bool ?? true
         pinsPeek = keepsSite
         readsTwins = store.bool(forKey: "reader.twins")

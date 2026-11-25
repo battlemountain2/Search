@@ -735,6 +735,41 @@ final class Tab: ObservableObject, Identifiable {
         return Int(info.pti_resident_size / (1024 * 1024))
     }
 
+    /// Whether this background tab has sustained high CPU usage.
+    @Published var highCPU = false
+    var cpuWarningDismissed = false
+    private var lastCPUSample: (ns: UInt64, date: Date)?
+
+    /// Samples sustained CPU utilization (fraction of 1 core, e.g. 0.45 = 45%)
+    /// for this tab's WebContent process using Darwin `proc_pidinfo`.
+    func sampleCPUUtilization() -> Double? {
+        guard let built, !asleep else {
+            lastCPUSample = nil
+            return nil
+        }
+        let sel = NSSelectorFromString("_webProcessIdentifier")
+        guard built.responds(to: sel),
+              let pid = (built.value(forKey: "_webProcessIdentifier") as? NSNumber)?.int32Value, pid > 0 else {
+            return nil
+        }
+        var info = proc_taskinfo()
+        let size = MemoryLayout<proc_taskinfo>.stride
+        guard proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &info, Int32(size)) == size else { return nil }
+        let totalNs = info.pti_total_user + info.pti_total_system
+        let now = Date()
+        defer { lastCPUSample = (totalNs, now) }
+        guard let prev = lastCPUSample else { return nil }
+        let dt = now.timeIntervalSince(prev.date)
+        guard dt >= 2.0, totalNs >= prev.ns else { return nil }
+        let cpuSeconds = Double(totalNs - prev.ns) / 1_000_000_000.0
+        return cpuSeconds / dt
+    }
+
+    func dismissCPUWarning() {
+        highCPU = false
+        cpuWarningDismissed = true
+    }
+
     /// What the page hands back when you point at something and click it.
     var onPick: ((Tab, String, String, String) -> Void)?
     /// The page has a sign-in on it; the page has just sent one.

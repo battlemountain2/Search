@@ -106,23 +106,44 @@ final class Float {
     /// everywhere else.
     static var benchScreens: [NSRect]?
 
+    /// Set true if the user manually repositions or resizes the floating panel.
+    private(set) var userMoved = false
+
     /// `still`: the video as it was in its tab, cut out of a picture of the
     /// page with the rest of it hidden (see `still(of:picture:page:)`),
     /// shown until the page is laid out at this window's size.
     func lift(_ page: NSView, still: NSImage? = nil) {
         guard panel == nil else { return }
         self.page = page
+        self.userMoved = false
 
-        let size = NSSize(width: 440, height: 247)
+        let videoSize: NSSize = if let stillSize = still?.size, stillSize.width > 10, stillSize.height > 10 {
+            stillSize
+        } else {
+            NSSize(width: 440, height: 247)
+        }
+        let defaultSize = NSSize(width: 440, height: max(146, round(440 * (videoSize.height / videoSize.width))))
         let screen = NSScreen.main?.visibleFrame ?? .zero
-        // Where it was last, at the size it was, if a screen still shows it;
-        // otherwise the bottom right of this one.
-        var spot = Float.remembered ?? NSRect(
-            x: screen.maxX - size.width - 24,
-            y: screen.minY + 24,
-            width: size.width,
-            height: size.height
-        )
+        // Where it was last, reshaped to this video's aspect ratio and clamped onto
+        // a visible screen; otherwise the bottom right of the main screen.
+        var spot: NSRect
+        if let saved = Float.remembered {
+            let ratioHeight = max(146, round(saved.width * (videoSize.height / videoSize.width)))
+            var adjusted = NSRect(x: saved.minX, y: saved.minY, width: saved.width, height: ratioHeight)
+            let hostArea = NSScreen.screens.first { $0.visibleFrame.intersects(adjusted) }?.visibleFrame ?? screen
+            if hostArea != .zero {
+                adjusted.origin.x = min(max(hostArea.minX + 12, adjusted.minX), max(hostArea.minX + 12, hostArea.maxX - adjusted.width - 12))
+                adjusted.origin.y = min(max(hostArea.minY + 12, adjusted.minY), max(hostArea.minY + 12, hostArea.maxY - adjusted.height - 12))
+            }
+            spot = adjusted
+        } else {
+            spot = NSRect(
+                x: screen.maxX - defaultSize.width - 24,
+                y: screen.minY + 24,
+                width: defaultSize.width,
+                height: defaultSize.height
+            )
+        }
         if let away = Float.benchAway { spot.origin = away }
 
         let panel = Panel(
@@ -147,13 +168,14 @@ final class Float {
         panel.isReleasedWhenClosed = false
         // The bench's, off every screen, is left out when a probe is hidden.
         panel.canHide = Float.benchAway == nil
-        panel.aspectRatio = size
+        panel.aspectRatio = videoSize
         // Kept once a move or a resize is over, not on each step of one: at
         // the end of a resize by its edges, as it closes (see drop), and as
         // the app quits with it open, which closes nothing.
         let keep: (Notification.Name, AnyObject) -> NSObjectProtocol = { name, object in
             NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
+                    self?.userMoved = true
                     if let frame = self?.restingFrame { Float.remembered = frame }
                 }
             }

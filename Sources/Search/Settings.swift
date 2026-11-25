@@ -721,6 +721,7 @@ struct SettingsPanel: View {
         case "tabs.swipeBackCloses": Switch(on: $prefs.swipeBackCloses)
         case "tabs.mirror": Switch(on: $prefs.mirrorsTabs)
         case "tabs.lazy": Switch(on: $prefs.lazyTabs)
+        case "tabs.cpuWarning": Switch(on: $prefs.cpuWarning)
         case "tabs.popupWindows": Switch(on: $prefs.popupWindows)
         case "tabs.sleep":
             VStack(alignment: .leading, spacing: 7) {

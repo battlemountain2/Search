@@ -1190,6 +1190,26 @@ private struct TabPill: View, Equatable {
                         .font(.system(size: 9))
                         .foregroundStyle(colour.opacity(0.7))
                 }
+                if tab.highCPU {
+                    Menu {
+                        Button("Put to Sleep") {
+                            browser.sleep(tab) { outcome in
+                                if outcome != "asleep" { browser.announce("Stays awake: \(outcome)") }
+                            }
+                        }
+                        Button("Keep Running") {
+                            tab.dismissCPUWarning()
+                        }
+                    } label: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Color.orange)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("Background tab is using high CPU — click to sleep or keep running")
+                }
                 if tab.keepAwake {
                     Button {
                         browser.toggleKeepAwake(tab)

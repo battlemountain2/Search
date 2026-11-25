@@ -117,6 +117,7 @@ extension Browser {
             MainActor.assumeIsolated {
                 self?.sleepIdle()
                 self?.closeLeftAlone()
+                self?.checkBackgroundCPU()
             }
         }
         timer.tolerance = every / 4
@@ -132,6 +133,27 @@ extension Browser {
         }
         source.resume()
         pressure = source
+    }
+
+    /// Samples background WebContent CPU usage and flags tabs burning sustained CPU.
+    func checkBackgroundCPU() {
+        guard prefs.cpuWarning else {
+            for tab in tabs + parkedTabs where tab.highCPU { tab.highCPU = false }
+            return
+        }
+        let visible = visibleTabIDs
+        for tab in tabs + parkedTabs {
+            if visible.contains(tab.id) || tab.asleep || tab.noisy || tab.keepAwake || tab.cpuWarningDismissed {
+                if tab.highCPU { tab.highCPU = false }
+                continue
+            }
+            guard let util = tab.sampleCPUUtilization() else { continue }
+            if util >= 0.45 {
+                if !tab.highCPU { tab.highCPU = true }
+            } else if util < 0.15, tab.highCPU {
+                tab.highCPU = false
+            }
+        }
     }
 
     /// Every tab that has gone long enough without being looked at, the one

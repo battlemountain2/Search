@@ -7480,13 +7480,14 @@ final class Browser: NSObject, ObservableObject {
     func appBack() {
         stopAwayWatch()
         defer { liftedAway = false }
-        if liftedAway, let id = floating, id == activeID { land() }
+        if liftedAway, !floater.userMoved, let id = floating, id == activeID { land() }
         if liftedAway, let id = pictured, id == activeID { unpicture() }
     }
 
     /// ⌘⇧P, for lifting one out by hand.
     func toggleFloat() {
         guard spaceFloat.pending == nil else { return }
+        liftedAway = false
         if floater.showing {
             land()
             return
