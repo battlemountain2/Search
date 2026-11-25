@@ -2105,117 +2105,128 @@ struct TabMenu: View {
         }
         if browser.prefs.splitView {
             if let pair = browser.split(for: tab) {
-                Button("Swap Pages") {
-                    browser.focusPane(tab)
-                    browser.swapSplit()
-                }
-                if pair.tabs.count > 2 {
-                    // This page alone out of it; the others stay together.
-                    Button("Remove from Split View") { browser.leaveSplit(tab) }
-                }
-                Button("Separate Split Tabs") { browser.detachSplit(tab) }
-                Button(pair.tabs.count > 2 ? "Close All Pages" : "Close Both Pages") {
-                    browser.focusPane(tab)
-                    browser.closeSplit()
+                Menu("Split View", systemImage: "rectangle.split.2x1") {
+                    Button("Swap Pages", systemImage: "arrow.left.arrow.right") {
+                        browser.focusPane(tab)
+                        browser.swapSplit()
+                    }
+                    if pair.tabs.count > 2 {
+                        // This page alone out of it; the others stay together.
+                        Button("Remove from Split View", systemImage: "minus.rectangle") { browser.leaveSplit(tab) }
+                    }
+                    Button("Separate Split Tabs", systemImage: "rectangle.portrait.on.rectangle.portrait") { browser.detachSplit(tab) }
+                    Divider()
+                    Button(pair.tabs.count > 2 ? "Close All Pages" : "Close Both Pages", systemImage: "xmark.square") {
+                        browser.focusPane(tab)
+                        browser.closeSplit()
+                    }
                 }
             } else {
                 // Beside the page on screen; on that page itself, an empty
                 // page beside it. On a split with room, one more page in it.
                 let current = browser.active
                 let adding = browser.activeSplit != nil && current?.id != tab.id
-                Button(adding ? "Add to Split View" : "Open in Split View") { browser.openInSplit(tab) }
-                    .disabled(tab.bench || (adding && current.map { !browser.canJoin(tab, beside: $0) } ?? true))
+                Button(adding ? "Add to Split View" : "Open in Split View", systemImage: "rectangle.split.2x1") {
+                    browser.openInSplit(tab)
+                }
+                .disabled(tab.bench || (adding && current.map { !browser.canJoin(tab, beside: $0) } ?? true))
             }
         }
         if tab.pin == nil, !tab.bench {
             // Another window, or a new one (see Browser.moveToWindow).
             let others = Browsers.all.filter { $0 !== browser && $0.isOpen && !$0.isPopup && $0.profileID == browser.profileID }
-            if others.isEmpty {
-                Button("Move to New Window") { browser.moveToWindow(tab, nil) }
-                    .disabled(browser.tabs.count < 2)
-            } else {
-                Menu("Move to Window") {
-                    Button("New Window") { browser.moveToWindow(tab, nil) }
+            Menu("Move / Open In…", systemImage: "macwindow.on.rectangle") {
+                if others.isEmpty {
+                    Button("Move to New Window", systemImage: "macwindow.badge.plus") { browser.moveToWindow(tab, nil) }
                         .disabled(browser.tabs.count < 2)
-                    Divider()
+                } else {
+                    Button("Move to New Window", systemImage: "macwindow.badge.plus") { browser.moveToWindow(tab, nil) }
+                        .disabled(browser.tabs.count < 2)
                     ForEach(Array(others.enumerated()), id: \.offset) { _, other in
-                        Button(other.windowName) { browser.moveToWindow(tab, other) }
+                        Button("Move to \(other.windowName)") { browser.moveToWindow(tab, other) }
                     }
                 }
+                Divider()
+                if browser.prefs.littleLinks {
+                    Button("Small Window", systemImage: "macwindow") { browser.openInLittleWindow(tab) }
+                        .disabled(!browser.liftable(tab))
+                }
+                Button("Standalone Window", systemImage: "rectangle.inset.filled") { PWAWindow.show(for: tab, browser: browser) }
+                    .disabled(!browser.liftable(tab))
+                if browser.prefs.sitesInPanel {
+                    Button("Side Panel", systemImage: "sidebar.right") { browser.openInSidePanel(tab) }
+                        .disabled(!tab.isWeb || tab.shy)
+                }
+                if let url = tab.address, !tab.burner {
+                    Button("Burner Tab", systemImage: "flame") {
+                        browser.openBurner(url, foreground: true, from: tab)
+                    }
+                }
+                Divider()
+                if PWAInstaller.isInstalled(for: tab) {
+                    let name = tab.pwa?.name ?? "Desktop App"
+                    Button("Open in \(name)", systemImage: "app.badge") { PWAInstaller.launch(for: tab) }
+                        .disabled(!browser.liftable(tab))
+                    Button("Reinstall Desktop App…", systemImage: "arrow.down.app") { PWAInstaller.install(for: tab, browser: browser) }
+                        .disabled(!browser.liftable(tab))
+                } else {
+                    Button("Install as Desktop App…", systemImage: "plus.app") { PWAInstaller.install(for: tab, browser: browser) }
+                        .disabled(!browser.liftable(tab))
+                }
             }
-            if browser.prefs.littleLinks {
-                Button("Open in Small Window") { browser.openInLittleWindow(tab) }
-                    .disabled(!browser.liftable(tab))
-            }
-            if PWAInstaller.isInstalled(for: tab) {
-                let name = tab.pwa?.name ?? "Desktop App"
-                Button("Open in \(name)") { PWAInstaller.launch(for: tab) }
-                    .disabled(!browser.liftable(tab))
-                Button("Reinstall Desktop App...") { PWAInstaller.install(for: tab, browser: browser) }
-                    .disabled(!browser.liftable(tab))
-            } else {
-                Button("Install as Desktop App...") { PWAInstaller.install(for: tab, browser: browser) }
-                    .disabled(!browser.liftable(tab))
-            }
-            Button("Open in Standalone Window") { PWAWindow.show(for: tab, browser: browser) }
-                .disabled(!browser.liftable(tab))
         }
         Divider()
-        Button("Rename") { browser.beginTabRename(tab) }
-        Button("Duplicate") {
+        Button("Rename", systemImage: "pencil") { browser.beginTabRename(tab) }
+        Button("Duplicate", systemImage: "plus.square.on.square") {
             browser.select(tab)
             browser.duplicate()
         }
         .disabled(!tab.isWeb)
         // The card a click on the tab you are on shows under its address.
-        Button("Site Information…") { browser.showSiteInformation(tab) }
+        Button("Site Information…", systemImage: "info.circle") { browser.showSiteInformation(tab) }
             .disabled(!Browser.offersSiteInformation(tab))
-        Button("Copy Address") {
+        Button("Copy Address", systemImage: "doc.on.doc") {
             browser.select(tab)
             browser.copyAddress()
         }
         .disabled(!tab.isWeb)
-        Button("Copy as Markdown Link") {
-            browser.select(tab)
-            browser.copyMarkdownLink()
-        }
-        .disabled(!tab.isWeb)
-        Button("Copy Clean Link") {
-            browser.select(tab)
-            browser.copyCleanLink()
-        }
-        .disabled(!tab.isWeb)
-        if browser.prefs.sitesInPanel {
-            Button("Open in Side Panel") { browser.openInSidePanel(tab) }
-                .disabled(!tab.isWeb || tab.shy)
-        }
-        Button(tab.muted ? "Unmute Tab" : "Mute Tab") { tab.toggleMute() }
-        Button(tab.keepAwake ? "Allow Mac to Sleep" : "Keep Mac Awake") {
-            browser.toggleKeepAwake(tab)
-        }
-        if let url = tab.address, !tab.burner {
-            Button("Open in Burner Tab") {
-                browser.openBurner(url, foreground: true, from: tab)
+        Menu("Copy Link As…", systemImage: "link") {
+            Button("Markdown Link") {
+                browser.select(tab)
+                browser.copyMarkdownLink()
             }
+            .disabled(!tab.isWeb)
+            Button("Clean Link") {
+                browser.select(tab)
+                browser.copyCleanLink()
+            }
+            .disabled(!tab.isWeb)
+        }
+        Divider()
+        Button(tab.muted ? "Unmute Tab" : "Mute Tab",
+               systemImage: tab.muted ? "speaker.wave.2" : "speaker.slash") { tab.toggleMute() }
+        Button(tab.keepAwake ? "Allow Mac to Sleep" : "Keep Mac Awake",
+               systemImage: tab.keepAwake ? "moon.zzz" : "bolt.fill") {
+            browser.toggleKeepAwake(tab)
         }
         // Its page let go of now, as it would be after half an hour unseen:
         // the row keeps its title and picture, and it loads again when gone
         // to. Not the tab on screen, nor one that has to stay awake (#310).
-        Button("Put to Sleep") {
+        Button("Put to Sleep", systemImage: "bed.double") {
             browser.sleep(tab) { outcome in
                 if outcome != "asleep" { browser.announce("Stays awake: \(outcome)") }
             }
         }
         .disabled(browser.awake(because: tab) != nil)
         Divider()
-        Button("Close Tab", action: close)
+        Button("Close Tab", systemImage: "xmark", action: close)
         Button("Close Other Tabs") { browser.closeOthers(but: tab) }
             .disabled(browser.tabs.count < 2)
         Button(browser.prefs.sidebar ? "Close Tabs Below" : "Close Tabs to the Right") { browser.closeTabsBelow(tab) }
             .disabled(browser.tabsBelow(tab).isEmpty)
         // ⌘⇧T, and the History menu's Recently Closed, where few think to
         // look for it: here too, where tabs are closed.
-        Button(browser.reopenTitle) { browser.reopen() }
+        Button(browser.reopenTitle, systemImage: "arrow.uturn.backward") { browser.reopen() }
             .disabled(browser.ghosts.isEmpty)
     }
 }

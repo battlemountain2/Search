@@ -199,6 +199,13 @@ private struct PaneLayers: View {
         // (PaneStage.showPairing).
         .overlay(alignment: .topTrailing) { whose }
         .overlay {
+            if paired, focused {
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(0.42), lineWidth: 1.5)
+                    .allowsHitTesting(false)
+            }
+        }
+        .overlay {
             if browser.prefs.edgeDropSplits && browser.prefs.splitView && !tab.isBlank {
                 HStack(spacing: 0) {
                     EdgeURLDropStrip(onLeft: true) { url in

@@ -112,7 +112,9 @@ enum SettingsIndex {
 
     // MARK: - rows
 
-    static let items: [SettingsItem] = ([
+    static let items: [SettingsItem] = (itemsPart1 + itemsPart2).filter(offered)
+
+    private static let itemsPart1: [SettingsItem] = [
         // General
         .init(id: "general.default", group: "browser", icon: "link.badge.plus",
               title: "Open links from other apps", detail: "Make Search the browser Mail, Slack and the rest send links to",
@@ -245,7 +247,7 @@ enum SettingsIndex {
               keys: ["address.shown"], words: ["address bar", "url", "location", "url bar", "omnibox", "full address"]),
         .init(id: "address.width", group: "window", icon: "arrow.left.and.right",
               title: "Address width", detail: "Before the tabs across the top",
-              keys: ["address.width"], words: ["address bar", "url", "width", "wide"], parent: "address.shown"),
+              keys: ["address.width"], words: ["address bar", "url", "width", "wide"], kind: .wide, parent: "address.shown"),
         .init(id: "scrollbars.fade", group: "window", icon: "scroll",
               title: "Fade scroll bars when scrolling stops", detail: "Thin bars over the page that come up only as it scrolls, even with a mouse",
               more: "As macOS draws them with a trackpad, whatever System Settings › Appearance › Show scroll bars says. Off, Search follows that setting.",
@@ -256,7 +258,7 @@ enum SettingsIndex {
               keys: ["window.glass"], words: ["glass", "translucent", "transparent", "blur", "frosted", "vibrancy", "see through", "arc", "zen"]),
         .init(id: "window.glass.style", group: "window", icon: "drop",
               title: "Glass style", detail: "Frosted, or the Mac's Liquid Glass",
-              keys: ["window.glass.style"], words: ["liquid glass", "liquid", "frosted", "glass", "tahoe"], parent: "window.glass"),
+              keys: ["window.glass.style"], words: ["liquid glass", "liquid", "frosted", "glass", "tahoe"], kind: .wide, parent: "window.glass"),
         .init(id: "window.glass.clear", group: "window", icon: "circle.lefthalf.filled",
               title: "Transparency", detail: "From the space's colour on the glass to clear glass",
               keys: ["window.glass.clear"], words: ["transparency", "tint", "opacity", "glass"], parent: "window.glass"),
@@ -447,6 +449,9 @@ enum SettingsIndex {
         .init(id: "links.little.tabs", group: "links", icon: "arrow.right.square",
               title: "Go to a tab that has the page", detail: "A link from another app switches to that tab instead of opening the page again",
               keys: ["links.little.tabs"], words: ["switch to tab", "already open", "duplicate", "existing tab"]),
+    ]
+
+    private static let itemsPart2: [SettingsItem] = [
         .init(id: "reader.twins", group: "reading", icon: "doc.text",
               title: "Read the site's own Markdown", detail: "When a page has a Markdown copy, reading mode shows that",
               more: "⇧⌘R shows a page's article alone, in clean type. Most docs sites publish a Markdown copy; nothing in it can run, its text is escaped.",
@@ -675,7 +680,7 @@ enum SettingsIndex {
         .init(id: "links.peek", group: "mouse", icon: "eye",
               title: "Peek at a link", detail: "Its page opens in a panel over the one you're reading",
               more: "Escape puts it away; the other button keeps it as a tab.",
-              keys: ["links.peek", "links.peekClick"], words: ["preview", "shift click", "peek"]),
+              keys: ["links.peek", "links.peekClick"], words: ["preview", "shift click", "peek"], kind: .wide),
         .init(id: "links.peek.stays", group: "mouse", icon: "eye.slash",
               title: "Peek stays with its tab", detail: "Another tab hides it, with its video and sound paused, and coming back shows it",
               keys: ["links.peek.stays"], words: ["peek", "keep peek", "switch tabs"], parent: "links.peek"),
@@ -808,7 +813,7 @@ enum SettingsIndex {
         .init(id: "note.flick", group: "video", icon: "hand.raised.fingers.spread",
               title: "Flick the floating video to a corner", detail: "Always there: two fingers send it to the corner they point at",
               keys: ["float.flicks"], words: ["flick", "corner"], kind: .note, findOnly: true),
-    ] as [SettingsItem]).filter(offered)
+    ]
 
     /// Rows for a feature this Mac's WebKit doesn't have aren't listed at
     /// all, on the page or in the find field (see Privacy.swift).

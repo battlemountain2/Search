@@ -266,7 +266,7 @@ final class PaneStage: NSView {
     }
 
     override func updateLayer() {
-        layer?.backgroundColor = Palette.NS.ground.cgColor
+        paint()
     }
 
     // MARK: - what is shown

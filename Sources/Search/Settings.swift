@@ -164,7 +164,6 @@ struct SettingsPanel: View {
                 .strokeBorder(Palette.hairline, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .compositingGroup()
         .shadow(color: .black.opacity(0.16), radius: 24, y: 10)
         .onChange(of: page) { _, page in Store.settings.set(page.rawValue, forKey: "settings.page") }
     }
@@ -637,9 +636,13 @@ struct SettingsPanel: View {
         case "zen.borderless": Switch(on: $prefs.zenBorderless)
         case "address.shown": Switch(on: $prefs.addressLine)
         case "scrollbars.fade": Switch(on: $prefs.scrollbarsFade)
-        case "address.width": Segmented(options: AddressWidth.allCases.map { ($0, $0.title) }, selection: $prefs.addressWidth)
+        case "address.width":
+            Pictures(options: AddressWidth.allCases.map { ($0, $0.title, AnyView(AddressWidthPicture(width: $0))) },
+                     selection: $prefs.addressWidth)
         case "window.glass": Switch(on: $prefs.glass)
-        case "window.glass.style": Segmented(options: GlassStyle.allCases.map { ($0, $0.title) }, selection: $prefs.glassStyle)
+        case "window.glass.style":
+            Pictures(options: GlassStyle.allCases.map { ($0, $0.title, AnyView(GlassStylePicture(style: $0))) },
+                     selection: $prefs.glassStyle)
         case "window.glass.clear": Slider(value: $prefs.glassClear, in: 0...1).controlSize(.small).frame(width: 160)
         case "window.glass.grain": Slider(value: $prefs.glassGrain, in: 0...1).controlSize(.small).frame(width: 160)
         case "toolbar.left": Switch(on: $prefs.navigationLeft)
@@ -906,14 +909,17 @@ struct SettingsPanel: View {
     private func otherControl(_ id: String) -> some View {
         switch id {
         case "links.peek":
-            Picker("Peek at a link", selection: $prefs.peekChoice) {
-                ForEach(PeekChoice.allCases) { choice in
-                    Text(choice.title).tag(choice)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .fixedSize()
+            Pictures(options: PeekChoice.allCases.map { choice in
+                let label: String = {
+                    switch choice {
+                    case .off: return "Off"
+                    case .shift: return "Shift"
+                    case .optionShift: return "⌥⇧"
+                    case .optionCommand: return "⌥⌘"
+                    }
+                }()
+                return (choice, label, AnyView(PeekChoicePicture(choice: choice)))
+            }, selection: $prefs.peekChoice)
         case "links.peek.stays": Switch(on: $prefs.peekStays)
         case "links.optionAction":
             Pictures(options: [
@@ -1380,6 +1386,102 @@ private struct OptionClickPicture: View {
             }
         }
         .frame(width: 72, height: 42)
+    }
+}
+
+private struct AddressWidthPicture: View {
+    let width: AddressWidth
+
+    var body: some View {
+        ZStack {
+            Palette.wash
+            VStack(spacing: 4) {
+                HStack(spacing: 3) {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.32))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                .strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 0.75)
+                        )
+                        .frame(width: width == .small ? 22 : 36, height: 6)
+                    Capsule().fill(Palette.ink.opacity(0.24)).frame(width: 12, height: 4)
+                    Capsule().fill(Palette.ink.opacity(0.14)).frame(width: 10, height: 4)
+                    Spacer(minLength: 0)
+                }
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(Palette.ground)
+            }
+            .padding(5)
+        }
+    }
+}
+
+private struct GlassStylePicture: View {
+    let style: GlassStyle
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: style == .frosted
+                    ? [Palette.ink.opacity(0.12), Palette.ink.opacity(0.05)]
+                    : [Color.accentColor.opacity(0.26), Color.cyan.opacity(0.16), Palette.ink.opacity(0.06)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(style == .frosted ? Palette.ground.opacity(0.62) : Palette.ground.opacity(0.38))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .strokeBorder(Color.white.opacity(style == .frosted ? 0.16 : 0.38), lineWidth: 0.75)
+                )
+                .padding(6)
+                .overlay {
+                    Image(systemName: style == .frosted ? "square.on.square" : "drop.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(style == .frosted ? Palette.muted : Color.accentColor)
+                }
+        }
+    }
+}
+
+private struct PeekChoicePicture: View {
+    let choice: PeekChoice
+
+    private var badge: String {
+        switch choice {
+        case .off: return "Off"
+        case .shift: return "⇧"
+        case .optionShift: return "⌥⇧"
+        case .optionCommand: return "⌥⌘"
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            Palette.wash
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(Palette.ground.opacity(choice == .off ? 1 : 0.6))
+                .padding(5)
+            if choice == .off {
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.muted)
+            } else {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Palette.ground)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1)
+                    )
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .overlay {
+                        Text(badge)
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundStyle(Palette.ink)
+                    }
+            }
+        }
     }
 }
 
