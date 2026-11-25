@@ -183,13 +183,27 @@ enum Web {
         unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, on)
     }
 
-    /// WebKit's ⌫ as Back and ⇧⌫ as Forward, off as in Safari. Back is ⌘[,
-    /// or what Settings gives it.
+    /// WebKit's ⌫ as Back and ⇧⌫ as Forward, off as in Safari (#1161).
+    /// Back is ⌘[, or what Settings gives it. Settings › Keyboard & Mouse ›
+    /// Backspace goes back turns it on (idea 1120): WebKit then goes back
+    /// only for a ⌫ nothing in the page took — not in a field or editable
+    /// text, not one the page stopped — with no ⌘, ⌥ or ⌃ held.
     static func backspaceStays(_ preferences: WKPreferences) {
+        backspace(preferences, goesBack: Store.settings.bool(forKey: Preferences.backspaceKey))
+    }
+
+    static func backspace(_ preferences: WKPreferences, goesBack: Bool) {
         let set = NSSelectorFromString("_setBackspaceKeyNavigationEnabled:")
         guard preferences.responds(to: set) else { return }
         typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
-        unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, false)
+        unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, goesBack)
+    }
+
+    /// The switch turned: every page open now follows it, without a reload.
+    /// A page's preferences are its configuration's, shared, and WebKit
+    /// hands a change on to the page.
+    @MainActor static func backspaceEverywhere() {
+        for page in pages.allObjects { backspaceStays(page.configuration.preferences) }
     }
 }
 
@@ -402,8 +416,10 @@ final class Tab: ObservableObject, Identifiable {
         documentGeneration &+= 1
         built?.draftFrames.removeAll()
         popupGesture.clear()
-        // A woken page has its sessionStorage back; later ones don't get it.
-        if KeptSession.committed(self) { arm(hiding: veils) }
+        // A woken page has its sessionStorage and its place back; later
+        // ones don't get them.
+        let session = KeptSession.committed(self), place = KeptPlace.committed(self)
+        if session || place { arm(hiding: veils) }
         // What the old page was refused went with it.
         if !blockedPopups.isEmpty { blockedPopups = [] }
         // A translated page is gone; its frames with it.
@@ -677,6 +693,9 @@ final class Tab: ObservableObject, Identifiable {
     /// Paused from the player at the foot of the sidebar, to be played again
     /// from there (see Player.swift).
     @Published var stilled = false
+    /// WebKit's media suspension, put on by the player's pause for what a
+    /// script can't reach, and lifted by its play or `handPause` (Player.swift).
+    private var suspended = false
     /// Darkened by Search, as its page last said (see Dusk.swift).
     @Published var dusked = false
     /// What the page measured: true, dark by itself; nil, not yet measured.
@@ -1454,6 +1473,10 @@ final class Tab: ObservableObject, Identifiable {
         if let kept = KeptSession.script(for: self) {
             add(kept, .atDocumentStart, mainFrameOnly: true, in: Web.world)
         }
+        // Its place in a part of the page that scrolls by itself (KeptPlace).
+        if let place = KeptPlace.script(for: self) {
+            add(place, .atDocumentStart, mainFrameOnly: true, in: Web.world)
+        }
         // Only while a developer tools package has a tool open on this tab
         // (DevToolsPackages.swift).
         scripts += DevToolsPackages.scripts(for: self)
@@ -1807,6 +1830,10 @@ final class Tab: ObservableObject, Identifiable {
     /// True for a tab that has a place and an address but is holding no page —
     /// brought back from the last session, or put down with ⌘W while pinned.
     var asleep: Bool { pending != nil }
+
+    /// Where a grouped tab was when its page was put away (Browser.putAway):
+    /// gone back to and still there, Close Tab closes it for real.
+    var putAwayAt: URL?
 
     /// ⌘W on a pinned tab. The letter keeps its place in the row and the
     /// address is remembered; everything the page was holding is let go, so a
@@ -2341,8 +2368,15 @@ final class Tab: ObservableObject, Identifiable {
     private func heard(_ on: Bool) {
         let was = noisy
         noisy = on
-        // Playing again, from the player or from the page: nothing paused.
-        if on { stilled = false }
+        // Playing again, from the player or from the page: nothing paused,
+        // and nothing left suspended.
+        if on {
+            stilled = false
+            if suspended {
+                suspended = false
+                built?.setAllMediaPlaybackSuspended(false) {}
+            }
+        }
         quiet?.invalidate()
         quiet = nil
         guard was, !on else { return }
@@ -2357,33 +2391,58 @@ final class Tab: ObservableObject, Identifiable {
         quiet?.invalidate()
         quiet = nil
         media.forget()
-        stilled = false
+        handPause()
     }
 
     /// The player's pause (Player.swift): what plays is paused and
     /// remembered, in each frame that played and then in the page, and once
-    /// the page has done that, WebKit pauses what a script can't reach.
-    /// Nothing remembered anywhere, and the player has nothing to play again.
+    /// the page has done that, WebKit suspends what a script can't reach — a
+    /// player in a shadow root, one never put in the page — to be resumed by
+    /// the player's play.
     func still() {
         guard noisy, let built else { return }
         stilled = true
+        Store.interacted(with: built)
         for frame in media.frames {
             built.evaluateJavaScript(Player.still, in: frame, in: Web.world) { _ in }
         }
-        let frames = !media.frames.isEmpty
-        built.evaluateJavaScript(Player.still, in: nil, in: Web.world) { [weak self] result in
-            if !frames, ((try? result.get()) as? Int ?? 0) == 0 { self?.stilled = false }
-            built.pauseAllMediaPlayback {}
+        built.evaluateJavaScript(Player.still, in: nil, in: Web.world) { [weak self] _ in
+            // Played again or gone in the meantime: nothing to suspend.
+            guard let self, self.built === built, self.stilled, !self.suspended else { return }
+            self.suspended = true
+            built.setAllMediaPlaybackSuspended(true) {}
         }
     }
 
-    /// The player's play: what its pause stopped, playing again.
+    /// The player's play: what its pause stopped, playing again — WebKit's
+    /// suspension lifted first, which resumes only what was still playing
+    /// when it began, then what the script paused.
     func playAgain() {
         guard stilled, let built else { return }
+        Store.interacted(with: built)
+        if suspended {
+            suspended = false
+            built.setAllMediaPlaybackSuspended(false) {}
+        }
         for frame in media.frames {
             built.evaluateJavaScript(Player.again, in: frame, in: Web.world) { _ in }
         }
         built.evaluateJavaScript(Player.again, in: nil, in: Web.world) { _ in }
+    }
+
+    /// The player's pause given up — put away with its cross, the tab gone
+    /// to, its page leaving: what WebKit suspended is paused as by the
+    /// page's own button, and the suspension lifted, so the page plays and
+    /// pauses as it would and the next page starts with nothing held.
+    func handPause() {
+        stilled = false
+        guard suspended else { return }
+        suspended = false
+        guard let built else { return }
+        // Paused while suspended, a player stays paused once it is lifted.
+        // Sent one after the other, they reach the page in that order.
+        built.pauseAllMediaPlayback {}
+        built.setAllMediaPlaybackSuspended(false) {}
     }
 
     /// Quiet long enough: the paused media muted, in the page and in each
@@ -2419,8 +2478,10 @@ final class Tab: ObservableObject, Identifiable {
         quiet?.invalidate()
         quiet = nil
         media.forget()
-        // What the player paused went with the page: nothing to play again.
+        // What the player paused went with the page: nothing to play again,
+        // and the suspension with the view.
         stilled = false
+        suspended = false
         guard let web = built else { return }
         DevToolsPackages.unload(web)
         (delegate as? Browser)?.cancelDisplay(for: web)

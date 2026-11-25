@@ -14,6 +14,11 @@ import WebKit
 enum Glyph: String, CaseIterable, Identifiable {
     case letters, icons
 
+    /// What a tab wears until it is chosen: the site's icon (letters until
+    /// 1.0.21). One never chosen follows this, whatever it was before; a
+    /// site without an icon still shows its letter (Mark).
+    static let standard: Glyph = .icons
+
     var id: String { rawValue }
 
     var title: String {
@@ -323,7 +328,7 @@ final class Preferences: ObservableObject {
         iconColumn ? Metrics.iconColumn : narrowsToIcons ? max(Metrics.narrowLine, sideWidth) : sideWidth
     }
     /// A tab playing sound out of sight shows at the foot of the sidebar,
-    /// with its pause (see Player.swift). Off unless asked for.
+    /// with its pause (see Player.swift). On unless turned off.
     @Published var showsPlayer: Bool {
         didSet { store.set(showsPlayer, forKey: "sidebar.player") }
     }
@@ -434,6 +439,7 @@ final class Preferences: ObservableObject {
         didSet { store.set(Array(awakeSites).sorted(), forKey: "tabs.awakeSites") }
     }
     /// Sized website pop-ups may use small windows instead of tabs (#552).
+    /// On unless turned off.
     @Published var popupWindows: Bool {
         didSet { store.set(popupWindows, forKey: "tabs.popupWindows") }
     }
@@ -506,12 +512,12 @@ final class Preferences: ObservableObject {
         didSet { store.set(closeGoesBack, forKey: "tabs.closeGoesBack") }
     }
     /// A blank tab shows the sites of the bookmark folder called Home
-    /// (HomeGrid.swift). Off unless asked for.
+    /// (HomeGrid.swift). On unless turned off.
     @Published var homeGrid: Bool {
         didSet { store.set(homeGrid, forKey: "home.grid") }
     }
     /// ⌘Z reopens the tab just closed, as in Safari, while closing it is
-    /// still the last thing done (Browser.lastClose). Off unless asked for.
+    /// still the last thing done (Browser.lastClose). On unless turned off.
     @Published var undoReopensTab: Bool {
         didSet { store.set(undoReopensTab, forKey: "tabs.undoReopens") }
     }
@@ -532,14 +538,14 @@ final class Preferences: ObservableObject {
     }
     /// With After current, a page a link opens in front goes right after
     /// the page it came from, as a ⌘-click's does, rather than to the end
-    /// of the row (see Browser.frontLinksBeside). Off unless asked for.
+    /// of the row (see Browser.frontLinksBeside). On unless turned off.
     @Published var frontLinksBeside: Bool {
         didSet { store.set(frontLinksBeside, forKey: "tabs.frontBeside") }
     }
     /// A swipe back from the page a link opened a tab on closes the tab and
     /// goes back to the one viewed before it, as a small window's does (see
-    /// Browser.armSwipeClose). Off unless asked for: some use back on a
-    /// fresh tab to mean nothing at all.
+    /// Browser.armSwipeClose). On unless turned off: some use back on a
+    /// fresh tab to mean nothing at all, and turn it off.
     @Published var swipeBackCloses: Bool {
         didSet { store.set(swipeBackCloses, forKey: "tabs.swipeBackCloses") }
     }
@@ -581,8 +587,8 @@ final class Preferences: ObservableObject {
         didSet { store.set(showsReading, forKey: "tabs.reading") }
     }
     /// The count a page puts at the front of its title — "(3) WhatsApp" —
-    /// as a badge on its pin, which shows no title (UnreadBadge). Off unless
-    /// asked for.
+    /// as a badge on its pin, which shows no title (UnreadBadge). On unless
+    /// turned off.
     @Published var showsPinCounts: Bool {
         didSet { store.set(showsPinCounts, forKey: "tabs.pinCounts") }
     }
@@ -632,8 +638,8 @@ final class Preferences: ObservableObject {
             PrivacySignal.on = sendsPrivacySignal
         }
     }
-    /// http:// pages tried over HTTPS first (see Privacy.swift). Off unless
-    /// turned on.
+    /// http:// pages tried over HTTPS first (see Privacy.swift). On unless
+    /// turned off.
     @Published var triesHTTPSFirst: Bool {
         didSet {
             store.set(triesHTTPSFirst, forKey: "privacy.httpsFirst")
@@ -726,9 +732,9 @@ final class Preferences: ObservableObject {
     /// every text field of every page whenever the Mac's setting is on
     /// (System Settings › Keyboard › Text Input › Show inline predictive
     /// text, on unless turned off), whatever autocorrect says; Chrome and
-    /// Arc never show it. Off here unless switched on in Edit › Spelling
-    /// and Grammar, which then counts over the Mac's setting, for pages and
-    /// Search's own fields alike.
+    /// Arc never show it. Follows the Mac's setting until switched in Edit ›
+    /// Spelling and Grammar, which then counts over the Mac's setting, for
+    /// pages and Search's own fields alike.
     @Published var inlinePredictions: Bool {
         didSet {
             store.set(inlinePredictions, forKey: "inlinePredictions")
@@ -758,13 +764,13 @@ final class Preferences: ObservableObject {
         }
     }
 
-    /// Capture… in the View menu (see Snap.swift). Off unless asked for.
+    /// Capture… in the View menu (see Snap.swift). On unless turned off.
     @Published var capturesPages: Bool {
         didSet { store.set(capturesPages, forKey: "pages.capture") }
     }
 
     /// Your own style for a site, Edit Site Style… in the View menu (see
-    /// SiteStyles.swift). Off unless asked for; off, the styles are kept.
+    /// SiteStyles.swift). On unless turned off; off, the styles are kept.
     @Published var sitesStyles: Bool {
         didSet {
             store.set(sitesStyles, forKey: "sites.styles")
@@ -801,7 +807,7 @@ final class Preferences: ObservableObject {
         }
     }
     /// Space and ← → play, pause and seek a clicked video showing the
-    /// browser's controls (see VideoKeys.swift). Off unless asked for.
+    /// browser's controls (see VideoKeys.swift). On unless turned off.
     @Published var videoKeys: Bool {
         didSet {
             store.set(videoKeys, forKey: "video.keys")
@@ -809,7 +815,7 @@ final class Preferences: ObservableObject {
         }
     }
     /// A mouse wheel's notches glide instead of jumping (see WheelGlide.swift).
-    /// Off unless asked for.
+    /// On unless turned off.
     @Published var wheelGlides: Bool {
         didSet {
             store.set(wheelGlides, forKey: "wheel.smooth")
@@ -834,7 +840,7 @@ final class Preferences: ObservableObject {
     }
     /// Springs become a short ease-out in Low Power Mode (see Motion.light),
     /// and idle tabs sleep after Sooner's ten minutes at most (see
-    /// Motion.savingPower). Off unless turned on, and even then nothing
+    /// Motion.savingPower). On unless turned off, and even then nothing
     /// changes until the Mac is asked to save power.
     @Published var lightMotion: Bool {
         didSet { store.set(lightMotion, forKey: Motion.lightKey) }
@@ -906,6 +912,17 @@ final class Preferences: ObservableObject {
     @Published var redirectBypass: Bool {
         didSet { store.set(redirectBypass, forKey: "privacy.redirectBypass") }
     }
+    /// ⌫ goes back a page and ⇧⌫ forward, as Safari once had it: only when
+    /// no field or editable text has the keys and nothing else is held,
+    /// which WebKit decides (see Web.backspace). Off unless asked for, as
+    /// in Safari (#1161; idea 1120).
+    @Published var backspaceGoesBack: Bool {
+        didSet {
+            store.set(backspaceGoesBack, forKey: Preferences.backspaceKey)
+            Web.backspaceEverywhere()
+        }
+    }
+    nonisolated static let backspaceKey = "keys.backspaceBack"
     /// Pins as in Arc: a link from a pinned tab to another site opens in a
     /// peek, so the pin stays on its page (see Peek.swift), and ⌘W takes it
     /// back to the page it was pinned at. Half of "Pins keep their site"
@@ -920,7 +937,7 @@ final class Preferences: ObservableObject {
         didSet { store.set(readsTwins, forKey: "reader.twins") }
     }
     /// Reading mode goes dark with the window, with a light/dark/window
-    /// switch in its corner (see ReaderLook). Off unless asked for: the
+    /// switch in its corner (see ReaderLook). On unless turned off; off, the
     /// article is white, as it always was.
     @Published var readerFollowsLook: Bool {
         didSet { store.set(readerFollowsLook, forKey: "reader.follows") }
@@ -1069,7 +1086,7 @@ final class Preferences: ObservableObject {
         }
     }
     /// A button on the floating video tucks it into a corner (see Float.swift).
-    /// Off unless asked for.
+    /// On unless turned off.
     @Published var floatMinimizes: Bool {
         didSet {
             store.set(floatMinimizes, forKey: "float.minimize")
@@ -1191,7 +1208,7 @@ final class Preferences: ObservableObject {
     }
     /// Folders among the pinned rows, as in Arc's pinned list (see
     /// PinFolders.swift): Arc's folders come in as folders of rows rather
-    /// than as tab groups. Off unless asked for; without Pinned rows it
+    /// than as tab groups. On unless turned off; without Pinned rows it
     /// does nothing.
     @Published var pinFolders: Bool {
         didSet { store.set(pinFolders, forKey: "pins.folders") }
@@ -1272,7 +1289,7 @@ final class Preferences: ObservableObject {
     }
 
     /// With the tabs folded away (⌘S), a line along the page's top while it
-    /// loads, as Arc's (idea 269). Off unless asked for.
+    /// loads, as Arc's (idea 269). On unless turned off.
     @Published var showsLoadingLine: Bool {
         didSet { store.set(showsLoadingLine, forKey: "fold.loadingLine") }
     }
@@ -1297,8 +1314,8 @@ final class Preferences: ObservableObject {
     }
     /// "settings", "new tab" and the like, typed alone in the address field,
     /// reach that part of the app instead of asking a search engine for the
-    /// word; part of one is offered (see AddressCommands.swift). Off unless
-    /// asked for.
+    /// word; part of one is offered (see AddressCommands.swift). On unless
+    /// turned off.
     @Published var commandBar: Bool {
         didSet { store.set(commandBar, forKey: "commandbar") }
     }
@@ -1314,6 +1331,12 @@ final class Preferences: ObservableObject {
     /// the page beside the column (idea 753). Off unless asked for.
     @Published var fieldOnWindow: Bool {
         didSet { store.set(fieldOnWindow, forKey: "field.window") }
+    }
+    /// The page behind ⌘T's and ⌘L's field covered whole, rather than
+    /// dimmed and still showing through: for whoever finds it busy. A plain
+    /// cover, nothing worked out from the page. Off unless asked for.
+    @Published var fieldHidesPage: Bool {
+        didSet { store.set(fieldHidesPage, forKey: "field.hidesPage") }
     }
     /// The address field from any app, as Spotlight's comes: a key of your
     /// own raises it over the app in front, and Return opens what was typed
@@ -1353,6 +1376,12 @@ final class Preferences: ObservableObject {
     /// Arc's ⌘T does (Browser.tabOffers). Off unless asked for.
     @Published var arcTabPopup: Bool {
         didSet { store.set(arcTabPopup, forKey: "newtab.arc") }
+    }
+    /// Return in the address field goes to the row on top of its list, as
+    /// Arc's command bar does, instead of searching for the words typed
+    /// (Browser.pickTop, #1556). Off unless asked for.
+    @Published var returnTakesTop: Bool {
+        didSet { store.set(returnTakesTop, forKey: "field.top") }
     }
 
     init() {
@@ -1414,7 +1443,8 @@ final class Preferences: ObservableObject {
         foldsToIcons = store.bool(forKey: "sidebar.foldIcons")
         narrowsToIcons = store.bool(forKey: "sidebar.narrowIcons")
         narrowed = store.bool(forKey: "sidebar.narrowed")
-        showsPlayer = store.bool(forKey: "sidebar.player")
+        // On for everyone who never touched it (Drice, 25 Nov 2026).
+        showsPlayer = store.object(forKey: "sidebar.player") as? Bool ?? true
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
         cards = store.object(forKey: "layout.cards") as? Bool ?? true
@@ -1429,7 +1459,7 @@ final class Preferences: ObservableObject {
         glassClear = (store.object(forKey: "window.glass.clear") as? Double).map { min(1, max(0, $0)) } ?? 0.5
         glassStyle = store.string(forKey: "window.glass.style").flatMap(GlassStyle.init) ?? .frosted
         liquidTabs = store.bool(forKey: "tabs.liquid")
-        glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? .letters
+        glyph = store.string(forKey: "glyph").flatMap(Glyph.init) ?? Glyph.standard
         engine = store.string(forKey: "search.engine").flatMap(Engine.init) ?? .standard
         customEngine = store.string(forKey: "search.custom") ?? ""
         customSuggest = store.string(forKey: "search.customSuggest") ?? ""
@@ -1439,7 +1469,8 @@ final class Preferences: ObservableObject {
             .flatMap { try? JSONDecoder().decode([Keyword].self, from: $0) } ?? []
         tabsGive = store.bool(forKey: "tabs.give")
         awakeSites = Set(store.stringArray(forKey: "tabs.awakeSites") ?? [])
-        popupWindows = store.bool(forKey: "tabs.popupWindows")
+        // On for everyone who never touched it (Drice, 25 Nov 2026).
+        popupWindows = store.object(forKey: "tabs.popupWindows") as? Bool ?? true
         popupSites = Set(store.stringArray(forKey: "privacy.popupSites") ?? [])
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
         dimsSleepingTabs = store.bool(forKey: "tabs.sleep.dim")
@@ -1451,17 +1482,22 @@ final class Preferences: ObservableObject {
         hidesProfileDoor = store.bool(forKey: "foot.profile.hidden")
         tabLife = TabLife(rawValue: store.integer(forKey: "tabs.close.after")) ?? .never
         sleepPace = SleepPace.chosen
-        showsLoadingLine = store.bool(forKey: "fold.loadingLine")
+        // On for everyone who never touched it (Drice, 25 Nov 2026).
+        showsLoadingLine = store.object(forKey: "fold.loadingLine") as? Bool ?? true
         lazyTabs = store.bool(forKey: "tabs.lazy")
         newTabAfterLast = store.bool(forKey: "tabs.newAfterLast")
         keepWindowAfterLast = store.bool(forKey: "tabs.keepWindow")
         closeGoesBack = store.bool(forKey: "tabs.closeGoesBack")
-        undoReopensTab = store.bool(forKey: "tabs.undoReopens")
-        homeGrid = store.bool(forKey: "home.grid")
+        // On for everyone who never touched it (Drice, 25 Nov 2026).
+        undoReopensTab = store.object(forKey: "tabs.undoReopens") as? Bool ?? true
+        // On for everyone who never touched it (Drice, 25 Nov 2026).
+        homeGrid = store.object(forKey: "home.grid") as? Bool ?? true
         switcherBehindFirst = store.bool(forKey: "tabs.switcherBehindFirst")
         switcherLeavesOutPins = store.bool(forKey: "tabs.switcherLeavesOutPins")
-        frontLinksBeside = store.bool(forKey: "tabs.frontBeside")
-        swipeBackCloses = store.bool(forKey: "tabs.swipeBackCloses")
+        // On for everyone who never touched it (Drice, 25 Nov 2026).
+        frontLinksBeside = store.object(forKey: "tabs.frontBeside") as? Bool ?? true
+        // On for everyone who never touched it (Drice, 25 Nov 2026).
+        swipeBackCloses = store.object(forKey: "tabs.swipeBackCloses") as? Bool ?? true
         mirrorsTabs = store.bool(forKey: "tabs.mirror")
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
         startsFresh = store.bool(forKey: Preferences.freshKey)
@@ -1470,7 +1506,8 @@ final class Preferences: ObservableObject {
         siteNotifications = store.object(forKey: "notifications.ask") as? Bool ?? true
         showsTabShortcuts = store.bool(forKey: "tabs.shortcuts")
         showsReading = store.bool(forKey: "tabs.reading")
-        showsPinCounts = store.bool(forKey: "tabs.pinCounts")
+        // On for everyone who never touched it (Drice, 25 Nov 2026).
+        showsPinCounts = store.object(forKey: "tabs.pinCounts") as? Bool ?? true
         highContrastText = store.bool(forKey: "tabs.highContrast")
         // On for everyone who never touched it (Drice, 24 Oct 2026, on
         // Security's advice); a choice made before stands.
@@ -1486,7 +1523,8 @@ final class Preferences: ObservableObject {
         let signals = store.object(forKey: "privacy.gpc") as? Bool ?? true
         sendsPrivacySignal = signals
         PrivacySignal.on = signals
-        let https = store.bool(forKey: "privacy.httpsFirst")
+        // On for everyone who never touched it (Drice, 25 Nov 2026).
+        let https = store.object(forKey: "privacy.httpsFirst") as? Bool ?? true
         triesHTTPSFirst = https
         HTTPSFirst.on = https
         let removes = store.object(forKey: "privacy.clickIDs") as? Bool ?? true
@@ -1542,7 +1580,8 @@ final class Preferences: ObservableObject {
         profilesInOneWindow = store.bool(forKey: "profiles.oneWindow")
         listsPins = store.bool(forKey: "pins.list")
         pinAsRow = store.bool(forKey: "pins.asRow")
-        pinFolders = store.bool(forKey: "pins.folders")
+        // On for everyone who never touched it (Drice, 25 Nov 2026).
+        pinFolders = store.object(forKey: "pins.folders") as? Bool ?? true
         pinCommandOpensTab = store.bool(forKey: "pins.commandNewTab")
         pinLinksOpenTabs = store.bool(forKey: "pins.linksNewTab")
         // "Pins keep their site" is one switch over two keys (see
@@ -1556,10 +1595,12 @@ final class Preferences: ObservableObject {
         ai = AI.shipped && store.bool(forKey: "ai")
         aiProvider = store.string(forKey: "ai.provider").flatMap(AIProvider.init(rawValue:))
         aiModels = store.dictionary(forKey: "ai.models") as? [String: String] ?? [:]
-        commandBar = store.bool(forKey: "commandbar")
+        // On for everyone who never touched it (Drice, 25 Nov 2026).
+        commandBar = store.object(forKey: "commandbar") as? Bool ?? true
         handoff = store.object(forKey: "handoff") == nil ? true : store.bool(forKey: "handoff")
         floatingNewTab = store.bool(forKey: "newtab.floating")
         fieldOnWindow = store.bool(forKey: "field.window")
+        fieldHidesPage = store.bool(forKey: "field.hidesPage")
         let launcherOn = store.bool(forKey: "launcher.on")
         launcher = launcherOn
         launcherLittle = store.bool(forKey: "launcher.little")
@@ -1567,6 +1608,7 @@ final class Preferences: ObservableObject {
         launcherKey = launcherOn && key == nil ? .suggested : key
         recentInNewTab = store.bool(forKey: "newtab.recent")
         arcTabPopup = store.bool(forKey: "newtab.arc")
+        returnTakesTop = store.bool(forKey: "field.top")
         // On for everyone who never touched it (24 Oct 2026).
         let history = store.object(forKey: "swipe.history") as? Bool ?? true
         holdsHistory = history
@@ -1576,7 +1618,8 @@ final class Preferences: ObservableObject {
         let flicks = store.object(forKey: "float.flicks") as? Bool ?? true
         floatFlicks = flicks
         Float.flicks = flicks
-        let minimizes = store.bool(forKey: "float.minimize")
+        // On for everyone who never touched it (Drice, 25 Nov 2026).
+        let minimizes = store.object(forKey: "float.minimize") as? Bool ?? true
         floatMinimizes = minimizes
         Float.minimizes = minimizes
         floatsAway = store.bool(forKey: "float.away")
@@ -1604,9 +1647,11 @@ final class Preferences: ObservableObject {
         FrameRate.smoothScroll = smooth
         cpuWarning = store.object(forKey: "tabs.cpuWarning") as? Bool ?? true
         redirectBypass = store.object(forKey: "privacy.redirectBypass") as? Bool ?? true
+        backspaceGoesBack = store.bool(forKey: Preferences.backspaceKey)
         pinsPeek = keepsSite
         readsTwins = store.bool(forKey: "reader.twins")
-        readerFollowsLook = store.bool(forKey: "reader.follows")
+        // On for everyone who never touched it (Drice, 25 Nov 2026).
+        readerFollowsLook = store.object(forKey: "reader.follows") as? Bool ?? true
         littleLinks = store.bool(forKey: Preferences.littleKey)
         linksFindTabs = store.bool(forKey: "links.little.tabs")
         webmail = store.string(forKey: "mail.webmail").flatMap(Webmail.init(rawValue:)) ?? .none
@@ -1629,8 +1674,10 @@ final class Preferences: ObservableObject {
         let dusk = store.bool(forKey: "pages.dusk")
         darkensPages = dusk
         Dusk.shared.on = dusk
-        capturesPages = store.bool(forKey: "pages.capture")
-        let styles = store.bool(forKey: "sites.styles")
+        // On for everyone who never touched it (Drice, 25 Nov 2026).
+        capturesPages = store.object(forKey: "pages.capture") as? Bool ?? true
+        // On for everyone who never touched it (Drice, 25 Nov 2026).
+        let styles = store.object(forKey: "sites.styles") as? Bool ?? true
         sitesStyles = styles
         SiteStyles.shared.on = styles
         inspectorChrome = store.bool(forKey: "inspector.chrome")
@@ -1638,10 +1685,12 @@ final class Preferences: ObservableObject {
         let scrolls = store.bool(forKey: "autoscroll")
         autoScroll = scrolls
         AutoScroll.on = scrolls
-        let videoKeys = store.bool(forKey: "video.keys")
+        // On for everyone who never touched it (Drice, 25 Nov 2026).
+        let videoKeys = store.object(forKey: "video.keys") as? Bool ?? true
         self.videoKeys = videoKeys
         VideoKeys.on = videoKeys
-        let glides = store.bool(forKey: "wheel.smooth")
+        // On for everyone who never touched it (Drice, 25 Nov 2026).
+        let glides = store.object(forKey: "wheel.smooth") as? Bool ?? true
         wheelGlides = glides
         WheelGlide.on = glides
         let bouncing = store.bool(forKey: "pages.bounce")
@@ -1655,7 +1704,8 @@ final class Preferences: ObservableObject {
             ?? .onPower
         fastPages = fast
         FrameRate.mode = fast
-        lightMotion = store.bool(forKey: Motion.lightKey)
+        // On for everyone who never touched it (Drice, 25 Nov 2026).
+        lightMotion = store.object(forKey: Motion.lightKey) as? Bool ?? true
         let instant = store.bool(forKey: Motion.instantKey)
         instantMotion = instant
         Motion.instant = instant
@@ -1667,9 +1717,13 @@ final class Preferences: ObservableObject {
         autocorrect = corrects
         // Before the first web view exists: WebKit reads these once.
         Preferences.tellWebKit(autocorrect: corrects)
-        let predicts = store.bool(forKey: "inlinePredictions")
-        inlinePredictions = predicts
-        Preferences.tellWebKit(inlinePredictions: predicts)
+        // Follows the Mac's own setting (System Settings › Keyboard › Text
+        // Input) for everyone who never touched it (Drice, 25 Nov 2026);
+        // only a choice made here is written into Search's defaults, so the
+        // Mac's keeps counting until then.
+        let chosePredictions = store.object(forKey: "inlinePredictions") as? Bool
+        inlinePredictions = chosePredictions ?? Preferences.macPredicts
+        Preferences.tellWebKit(inlinePredictions: chosePredictions)
         Substitution.register()
         pageZoom = store.object(forKey: "pageZoom") as? Double ?? 1
         // Left behind by an assistant this browser no longer has.
@@ -1751,7 +1805,7 @@ final class Preferences: ObservableObject {
         take(\.liquidTabs, store.bool(forKey: "tabs.liquid"))
         take(\.bounces, store.bool(forKey: "pages.bounce"))
         Swipe.bounces = bounces
-        take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: .letters)
+        take(\.glyph, "glyph", store.string(forKey: "glyph").flatMap(Glyph.init), or: Glyph.standard)
         take(\.tabsGive, store.bool(forKey: "tabs.give"))
         take(\.tabClickAddressOnly, store.bool(forKey: "tabs.clickAddressOnly"))
         take(\.tabClickKeepsName, store.bool(forKey: "tabs.clickKeepsName"))
@@ -1802,11 +1856,22 @@ final class Preferences: ObservableObject {
     /// own defaults before the Mac's global ones, and never caches it. So
     /// writing it here is absolute and takes effect at the next key, in
     /// every page, open or to come, in every profile (idea 842).
-    static func tellWebKit(inlinePredictions: Bool) {
-        UserDefaults.standard.set(inlinePredictions, forKey: inlinePredictionsKey)
+    /// With no choice made, nothing is written and whatever an earlier
+    /// build wrote is taken out: AppKit then reads the Mac's own setting.
+    static func tellWebKit(inlinePredictions: Bool?) {
+        if let inlinePredictions {
+            UserDefaults.standard.set(inlinePredictions, forKey: inlinePredictionsKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: inlinePredictionsKey)
+        }
     }
 
     static let inlinePredictionsKey = "NSAutomaticInlinePredictionEnabled"
+
+    /// The Mac's own "Show inline predictive text", on unless turned off.
+    static var macPredicts: Bool {
+        UserDefaults.standard.persistentDomain(forName: UserDefaults.globalDomain)?[inlinePredictionsKey] as? Bool ?? true
+    }
 
     /// Once WebKit has read the default it keeps its own copy, for every
     /// page of the app, and the only way to change it is its own toggle
