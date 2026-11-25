@@ -398,7 +398,7 @@ struct SideBar: View {
         .onAppear { SpaceSwipe.shared.start(for: browser) }
         .background {
             ZStack {
-                if !onFrame {
+                if !onFrame && !browser.glassUnder {
                     VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
                 }
                 if landing { greys.hover }
