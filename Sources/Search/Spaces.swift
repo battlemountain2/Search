@@ -533,7 +533,7 @@ extension Browser {
         }
         handOverRowKeys(leaving)
         returnSpaceVideo()
-        editing = active?.isBlank ?? true
+        editing = active?.isBlank ?? false
         typed = ""
         // A row read from its file just now may hold tabs whose time ran out
         // while it wasn't in memory (see Closing.swift).

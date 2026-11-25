@@ -5276,6 +5276,10 @@ final class Browser: NSObject, ObservableObject {
         let loose = others.filter { $0.pin == nil }
         if let back = (loose.isEmpty ? others : loose).max(by: { $0.touched < $1.touched }) {
             select(back)
+        } else if prefs.usesSpaces {
+            activeID = nil
+            typed = ""
+            editing = false
         } else {
             newTab()
         }
@@ -5383,7 +5387,16 @@ final class Browser: NSObject, ObservableObject {
         else { SidePanelPages.shared.unbind(tab.id, in: self) }
 
         if tabs.count == 1 {
-            if tab.isBlank {
+            if prefs.usesSpaces {
+                remember(tab, at: 0)
+                tab.close()
+                tabs = []
+                activeID = nil
+                typed = ""
+                editing = false
+                removeEmptyGroup(tab.groupID)
+                rememberSession()
+            } else if tab.isBlank {
                 closeEmptyWindow(tab)
             } else if !prefs.newTabAfterLast, let nextSpace = otherSpaceWithTabs {
                 remember(tab, at: 0)
@@ -5424,6 +5437,17 @@ final class Browser: NSObject, ObservableObject {
         let onlyPins = prefs.newTabAfterLast && !tabs.contains { $0.id != tab.id && $0.pin == nil }
         let onlyKept = besideGroups && !kept(tab) && !tabs.contains { $0.id != tab.id && !kept($0) }
         if activeID == tab.id, onlyPins || onlyKept {
+            if prefs.usesSpaces {
+                remember(tab, at: index, partner: partner?.id, onLeft: pair?.isBefore(tab.id, partner?.id) ?? false)
+                tab.close()
+                tabs.remove(at: index)
+                removeEmptyGroup(tab.groupID)
+                activeID = nil
+                typed = ""
+                editing = false
+                rememberSession()
+                return
+            }
             if tab.isBlank {
                 if besideGroups {
                     keepEmpty(tab)
@@ -5487,7 +5511,18 @@ final class Browser: NSObject, ObservableObject {
             let back = tabBefore(tab)
             let before = goingBack || prefs.closeGoesBack || tab.page != nil ? back
                 : back.flatMap { $0.id == tab.opener ? $0 : nil }
-            select(partner ?? before ?? tabs[min(index, tabs.count - 1)])
+            if prefs.usesSpaces {
+                let fallback = tabs.first { $0.pin == nil } ?? tabs.first { !$0.asleep }
+                if let next = partner ?? before ?? fallback {
+                    select(next)
+                } else {
+                    activeID = nil
+                    typed = ""
+                    editing = false
+                }
+            } else {
+                select(partner ?? before ?? tabs[min(index, tabs.count - 1)])
+            }
         }
         rememberSession()
     }
