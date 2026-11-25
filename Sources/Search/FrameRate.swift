@@ -114,11 +114,14 @@ enum FrameRate {
     /// exactly those and nothing else.
     @MainActor private static let changed = NSHashTable<WKPreferences>.weakObjects()
 
+    /// Whether WebKit smooth scroll animation & keyboard scroll smoothing are enabled.
+    @MainActor static var smoothScroll = true
+
     /// Before a page's view is made, which is when WebKit reads the flag:
     /// a new tab, one opened by a site, and one woken from sleep.
     @MainActor static func apply(to preferences: WKPreferences) {
-        if let scrollAnimator { set(true, in: preferences, feature: scrollAnimator) }
-        if let smoothKeyboard { set(true, in: preferences, feature: smoothKeyboard) }
+        if let scrollAnimator { set(smoothScroll, in: preferences, feature: scrollAnimator) }
+        if let smoothKeyboard { set(smoothScroll, in: preferences, feature: smoothKeyboard) }
         guard fast, near60 != nil else { return }
         set(false, in: preferences)
         changed.add(preferences)

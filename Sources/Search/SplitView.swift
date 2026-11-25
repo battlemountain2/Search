@@ -199,7 +199,7 @@ private struct PaneLayers: View {
         // (PaneStage.showPairing).
         .overlay(alignment: .topTrailing) { whose }
         .overlay {
-            if browser.prefs.splitView && !tab.isBlank {
+            if browser.prefs.edgeDropSplits && browser.prefs.splitView && !tab.isBlank {
                 HStack(spacing: 0) {
                     EdgeURLDropStrip(onLeft: true) { url in
                         browser.openLinkBeside(url, from: tab, onLeft: true)

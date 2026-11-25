@@ -862,12 +862,45 @@ final class Preferences: ObservableObject {
     @Published var peekStays: Bool {
         didSet { store.set(peekStays, forKey: "links.peek.stays") }
     }
-    /// ⌥-click on a link opens it in Split View, as its menu's Open Link in
-    /// Split View does (see Browser.openLinkBeside). Safari's ⌥-click
-    /// downloads the link instead, so off unless asked for; off, a ⌥-click
-    /// follows the link as before.
+    /// What an ⌥-click on a link does: Off (Safari download/default), Split View, or Amber Burner Tab.
+    enum OptionClickAction: String, CaseIterable, Identifiable {
+        case off, split, burner
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .off: return "Off"
+            case .split: return "Open in Split View"
+            case .burner: return "Open in Burner Tab"
+            }
+        }
+    }
+
+    /// ⌥-click on a link action (Split View, Burner Tab, or Off).
+    @Published var optionClickAction: OptionClickAction {
+        didSet {
+            store.set(optionClickAction.rawValue, forKey: "links.optionAction")
+            let isSplit = (optionClickAction == .split)
+            if optionClickSplits != isSplit { optionClickSplits = isSplit }
+        }
+    }
+    /// Legacy boolean kept in sync with `optionClickAction == .split`.
     @Published var optionClickSplits: Bool {
         didSet { store.set(optionClickSplits, forKey: "links.optionSplit") }
+    }
+    /// Dragging a link to the left or right edge of a page opens it in Split View.
+    @Published var edgeDropSplits: Bool {
+        didSet { store.set(edgeDropSplits, forKey: "split.edgeDrop") }
+    }
+    /// Enables WebKit's smooth scroll animator for trackpad and keyboard scrolling.
+    @Published var smoothScrollAnimator: Bool {
+        didSet {
+            store.set(smoothScrollAnimator, forKey: "scroll.smoothAnimator")
+            FrameRate.smoothScroll = smoothScrollAnimator
+        }
+    }
+    /// Unwraps tracking/redirect links (t.co, l.instagram.com, google.com/url, etc.) before loading.
+    @Published var redirectBypass: Bool {
+        didSet { store.set(redirectBypass, forKey: "privacy.redirectBypass") }
     }
     /// Pins as in Arc: a link from a pinned tab to another site opens in a
     /// peek, so the pin stays on its page (see Peek.swift), and ⌘W takes it
@@ -1557,7 +1590,15 @@ final class Preferences: ObservableObject {
         peeksLinks = store.object(forKey: "links.peek") as? Bool ?? true
         peekClick = store.string(forKey: "links.peekClick").flatMap(PeekClick.init(rawValue:)) ?? .shift
         peekStays = store.bool(forKey: "links.peek.stays")
-        optionClickSplits = store.bool(forKey: "links.optionSplit")
+        let legacyOptionSplit = store.bool(forKey: "links.optionSplit")
+        optionClickSplits = legacyOptionSplit
+        optionClickAction = store.string(forKey: "links.optionAction").flatMap(OptionClickAction.init(rawValue:))
+            ?? (legacyOptionSplit ? .split : .burner)
+        edgeDropSplits = store.object(forKey: "split.edgeDrop") as? Bool ?? true
+        let smooth = store.object(forKey: "scroll.smoothAnimator") as? Bool ?? true
+        smoothScrollAnimator = smooth
+        FrameRate.smoothScroll = smooth
+        redirectBypass = store.object(forKey: "privacy.redirectBypass") as? Bool ?? true
         pinsPeek = keepsSite
         readsTwins = store.bool(forKey: "reader.twins")
         readerFollowsLook = store.bool(forKey: "reader.follows")

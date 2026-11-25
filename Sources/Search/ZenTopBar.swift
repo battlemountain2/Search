@@ -354,18 +354,16 @@ struct UrlToolboxView: View {
                         onDismiss()
                     }
 
-                    // Pin Tab
-                    let isPinnedRow = tab.pin != nil && tab.listed
+                    // Hide Page Element (Curtain / Veiling)
                     ToolboxPillButton(
-                        icon: isPinnedRow ? "pin.fill" : "pin",
-                        label: isPinnedRow ? "Pinned" : "Pin",
-                        iconColor: isPinnedRow ? Color.accentColor : nil
+                        icon: browser.veiling ? "eye.slash.fill" : "eye.slash",
+                        label: "Hide",
+                        iconColor: browser.veiling ? Color.accentColor : nil
                     ) {
                         Haptics.tap()
-                        if isPinnedRow {
-                            browser.unpin(tab)
-                        } else {
-                            browser.pin(tab, listed: true)
+                        onDismiss()
+                        DispatchQueue.main.async {
+                            browser.toggleHiding()
                         }
                     }
 
@@ -476,7 +474,8 @@ struct UrlToolboxView: View {
                         HStack(spacing: 2) {
                             Button {
                                 Haptics.tap()
-                                browser.zoom(by: 1 / 1.1)
+                                let snapped = ((tab.zoom * 10).rounded() / 10) - 0.1
+                                tab.magnify(to: max(0.4, snapped))
                             } label: {
                                 Image(systemName: "minus")
                                     .font(.system(size: 10, weight: .semibold))
@@ -503,7 +502,8 @@ struct UrlToolboxView: View {
 
                             Button {
                                 Haptics.tap()
-                                browser.zoom(by: 1.1)
+                                let snapped = ((tab.zoom * 10).rounded() / 10) + 0.1
+                                tab.magnify(to: min(3.0, snapped))
                             } label: {
                                 Image(systemName: "plus")
                                     .font(.system(size: 10, weight: .semibold))
@@ -917,6 +917,38 @@ struct SiteSecurityPopoverView: View {
                                 if !on {
                                     tab.built?.evaluateInSearch("if (window.__officeDusk) { window.__officeDusk.force(false); window.__officeDusk.update({on:false}); }")
                                 }
+                            }
+                        ))
+                    }
+                }
+
+                // Chrome Mask (per-site User-Agent spoof)
+                if tab.pageAddress?.host() != nil {
+                    let masked = ChromeMask.shared.isMasked(url: tab.pageAddress)
+                    HStack(spacing: 8) {
+                        Image(systemName: "theatermasks.fill")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(masked ? Color.accentColor : Palette.muted)
+                            .frame(width: 20, height: 20)
+                            .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Chrome Mask")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(Palette.ink)
+                            Text(masked ? "Presenting as Chrome on this site" : "Default Safari/WebKit identity")
+                                .font(.system(size: 9.5))
+                                .foregroundStyle(Palette.muted)
+                        }
+
+                        Spacer()
+
+                        Switch(on: Binding(
+                            get: { ChromeMask.shared.isMasked(url: tab.pageAddress) },
+                            set: { _ in
+                                let nowMasked = ChromeMask.shared.toggle(for: tab.pageAddress)
+                                tab.built?.customUserAgent = nowMasked ? ChromeMask.chromeUserAgent : nil
+                                tab.reload(fromOrigin: true)
                             }
                         ))
                     }

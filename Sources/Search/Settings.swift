@@ -24,10 +24,10 @@ struct SettingsPanel: View {
     @ObservedObject private var icloud = ICloudSync.shared
     /// The keys rows name, as Settings › Shortcuts has them now.
     @ObservedObject private var shortcuts = ShortcutStore.shared
-    @State private var isDefault = Links.isDefault
+    @State private var isDefault = false
     /// Whether Search opens email links, and which app does now.
-    @State private var mailDefault = Mail.isDefault
-    @State private var mailHandler = Mail.handlerName
+    @State private var mailDefault = false
+    @State private var mailHandler: String? = nil
     /// A site shortcut being written, kept out of Preferences until it's saved.
     @State private var draft: Keyword?
     @State private var page: Page = Page.named(Store.settings.string(forKey: "settings.page") ?? "") ?? .general
@@ -111,7 +111,19 @@ struct SettingsPanel: View {
             if asTab { tabbed } else { card }
         }
         .onChange(of: browser.settingsFind) { _, _ in finding = true }
-        .onAppear { if let found { query = found } }
+        .onAppear {
+            if let found { query = found }
+            DispatchQueue.global(qos: .userInitiated).async {
+                let defBrowser = Links.isDefault
+                let defMail = Mail.isDefault
+                let handler = Mail.handlerName
+                DispatchQueue.main.async {
+                    isDefault = defBrowser
+                    mailDefault = defMail
+                    mailHandler = handler
+                }
+            }
+        }
     }
 
     /// In a tab of its own (see InternalPages.swift): the sections down the
@@ -809,6 +821,8 @@ struct SettingsPanel: View {
             // The number itself takes it back to 100%.
             Steps(stops: Preferences.zooms, value: $prefs.pageZoom, home: 1) { "\(Int(($0 * 100).rounded()))%" }
         case "pages.120": Segmented(options: FastPages.allCases.map { ($0, $0.title) }, selection: $prefs.fastPages)
+        case "scroll.smoothAnimator": Switch(on: $prefs.smoothScrollAnimator)
+        case "split.edgeDrop": Switch(on: $prefs.edgeDropSplits)
         case "pages.capture": Switch(on: $prefs.capturesPages)
         case "sites.styles": SiteStylesControl(prefs: prefs)
         case "autocorrect": Switch(on: $prefs.autocorrect)
@@ -891,6 +905,12 @@ struct SettingsPanel: View {
         case "privacy.clickIDs": Switch(on: $prefs.removesClickIDs)
         case "privacy.gpc": Switch(on: $prefs.sendsPrivacySignal)
         case "privacy.httpsFirst": Switch(on: $prefs.triesHTTPSFirst)
+        case "privacy.redirectBypass": Switch(on: $prefs.redirectBypass)
+        case "privacy.chromeMaskReset":
+            Pill(ChromeMask.shared.hosts.isEmpty ? "None" : "Reset (\(ChromeMask.shared.hosts.count))") {
+                ChromeMask.shared.clearAll()
+            }
+            .disabled(ChromeMask.shared.hosts.isEmpty)
         case "notifications.ask": Switch(on: $prefs.siteNotifications)
         case "privacy.forget": Pill("Forget choices") { browser.forgetCaptureChoices() }
         case "clear.history": Pill("Clear") { browser.clearHistory() }
@@ -913,7 +933,15 @@ struct SettingsPanel: View {
             .pickerStyle(.menu)
             .fixedSize()
         case "links.peek.stays": Switch(on: $prefs.peekStays)
-        case "links.optionSplit": Switch(on: $prefs.optionClickSplits)
+        case "links.optionAction":
+            Picker("Option-click a link", selection: $prefs.optionClickAction) {
+                ForEach(Preferences.OptionClickAction.allCases) { action in
+                    Text(action.title).tag(action)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .fixedSize()
         case "autoscroll": Switch(on: $prefs.autoScroll)
         case "wheel.smooth": Switch(on: $prefs.wheelGlides)
         case "pages.bounce": Switch(on: $prefs.bounces)

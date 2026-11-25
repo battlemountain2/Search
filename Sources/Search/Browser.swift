@@ -8888,6 +8888,22 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             decisionHandler(.cancel)
             return
         }
+        // Pre-navigation redirect bypass: unwrap t.co, l.instagram.com, google.com/url, etc.
+        if prefs.redirectBypass,
+           action.targetFrame?.isMainFrame ?? true,
+           ["http", "https"].contains(scheme),
+           let unwrapped = RedirectBypass.unwrap(url) {
+            decisionHandler(.cancel)
+            DispatchQueue.main.async { webView.load(URLRequest(url: unwrapped)) }
+            return
+        }
+        // Per-site Chrome Mask User-Agent override (resets cleanly when navigating away).
+        if action.targetFrame?.isMainFrame ?? true, ["http", "https"].contains(scheme) {
+            let maskedUA = ChromeMask.shared.isMasked(url: url) ? ChromeMask.chromeUserAgent : nil
+            if webView.customUserAgent != maskedUA {
+                webView.customUserAgent = maskedUA
+            }
+        }
         // The chosen modified click: a peek at the link, over this
         // page (see Peek.swift). Only from a tab in the row — within a peek,
         // a link just goes.
@@ -8899,12 +8915,8 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             DispatchQueue.main.async { [weak self] in self?.peek(url, from: from) }
             return
         }
-        // ⌥ alone on a link, with Settings › Keyboard & Mouse saying so: the
-        // link beside this page, as its menu's Open Link in Split View puts
-        // it. Off, it goes on as a plain click, as before (Safari downloads
-        // it). ⌥ with ⇧ or ⌘ is a peek's or a ⌘-click's, never this. Only
-        // from a tab in the row, as a peek is.
-        if prefs.optionClickSplits, prefs.splitView, action.navigationType == .linkActivated,
+        // ⌥ alone on a link, controlled by Settings › Keyboard & Mouse › Option-click opens.
+        if prefs.optionClickAction == .split, prefs.splitView, action.navigationType == .linkActivated,
            ["http", "https"].contains(scheme),
            action.modifierFlags.intersection([.shift, .command, .option, .control]) == .option,
            let from = tab(for: webView), !peekInFront {
@@ -8912,9 +8924,7 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
             DispatchQueue.main.async { [weak self] in self?.openLinkBeside(url, from: from) }
             return
         }
-        // Option-click on a link (when optionClickSplits is off) opens an isolated
-        // Amber Burner Tab inside the current Space.
-        if !prefs.optionClickSplits, action.navigationType == .linkActivated,
+        if prefs.optionClickAction == .burner, action.navigationType == .linkActivated,
            ["http", "https"].contains(scheme),
            action.modifierFlags.intersection([.shift, .command, .option, .control]) == .option,
            let from = tab(for: webView), !peekInFront {
