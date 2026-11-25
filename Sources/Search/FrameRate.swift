@@ -117,6 +117,8 @@ enum FrameRate {
     /// Before a page's view is made, which is when WebKit reads the flag:
     /// a new tab, one opened by a site, and one woken from sleep.
     @MainActor static func apply(to preferences: WKPreferences) {
+        if let scrollAnimator { set(true, in: preferences, feature: scrollAnimator) }
+        if let smoothKeyboard { set(true, in: preferences, feature: smoothKeyboard) }
         guard fast, near60 != nil else { return }
         set(false, in: preferences)
         changed.add(preferences)
@@ -133,23 +135,33 @@ enum FrameRate {
 
     // MARK: - WebKit's switch
 
-    /// The switch is one of WebKit's feature flags, the list Safari shows
-    /// under Develop › Feature Flags. It isn't in the public framework, so
-    /// each step is asked first, and a WebKit without it is left alone.
-    /// Looked up once: the list has a few hundred entries, and walking it
-    /// for every tab would be for nothing.
-    private static let near60: NSObject? = {
+    private static let allFeatures: [NSObject] = {
         let list = NSSelectorFromString("_features")
         let type: AnyObject = WKPreferences.self
         guard type.responds(to: list),
               let all = type.perform(list)?.takeUnretainedValue() as? [NSObject]
-        else { return nil }
-        return all.first { $0.value(forKey: "key") as? String == "PreferPageRenderingUpdatesNear60FPSEnabled" }
+        else { return [] }
+        return all
     }()
 
-    private static func set(_ on: Bool, in preferences: WKPreferences) {
+    /// The switch is one of WebKit's feature flags, the list Safari shows
+    /// under Develop › Feature Flags. It isn't in the public framework, so
+    /// each step is asked first, and a WebKit without it is left alone.
+    private static let near60: NSObject? = allFeatures.first {
+        $0.value(forKey: "key") as? String == "PreferPageRenderingUpdatesNear60FPSEnabled"
+    }
+
+    private static let scrollAnimator: NSObject? = allFeatures.first {
+        $0.value(forKey: "key") as? String == "ScrollAnimatorEnabled"
+    }
+
+    private static let smoothKeyboard: NSObject? = allFeatures.first {
+        $0.value(forKey: "key") as? String == "EventHandlerDrivenSmoothKeyboardScrollingEnabled"
+    }
+
+    private static func set(_ on: Bool, in preferences: WKPreferences, feature: NSObject? = nil) {
         let set = NSSelectorFromString("_setEnabled:forFeature:")
-        guard let flag = near60, preferences.responds(to: set) else { return }
+        guard let flag = feature ?? near60, preferences.responds(to: set) else { return }
         typealias Setter = @convention(c) (AnyObject, Selector, Bool, AnyObject) -> Void
         unsafeBitCast(preferences.method(for: set), to: Setter.self)(preferences, set, on, flag)
     }

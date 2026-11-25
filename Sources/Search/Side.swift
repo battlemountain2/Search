@@ -400,7 +400,6 @@ struct SideBar: View {
             ZStack {
                 if !onFrame {
                     VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
-                    Color.black.opacity(prefs.zenDarkGlass ? 0.18 : 0.08)
                 }
                 if landing { greys.hover }
                 if prefs.splitView {

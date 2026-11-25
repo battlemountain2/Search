@@ -4,7 +4,7 @@ import SecurityInterface
 
 /// A compact, Zen-style floating navigation bar positioned above the web card.
 /// Provides visible Back / Forward / Reload controls, an address capsule showing the domain,
-/// and an integrated Page Actions & Settings toolbox popover (Reader Mode, Split View, Cinema Mode, Extensions).
+/// and an integrated Page Actions & Settings toolbox popover (Zoom, Reader Mode, Split View, Extensions).
 struct ZenTopBar: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
@@ -109,36 +109,16 @@ struct ZenTopBar: View {
     private var addressCapsule: some View {
         if let tab = browser.active {
             HStack(spacing: 5) {
-                // Security / Scheme Icon & Site Permissions Popover (Like Zen & Safari)
-                Button {
-                    Haptics.tap()
-                    showSiteCard.toggle()
-                } label: {
-                    if tab.shy {
-                        Image(systemName: "eye.slash.fill")
-                            .font(.system(size: 8.5, weight: .semibold))
-                            .foregroundStyle(Color(red: 0.82, green: 0.70, blue: 1.0))
-                            .frame(width: 15, height: 15)
-                            .background(showSiteCard ? Color.purple.opacity(0.25) : Color.clear, in: RoundedRectangle(cornerRadius: 3.5))
-                    } else {
-                        Image(systemName: tab.address?.scheme == "https" ? "lock.fill" : "globe")
-                            .font(.system(size: 8.5, weight: .semibold))
-                            .foregroundStyle(tab.address?.scheme == "https" ? Palette.safe : Palette.muted)
-                            .frame(width: 15, height: 15)
-                            .background(showSiteCard ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 3.5))
-                    }
-                }
-                .buttonStyle(.plain)
-                .focusable(false)
-                .focusEffectDisabled()
-                .help(tab.shy ? "Private Browsing Session: no history, cookies, or cache are saved" : "View site security, certificate & permissions")
-                .popover(isPresented: $showSiteCard, arrowEdge: .bottom) {
-                    SiteSecurityPopoverView(browser: browser, tab: tab) {
-                        showSiteCard = false
-                    }
-                }
+                securityButton(for: tab)
 
-                if tab.shy {
+                if tab.burner {
+                    Text("BURNER")
+                        .font(.system(size: 7.5, weight: .bold))
+                        .foregroundStyle(Color(red: 1.0, green: 0.72, blue: 0.30))
+                        .padding(.horizontal, 3.5)
+                        .padding(.vertical, 1)
+                        .background(Color.orange.opacity(0.24), in: RoundedRectangle(cornerRadius: 3))
+                } else if tab.shy {
                     Text("PRIVATE")
                         .font(.system(size: 7.5, weight: .bold))
                         .foregroundStyle(Color(red: 0.88, green: 0.80, blue: 1.0))
@@ -163,32 +143,8 @@ struct ZenTopBar: View {
                 .focusEffectDisabled()
                 .help("Click to edit URL or search   ⌘L")
 
-                // Subtle PWA Desktop App Launcher / Installer icon
                 if let pwa = tab.pwa {
-                    let isInstalled = PWAInstaller.isInstalled(for: tab)
-                    Button {
-                        Haptics.tap()
-                        if isInstalled {
-                            PWAInstaller.launch(for: tab)
-                        } else {
-                            PWAInstaller.install(for: tab, browser: browser)
-                        }
-                    } label: {
-                        Image(systemName: isInstalled ? "arrow.up.forward.app.fill" : "arrow.down.app")
-                            .font(.system(size: 9.5, weight: isInstalled ? .semibold : .medium))
-                            .foregroundStyle(isInstalled ? Color.accentColor : Palette.muted)
-                            .frame(width: 17, height: 17)
-                            .background(isInstalled ? Color.accentColor.opacity(0.16) : Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 3.5))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 3.5)
-                                    .strokeBorder(isInstalled ? Color.accentColor.opacity(0.3) : Color.clear, lineWidth: 0.5)
-                            )
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .focusable(false)
-                    .focusEffectDisabled()
-                    .help(isInstalled ? "Open in \(pwa.name) (Desktop App)" : "Install \(pwa.name) as Desktop App")
+                    pwaButton(for: tab, pwa: pwa)
                 }
 
                 // Zen-style Page Actions & Settings button (triggers URL toolbox popover)
@@ -218,11 +174,11 @@ struct ZenTopBar: View {
             .frame(minWidth: 170, maxWidth: 320, maxHeight: 22)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(tab.shy ? Color.purple.opacity(0.12) : (capsuleHovered || showToolbox ? Color.white.opacity(0.08) : Color.white.opacity(0.04)))
+                    .fill(capsuleFill(for: tab))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(tab.shy ? Color(red: 0.78, green: 0.65, blue: 1.0).opacity(0.32) : Color.clear, lineWidth: 0.5)
+                    .strokeBorder(capsuleStroke(for: tab), lineWidth: 0.5)
             )
             .onHover { capsuleHovered = $0 }
         } else {
@@ -263,6 +219,85 @@ struct ZenTopBar: View {
             return host.replacingOccurrences(of: "^www\\.", with: "", options: .regularExpression)
         }
         return tab.title.isEmpty ? "Search or enter address" : tab.title
+    }
+
+    private func capsuleFill(for tab: Tab) -> Color {
+        if tab.burner { return Color.orange.opacity(0.12) }
+        if tab.shy { return Color.purple.opacity(0.12) }
+        return (capsuleHovered || showToolbox) ? Color.white.opacity(0.08) : Color.white.opacity(0.04)
+    }
+
+    private func capsuleStroke(for tab: Tab) -> Color {
+        if tab.burner { return Color(red: 1.0, green: 0.62, blue: 0.16).opacity(0.36) }
+        if tab.shy { return Color(red: 0.78, green: 0.65, blue: 1.0).opacity(0.32) }
+        return .clear
+    }
+
+    @ViewBuilder
+    private func securityButton(for tab: Tab) -> some View {
+        Button {
+            Haptics.tap()
+            showSiteCard.toggle()
+        } label: {
+            if tab.burner {
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Color(red: 1.0, green: 0.62, blue: 0.16))
+                    .frame(width: 15, height: 15)
+                    .background(showSiteCard ? Color.orange.opacity(0.25) : Color.clear, in: RoundedRectangle(cornerRadius: 3.5))
+            } else if tab.shy {
+                Image(systemName: "eye.slash.fill")
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.82, green: 0.70, blue: 1.0))
+                    .frame(width: 15, height: 15)
+                    .background(showSiteCard ? Color.purple.opacity(0.25) : Color.clear, in: RoundedRectangle(cornerRadius: 3.5))
+            } else {
+                Image(systemName: tab.address?.scheme == "https" ? "lock.fill" : "globe")
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .foregroundStyle(tab.address?.scheme == "https" ? Palette.safe : Palette.muted)
+                    .frame(width: 15, height: 15)
+                    .background(showSiteCard ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 3.5))
+            }
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .focusEffectDisabled()
+        .help(tab.burner ? "Burner Tab: isolated session inside this Space; wiped when closed"
+              : (tab.shy ? "Private Browsing Session: no history, cookies, or cache are saved"
+                 : "View site security, certificate & permissions"))
+        .popover(isPresented: $showSiteCard, arrowEdge: .bottom) {
+            SiteSecurityPopoverView(browser: browser, tab: tab) {
+                showSiteCard = false
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func pwaButton(for tab: Tab, pwa: PWAInfo) -> some View {
+        let isInstalled = PWAInstaller.isInstalled(for: tab)
+        Button {
+            Haptics.tap()
+            if isInstalled {
+                PWAInstaller.launch(for: tab)
+            } else {
+                PWAInstaller.install(for: tab, browser: browser)
+            }
+        } label: {
+            Image(systemName: isInstalled ? "arrow.up.forward.app.fill" : "arrow.down.app")
+                .font(.system(size: 9.5, weight: isInstalled ? .semibold : .medium))
+                .foregroundStyle(isInstalled ? Color.accentColor : Palette.muted)
+                .frame(width: 17, height: 17)
+                .background(isInstalled ? Color.accentColor.opacity(0.16) : Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 3.5))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 3.5)
+                        .strokeBorder(isInstalled ? Color.accentColor.opacity(0.3) : Color.clear, lineWidth: 0.5)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .focusEffectDisabled()
+        .help(isInstalled ? "Open in \(pwa.name) (Desktop App)" : "Install \(pwa.name) as Desktop App")
     }
 
     // MARK: - Pinned Extensions Cluster (Top Right)

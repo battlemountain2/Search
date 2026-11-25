@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The page area while Split View is on: the AppKit stage that holds the
 /// pages (see PaneStage.swift), and over each page what SwiftUI draws there —
@@ -197,6 +198,19 @@ private struct PaneLayers: View {
         // drawn here, they were under the page. So is Apple Passwords' code card
         // (PaneStage.showPairing).
         .overlay(alignment: .topTrailing) { whose }
+        .overlay {
+            if browser.prefs.splitView && !tab.isBlank {
+                HStack(spacing: 0) {
+                    EdgeURLDropStrip(onLeft: true) { url in
+                        browser.openLinkBeside(url, from: tab, onLeft: true)
+                    }
+                    Spacer(minLength: 0)
+                    EdgeURLDropStrip(onLeft: false) { url in
+                        browser.openLinkBeside(url, from: tab, onLeft: false)
+                    }
+                }
+            }
+        }
         .animation(Motion.quick, value: hovered)
         .background { SplitDropZone(browser: browser, tab: tab, kind: .stage) }
         .accessibilityElement(children: .contain)
@@ -256,6 +270,100 @@ private struct SplitDropPreview: View {
                 .padding(.horizontal, 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Edge drop strip on a page card: dragging any link from a page to the left or
+/// right edge opens it directly into side-by-side Split View. Passes normal clicks,
+/// hovers, and scrolls straight through to the web view (`hitTest` only engages
+/// while a mouse button is held down for a drag).
+private struct EdgeURLDropStrip: View {
+    let onLeft: Bool
+    let onDropURL: (URL) -> Void
+
+    @State private var targeted = false
+
+    var body: some View {
+        ZStack {
+            if targeted {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.18))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1.5)
+                    )
+                    .padding(8)
+                    .overlay {
+                        Image(systemName: "rectangle.split.2x1")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+            EdgeURLDropNSView(targeted: $targeted, onDropURL: onDropURL)
+        }
+        .frame(width: 44)
+        .frame(maxHeight: .infinity)
+        .animation(Motion.quick, value: targeted)
+    }
+}
+
+private struct EdgeURLDropNSView: NSViewRepresentable {
+    @Binding var targeted: Bool
+    let onDropURL: (URL) -> Void
+
+    func makeNSView(context: Context) -> DropReceiver {
+        let view = DropReceiver()
+        view.registerForDraggedTypes([.URL, .string])
+        view.onTargetChange = { isTargeted in
+            DispatchQueue.main.async { self.targeted = isTargeted }
+        }
+        view.onDropURL = onDropURL
+        return view
+    }
+
+    func updateNSView(_ nsView: DropReceiver, context: Context) {
+        nsView.onDropURL = onDropURL
+    }
+
+    final class DropReceiver: NSView {
+        var onTargetChange: ((Bool) -> Void)?
+        var onDropURL: ((URL) -> Void)?
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard NSEvent.pressedMouseButtons != 0 else { return nil }
+            return super.hitTest(point)
+        }
+
+        private func extractURL(from info: NSDraggingInfo) -> URL? {
+            let pb = info.draggingPasteboard
+            if let url = NSURL(from: pb) as URL?, ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+                return url
+            }
+            if let str = pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               let url = URL(string: str), ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+                return url
+            }
+            return nil
+        }
+
+        override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+            guard extractURL(from: sender) != nil else { return [] }
+            onTargetChange?(true)
+            return .copy
+        }
+
+        override func draggingExited(_ sender: NSDraggingInfo?) {
+            onTargetChange?(false)
+        }
+
+        override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+            onTargetChange?(false)
+            guard let url = extractURL(from: sender) else { return false }
+            DispatchQueue.main.async { [weak self] in self?.onDropURL?(url) }
+            return true
+        }
     }
 }
 

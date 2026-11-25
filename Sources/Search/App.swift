@@ -657,10 +657,7 @@ struct ContentView: View {
             } else if browser.glassy {
                 GlassGround(prefs: browser.prefs, look: browser.wash)
             } else {
-                ZStack {
-                    VisualEffectView(material: .sidebar, blendingMode: .behindWindow)
-                    Color.black.opacity(browser.prefs.zenDarkGlass ? 0.18 : 0.08)
-                }
+                cards ? Palette.frame : Palette.ground
             }
             // As cards, the column, the bookmarks bar and the gaps around the
             // page share that ground, so the space's colour washes all of it

@@ -632,7 +632,6 @@ struct SettingsPanel: View {
                         set: { on in withAnimation(Motion.glide) { prefs.cards = on } }
                      ))
         case "layout.cardsFullScreen": Switch(on: $prefs.cardsInFullScreen)
-        case "zen.darkGlass": Switch(on: $prefs.zenDarkGlass)
         case "zen.borderless": Switch(on: $prefs.zenBorderless)
         case "address.shown": Switch(on: $prefs.addressLine)
         case "scrollbars.fade": Switch(on: $prefs.scrollbarsFade)

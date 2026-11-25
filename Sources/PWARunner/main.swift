@@ -376,7 +376,7 @@ struct PWARunnerRootView: View {
     // MARK: - Header Bar
 
     private var headerBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             // Space for native macOS traffic lights (red, yellow, green)
             Spacer().frame(width: 76)
 
@@ -385,10 +385,10 @@ struct PWARunnerRootView: View {
                 model.goBack()
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(model.canGoBack ? (isDarkHeader ? Color.white : Color.primary) : (isDarkHeader ? Color.white.opacity(0.35) : Color.primary.opacity(0.25)))
                     .frame(width: 22, height: 22)
-                    .background(hoveringBack && model.canGoBack ? (isDarkHeader ? Color.white.opacity(0.18) : Color.black.opacity(0.08)) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
+                    .background(hoveringBack && model.canGoBack ? (isDarkHeader ? Color.white.opacity(0.18) : Color.black.opacity(0.08)) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
             }
             .buttonStyle(.plain)
             .disabled(!model.canGoBack)
@@ -400,10 +400,10 @@ struct PWARunnerRootView: View {
                 model.goForward()
             } label: {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(model.canGoForward ? (isDarkHeader ? Color.white : Color.primary) : (isDarkHeader ? Color.white.opacity(0.35) : Color.primary.opacity(0.25)))
                     .frame(width: 22, height: 22)
-                    .background(hoveringForward && model.canGoForward ? (isDarkHeader ? Color.white.opacity(0.18) : Color.black.opacity(0.08)) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
+                    .background(hoveringForward && model.canGoForward ? (isDarkHeader ? Color.white.opacity(0.18) : Color.black.opacity(0.08)) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
             }
             .buttonStyle(.plain)
             .disabled(!model.canGoForward)
@@ -415,10 +415,10 @@ struct PWARunnerRootView: View {
                 model.reload()
             } label: {
                 Image(systemName: model.isLoading ? "xmark" : "arrow.clockwise")
-                    .font(.system(size: 9.5, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(isDarkHeader ? Color.white.opacity(0.85) : Color.primary.opacity(0.75))
                     .frame(width: 22, height: 22)
-                    .background(hoveringReload ? (isDarkHeader ? Color.white.opacity(0.18) : Color.black.opacity(0.08)) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
+                    .background(hoveringReload ? (isDarkHeader ? Color.white.opacity(0.18) : Color.black.opacity(0.08)) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
             }
             .buttonStyle(.plain)
             .onHover { hoveringReload = $0 }
@@ -453,27 +453,28 @@ struct PWARunnerRootView: View {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(isDarkHeader ? Color.white.opacity(0.85) : Color.primary.opacity(0.75))
-                    .frame(width: 24, height: 24)
-                    .background(isDarkHeader ? Color.white.opacity(0.12) : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 5))
+                    .frame(width: 22, height: 22)
+                    .background(isDarkHeader ? Color.white.opacity(0.12) : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 4))
                     .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
-            .frame(width: 24, height: 24)
+            .frame(width: 22, height: 22)
             .help("App Options")
-            .padding(.trailing, 10)
+            .padding(.trailing, 8)
         }
         .padding(.horizontal, 4)
         .overlay(alignment: .center) {
             // True Mathematical Center - Clean title, NO capsule bubble
             Text(config.name)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 11.5, weight: .semibold))
                 .foregroundStyle(isDarkHeader ? Color.white : Color.primary)
+                .lineLimit(1)
                 .allowsHitTesting(false)
         }
         .overlay(alignment: .bottom) {
             if model.pageThemeColor == nil {
-                Divider().opacity(0.35)
+                Rectangle().fill(Color.primary.opacity(0.12)).frame(height: 0.5)
             }
         }
         .background(Color(nsColor: activeBackgroundColor))

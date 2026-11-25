@@ -5331,6 +5331,10 @@ final class Browser: NSObject, ObservableObject {
     /// says, as a swipe back that closes a link's tab means to.
     func close(_ tab: Tab, goingBack: Bool = false) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        if tab.keepAwake {
+            tab.keepAwake = false
+            syncKeepAwake()
+        }
         // Its peek, hidden or not, goes with it.
         if peekFrom == tab.id { closePeek() }
         let pair = split(for: tab)
@@ -6958,10 +6962,40 @@ final class Browser: NSObject, ObservableObject {
     /// A link ⌥-clicked: in a tab of its own beside the page it came from,
     /// the two as a pair, with the keys, as the link's Open Link in Split
     /// View makes it. A pair that can't be made leaves it behind, as there.
-    func openLinkBeside(_ url: URL, from opener: Tab) {
+    func openLinkBeside(_ url: URL, from opener: Tab, onLeft: Bool = false) {
         guard tabs.contains(where: { $0.id == opener.id }) else { return }
         let tab = open(url, foreground: false, from: opener, link: true)
-        pair(tab, with: opener, onLeft: false)
+        pair(tab, with: opener, onLeft: onLeft)
+    }
+
+    /// Toggles per-tab "Keep Mac Awake" power assertion (outside toolboxes).
+    func toggleKeepAwake(_ tab: Tab) {
+        tab.keepAwake.toggle()
+        syncKeepAwake()
+        announce(tab.keepAwake ? "Keeping Mac awake" : "Mac can sleep again")
+    }
+
+    func syncKeepAwake() {
+        let anyAwake = Browsers.all.flatMap(\.tabs).contains { $0.keepAwake }
+        KeepAwake.sync(hasAwakeTabs: anyAwake)
+    }
+
+    /// Opens an ephemeral "Burner" tab inside the current Space (`nonPersistent` store,
+    /// wiped when closed, amber flame indicator in address bar & sidebar).
+    @discardableResult
+    func openBurner(_ url: URL? = nil, foreground: Bool = true, from source: Tab? = nil) -> Tab {
+        let tab = Tab(burner: true)
+        prepare(tab)
+        let at = placeForLink(from: source)
+        tabs.insert(tab, at: min(at, tabs.count))
+        if let url { tab.go(to: url) }
+        if foreground {
+            leaving()
+            activeID = tab.id
+            typed = ""
+            editing = false
+        }
+        return tab
     }
 
     /// A page in a tab that keeps nothing, as ⌘⇧N makes one, already on its
@@ -7462,16 +7496,6 @@ final class Browser: NSObject, ObservableObject {
             return
         }
         lift(active, quietly: false, otherwise: otherPane)
-    }
-
-    /// ⇧⌘L, Cinema Mode: spotlights video or primary article and dims background clutter.
-    func toggleCinema() {
-        guard let tab = active, let built = tab.built else { return }
-        built.evaluateJavaScript(Cinema.toggleScript) { [weak self] result, _ in
-            if let mode = result as? String {
-                self?.announce(mode == "on" ? "Cinema mode on" : "Cinema mode off")
-            }
-        }
     }
 
     /// The tab whose video Search last sent to macOS's picture in picture
@@ -8886,6 +8910,16 @@ extension Browser: WKNavigationDelegate, WKUIDelegate {
            let from = tab(for: webView), !peekInFront {
             decisionHandler(.cancel)
             DispatchQueue.main.async { [weak self] in self?.openLinkBeside(url, from: from) }
+            return
+        }
+        // Option-click on a link (when optionClickSplits is off) opens an isolated
+        // Amber Burner Tab inside the current Space.
+        if !prefs.optionClickSplits, action.navigationType == .linkActivated,
+           ["http", "https"].contains(scheme),
+           action.modifierFlags.intersection([.shift, .command, .option, .control]) == .option,
+           let from = tab(for: webView), !peekInFront {
+            decisionHandler(.cancel)
+            DispatchQueue.main.async { [weak self] in self?.openBurner(url, foreground: true, from: from) }
             return
         }
         // A plain click in a pin, with Settings › Spaces & Pins › Links from

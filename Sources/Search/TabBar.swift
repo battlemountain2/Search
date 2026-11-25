@@ -1178,11 +1178,28 @@ private struct TabPill: View, Equatable {
                         .foregroundStyle(colour.opacity(0.7))
                         .help("Opened by a script")
                 }
+                if tab.burner {
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color(red: 1.0, green: 0.62, blue: 0.16))
+                        .help("Burner Tab (isolated & wiped on close)")
+                }
                 if tab.shy {
                     // Quiet, and only on the tabs that keep nothing.
                     Image(systemName: "eye.slash")
                         .font(.system(size: 9))
                         .foregroundStyle(colour.opacity(0.7))
+                }
+                if tab.keepAwake {
+                    Button {
+                        browser.toggleKeepAwake(tab)
+                    } label: {
+                        Image(systemName: "cup.and.saucer.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Color(red: 1.0, green: 0.68, blue: 0.24))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Keeping Mac awake (click to allow sleep)")
                 }
                 if tab.recording {
                     // An extension recording from this page (RecordingIndicator).
@@ -2153,6 +2170,14 @@ struct TabMenu: View {
                 .disabled(!tab.isWeb || tab.shy)
         }
         Button(tab.muted ? "Unmute Tab" : "Mute Tab") { tab.toggleMute() }
+        Button(tab.keepAwake ? "Allow Mac to Sleep" : "Keep Mac Awake") {
+            browser.toggleKeepAwake(tab)
+        }
+        if let url = tab.address, !tab.burner {
+            Button("Open in Burner Tab") {
+                browser.openBurner(url, foreground: true, from: tab)
+            }
+        }
         // Its page let go of now, as it would be after half an hour unseen:
         // the row keeps its title and picture, and it loads again when gone
         // to. Not the tab on screen, nor one that has to stay awake (#310).

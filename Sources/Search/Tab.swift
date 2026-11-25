@@ -86,20 +86,21 @@ enum Web {
     /// screen — a parked row made ahead of time (see Spaces.swift).
     /// `store`: a shy tab's own, for one opened from it — a link followed
     /// out of a private page is still signed in to whatever that page was.
-    static func configuration(shy: Bool = false, space: UUID? = nil, store: WKWebsiteDataStore? = nil) -> WKWebViewConfiguration {
+    static func configuration(shy: Bool = false, ephemeral: Bool = false, space: UUID? = nil, store: WKWebsiteDataStore? = nil) -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
         // The real store, not the ephemeral one: staying signed in between
         // launches is the difference between a browser and a preview pane. A
-        // shy tab gets its own store, which exists only while it does — its own
-        // cookies, its own sign-ins, and nothing left behind when it closes.
+        // shy or burner tab gets its own store, which exists only while it does —
+        // its own cookies, its own sign-ins, and nothing left behind when it closes.
         // With spaces on, each space's tabs share a store of that space's.
-        config.websiteDataStore = store ?? (shy ? .nonPersistent() : MainActor.assumeIsolated { Spaces.store(for: space ?? Spaces.current) })
-        // A private tab's store is made right here and is in no list, so the
-        // proxy is put on it here too, or a private tab alone would go direct.
-        if shy { let own = config.websiteDataStore; MainActor.assumeIsolated { BrowserProxy.shared.attach(own) } }
+        let isEphemeral = shy || ephemeral
+        config.websiteDataStore = store ?? (isEphemeral ? .nonPersistent() : MainActor.assumeIsolated { Spaces.store(for: space ?? Spaces.current) })
+        // A private/burner tab's store is made right here and is in no list, so the
+        // proxy is put on it here too, or it alone would go direct.
+        if isEphemeral { let own = config.websiteDataStore; MainActor.assumeIsolated { BrowserProxy.shared.attach(own) } }
         // Web notifications go through the store (see Notifications.swift);
-        // a private tab's is left without, and a page there is refused.
-        if !shy { let kept = config.websiteDataStore; MainActor.assumeIsolated { SiteNotifications.shared.attach(kept) } }
+        // a private/burner tab's is left without, and a page there is refused.
+        if !isEphemeral { let kept = config.websiteDataStore; MainActor.assumeIsolated { SiteNotifications.shared.attach(kept) } }
         config.processPool = Web.pool
         // A test run's pretend camera and microphone (see ExtensionCapture).
         if #available(macOS 15.4, *), Store.testing { ExtensionCapture.mockDevices(config.preferences) }
@@ -827,6 +828,13 @@ final class Tab: ObservableObject, Identifiable {
     /// session. Signed in as nobody, and forgotten when it goes.
     let shy: Bool
 
+    /// An ephemeral "Burner" tab inside a normal Space: uses a non-persistent
+    /// cookie/storage container and forgets everything when closed.
+    let burner: Bool
+
+    /// Whether this tab holds a macOS power assertion preventing display sleep.
+    @Published var keepAwake = false
+
     /// The account last filled here from Apple's Passwords app, so sending
     /// it isn't offered a second place in Search's keychain. A keyed hash of
     /// the password, never the password.
@@ -1035,10 +1043,11 @@ final class Tab: ObservableObject, Identifiable {
         return "New Tab"
     }
 
-    init(shy: Bool = false, bench: Bool = false, configuration: WKWebViewConfiguration? = nil) {
+    init(shy: Bool = false, burner: Bool = false, bench: Bool = false, configuration: WKWebViewConfiguration? = nil) {
         self.shy = shy
+        self.burner = burner
         self.bench = bench
-        self.configuration = configuration ?? Web.configuration(shy: shy)
+        self.configuration = configuration ?? Web.configuration(shy: shy, ephemeral: burner)
         if Store.testing { Tab.live.add(self) }
     }
 
