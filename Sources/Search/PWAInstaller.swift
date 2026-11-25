@@ -140,7 +140,7 @@ enum PWAInstaller {
             seedSessionData(for: bundleID, spaceID: spaceID)
 
             // Asynchronously sync live cookies from the space, then sign and launch
-            syncCookies(for: tab, appURL: appBundleURL) {
+            syncCookies(for: tab, appURL: appBundleURL, writeToBundle: true) {
                 // 6. Ad-hoc codesign
                 let signProcess = Process()
                 signProcess.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
@@ -164,10 +164,10 @@ enum PWAInstaller {
                         NSLog("[PWAInstaller] Failed to launch installed app: \(error)")
                     }
                 }
-            }
 
-            // Notify UI that the app is now installed
-            tab.objectWillChange.send()
+                // Notify UI once bundle is signed & registered
+                tab.objectWillChange.send()
+            }
 
             return appBundleURL
         } catch {
@@ -247,10 +247,15 @@ enum PWAInstaller {
             return true
         }
 
-        // Match root 2-level domain (e.g. soundcloud.com, youtube.com, github.com)
+        // Match root domain (guarding against two-label ccTLDs like .co.uk, .com.au)
         let hostParts = targetHost.split(separator: ".")
         if hostParts.count >= 2 {
-            let rootDomain = hostParts.suffix(2).joined(separator: ".")
+            let secondLevelSLDs: Set<Substring> = ["co", "com", "org", "net", "edu", "gov", "ac"]
+            let isTwoPartTLD = hostParts.count >= 3
+                && hostParts[hostParts.count - 1].count == 2
+                && secondLevelSLDs.contains(hostParts[hostParts.count - 2])
+            let labelCount = isTwoPartTLD ? 3 : 2
+            let rootDomain = hostParts.suffix(labelCount).joined(separator: ".")
             if cookieDomain == rootDomain || cookieDomain.hasSuffix("." + rootDomain) {
                 return true
             }
@@ -296,7 +301,7 @@ enum PWAInstaller {
     }
 
     /// Asynchronously extracts relevant cookies from the tab's space store and writes them to the PWA app.
-    static func syncCookies(for tab: Tab, appURL: URL? = nil, completion: @escaping @MainActor () -> Void) {
+    static func syncCookies(for tab: Tab, appURL: URL? = nil, writeToBundle: Bool = false, completion: @escaping @MainActor () -> Void) {
         guard let host = tab.address?.host() ?? tab.pwa?.host else {
             completion()
             return
@@ -324,8 +329,9 @@ enum PWAInstaller {
                     let appSupportFile = appSupportDir.appendingPathComponent("Cookies.json")
                     try? data.write(to: appSupportFile, options: .atomic)
 
-                    // 2. Also write to Resources/Cookies.json in app bundle if available
-                    if let appURL = appURL ?? installedAppURL(for: tab) {
+                    // 2. Only write inside the .app bundle during install (before codesigning),
+                    // so launching an existing app never invalidates its bundle signature.
+                    if writeToBundle, let appURL = appURL ?? installedAppURL(for: tab) {
                         let resDir = appURL.appendingPathComponent("Contents/Resources", isDirectory: true)
                         try? fileManager.createDirectory(at: resDir, withIntermediateDirectories: true)
                         let resFile = resDir.appendingPathComponent("Cookies.json")

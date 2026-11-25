@@ -576,7 +576,7 @@ struct PWAWebViewRepresentable: NSViewRepresentable {
         return webView
     }
 
-    private func loadCookies() -> [HTTPCookie] {
+    private func loadCookiesIfNeeded() -> (cookies: [HTTPCookie], sourceDate: Date, bundleID: String)? {
         let fileManager = FileManager.default
         let cleanHost = host.filter { $0.isLetter || $0.isNumber || $0 == "." }
         let bundleID = Bundle.main.bundleIdentifier ?? "com.battlemountain2.search.pwa.\(cleanHost)"
@@ -604,19 +604,28 @@ struct PWAWebViewRepresentable: NSViewRepresentable {
             let date2 = (try? url2.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
             return date1 < date2
         }) else {
-            return []
+            return nil
         }
 
-        guard let data = try? Data(contentsOf: bestURL) else { return [] }
+        let bestDate = (try? bestURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
+        let lastImportedKey = "pwa.cookiesImportedAt.\(bundleID)"
+        if let lastImported = UserDefaults.standard.object(forKey: lastImportedKey) as? Date,
+           bestDate <= lastImported {
+            // Already imported this snapshot; preserve newer session cookies inside WebKit's store
+            return nil
+        }
+
+        guard let data = try? Data(contentsOf: bestURL) else { return nil }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let pwaCookies = try? decoder.decode([PWACookie].self, from: data) else { return [] }
-        return pwaCookies.compactMap { $0.httpCookie }
+        guard let pwaCookies = try? decoder.decode([PWACookie].self, from: data) else { return nil }
+        let httpCookies = pwaCookies.compactMap { $0.httpCookie }
+        guard !httpCookies.isEmpty else { return nil }
+        return (httpCookies, bestDate, bundleID)
     }
 
     private func injectCookiesAndLoad(store: WKWebsiteDataStore, webView: WKWebView, startURL: URL) {
-        let cookies = loadCookies()
-        guard !cookies.isEmpty else {
+        guard let pending = loadCookiesIfNeeded() else {
             var request = URLRequest(url: startURL)
             request.timeoutInterval = 30
             webView.load(request)
@@ -625,7 +634,7 @@ struct PWAWebViewRepresentable: NSViewRepresentable {
 
         let cookieStore = store.httpCookieStore
         let group = DispatchGroup()
-        for cookie in cookies {
+        for cookie in pending.cookies {
             group.enter()
             cookieStore.setCookie(cookie) {
                 group.leave()
@@ -633,20 +642,23 @@ struct PWAWebViewRepresentable: NSViewRepresentable {
         }
 
         var didLoad = false
-        func triggerLoad() {
+        func triggerLoad(markImported: Bool) {
             guard !didLoad else { return }
             didLoad = true
+            if markImported {
+                UserDefaults.standard.set(pending.sourceDate, forKey: "pwa.cookiesImportedAt.\(pending.bundleID)")
+            }
             var request = URLRequest(url: startURL)
             request.timeoutInterval = 30
             webView.load(request)
         }
 
         group.notify(queue: .main) {
-            triggerLoad()
+            triggerLoad(markImported: true)
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            triggerLoad()
+            triggerLoad(markImported: false)
         }
     }
 

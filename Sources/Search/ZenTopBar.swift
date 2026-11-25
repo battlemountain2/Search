@@ -371,7 +371,7 @@ struct UrlToolboxView: View {
                                                 .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                                                 .overlay(
                                                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                                        .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+                                                        .strokeBorder(Palette.hairline.opacity(0.6), lineWidth: 0.5)
                                                 )
                                             Text(button.name)
                                                 .font(.system(size: 9))
@@ -399,7 +399,7 @@ struct UrlToolboxView: View {
                                             .background(Palette.ink.opacity(0.035), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                                             .overlay(
                                                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+                                                    .strokeBorder(Palette.hairline.opacity(0.6), lineWidth: 0.5)
                                             )
                                         Text("Manage")
                                             .font(.system(size: 9))
@@ -424,12 +424,74 @@ struct UrlToolboxView: View {
                     .foregroundStyle(Palette.muted)
 
                 VStack(spacing: 4) {
+                    // Zoom control row
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Palette.muted)
+                            .frame(width: 22, height: 22)
+                            .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+                        Text("Zoom")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(Palette.ink)
+
+                        Spacer()
+
+                        HStack(spacing: 2) {
+                            Button {
+                                Haptics.tap()
+                                browser.zoom(by: 1 / 1.1)
+                            } label: {
+                                Image(systemName: "minus")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .frame(width: 22, height: 22)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .focusable(false)
+                            .focusEffectDisabled()
+
+                            Button {
+                                Haptics.tap()
+                                browser.resetZoom()
+                            } label: {
+                                Text("\(Int((tab.zoom * 100).rounded()))%")
+                                    .font(.system(size: 10.5, weight: .medium))
+                                    .monospacedDigit()
+                                    .frame(width: 40)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .focusable(false)
+                            .focusEffectDisabled()
+
+                            Button {
+                                Haptics.tap()
+                                browser.zoom(by: 1.1)
+                            } label: {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .frame(width: 22, height: 22)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .focusable(false)
+                            .focusEffectDisabled()
+                        }
+                        .padding(.horizontal, 2)
+                        .background(Palette.ink.opacity(0.06), in: Capsule())
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 5)
+
                     // Reader Mode Row
                     ToolboxSettingRow(
                         icon: "doc.plaintext",
                         title: "Reader View",
-                        subtitle: "Distraction-free article reader",
-                        actionTitle: "Toggle"
+                        subtitle: tab.reader ? "Clean reading mode active" : "Distraction-free article reader",
+                        actionTitle: tab.reader ? "Exit" : "Read",
+                        isActive: tab.reader
                     ) {
                         Haptics.tap()
                         browser.toggleReader()
@@ -446,18 +508,6 @@ struct UrlToolboxView: View {
                     ) {
                         Haptics.click()
                         browser.splitKey()
-                        onDismiss()
-                    }
-
-                    // Cinema Mode Row
-                    ToolboxSettingRow(
-                        icon: "film",
-                        title: "Cinema Mode",
-                        subtitle: "Spotlight video & dim distractions",
-                        actionTitle: "Toggle"
-                    ) {
-                        Haptics.tap()
-                        browser.toggleCinema()
                         onDismiss()
                     }
 
@@ -499,7 +549,7 @@ struct UrlToolboxView: View {
                 .background(Palette.ink.opacity(0.035), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+                        .strokeBorder(Palette.hairline.opacity(0.6), lineWidth: 0.5)
                 )
             }
 
@@ -538,7 +588,7 @@ struct UrlToolboxView: View {
         .background(
             ZStack {
                 VisualEffectView(material: .popover, blendingMode: .withinWindow)
-                Palette.ground.opacity(0.92)
+                Palette.ground.opacity(0.85)
             }
         )
     }
@@ -570,7 +620,7 @@ private struct ToolboxPillButton: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+                    .strokeBorder(Palette.hairline.opacity(0.6), lineWidth: 0.5)
             )
             .animation(Motion.settle, value: hovered)
         }
@@ -706,7 +756,7 @@ struct SiteSecurityPopoverView: View {
         .background(
             ZStack {
                 VisualEffectView(material: .popover, blendingMode: .withinWindow)
-                Palette.ground.opacity(0.92)
+                Palette.ground.opacity(0.85)
             }
         )
         .focusable(false)
@@ -837,70 +887,52 @@ struct SiteSecurityPopoverView: View {
                     }
                 }
 
-                // Zoom control row
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Palette.muted)
-                        .frame(width: 20, height: 20)
-                        .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                // Clear Cookies & Site Data for this host
+                if let host = tab.pageAddress?.host(), !host.isEmpty {
+                    let cleanHost = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+                    Button {
+                        Haptics.click()
+                        browser.clearSiteData(for: tab)
+                        close()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(Palette.unsafe)
+                                .frame(width: 20, height: 20)
+                                .background(Palette.unsafe.opacity(0.10), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
 
-                    Text("Zoom")
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(Palette.ink)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Clear Cookies & Site Data")
+                                    .font(.system(size: 11.5, weight: .medium))
+                                    .foregroundStyle(Palette.ink)
+                                Text("Wipe storage for \(cleanHost) & reload")
+                                    .font(.system(size: 9.5))
+                                    .foregroundStyle(Palette.muted)
+                                    .lineLimit(1)
+                            }
 
-                    Spacer()
+                            Spacer()
 
-                    HStack(spacing: 2) {
-                        Button {
-                            Haptics.tap()
-                            browser.zoom(by: 1 / 1.1)
-                        } label: {
-                            Image(systemName: "minus")
-                                .font(.system(size: 10, weight: .semibold))
-                                .frame(width: 22, height: 22)
-                                .contentShape(Rectangle())
+                            Text("Clear")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(Palette.unsafe)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(Palette.unsafe.opacity(0.10), in: Capsule())
                         }
-                        .buttonStyle(.plain)
-                        .focusable(false)
-                        .focusEffectDisabled()
-
-                        Button {
-                            Haptics.tap()
-                            browser.resetZoom()
-                        } label: {
-                            Text("\(Int((tab.zoom * 100).rounded()))%")
-                                .font(.system(size: 10.5, weight: .medium))
-                                .monospacedDigit()
-                                .frame(width: 40)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .focusable(false)
-                        .focusEffectDisabled()
-
-                        Button {
-                            Haptics.tap()
-                            browser.zoom(by: 1.1)
-                        } label: {
-                            Image(systemName: "plus")
-                                .font(.system(size: 10, weight: .semibold))
-                                .frame(width: 22, height: 22)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .focusable(false)
-                        .focusEffectDisabled()
+                        .contentShape(Rectangle())
                     }
-                    .padding(.horizontal, 2)
-                    .background(Palette.ink.opacity(0.06), in: Capsule())
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .focusEffectDisabled()
                 }
             }
             .padding(8)
             .background(Palette.ink.opacity(0.035), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+                    .strokeBorder(Palette.hairline.opacity(0.6), lineWidth: 0.5)
             )
         }
     }
@@ -925,7 +957,7 @@ struct SiteSecurityPopoverView: View {
                 .background(Palette.ink.opacity(0.035), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.5)
+                        .strokeBorder(Palette.hairline.opacity(0.6), lineWidth: 0.5)
                 )
             }
         }

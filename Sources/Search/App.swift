@@ -222,8 +222,6 @@ struct SearchApp: App {
                     .shortcut("view.reader")
                 Button("Float Video") { browser.toggleFloat() }
                     .shortcut("view.float")
-                Button("Cinema Mode") { browser.toggleCinema() }
-                    .shortcut("view.cinema")
                 // Websites in the side panel, only once they are on
                 // (Settings › General).
                 if browser.prefs.sitesInPanel {
@@ -1799,7 +1797,6 @@ struct ContentView: View {
             || ((key == "[" || key == "]" || key == "{" || key == "}") && shifted)
             || (key == "z" && browser.veiling)
             || (key == "k")
-            || (key == "l" && shifted)
             || (!shifted && (event.keyCode == 123 || event.keyCode == 124) && !caretIn(event))
         guard !reserved, event.window?.firstResponder is PageView else { return false }
         if let passed = ContentView.passed, PageView.same(passed, event) {
@@ -2294,8 +2291,6 @@ struct ContentView: View {
             browser.searchTabsKey()
         case "k" where shifted:
             browser.copyMarkdownLink()
-        case "l" where shifted:
-            browser.toggleCinema()
         case "s" where shifted:
             browser.toggleSidebar()
         case "s" where !shifted:

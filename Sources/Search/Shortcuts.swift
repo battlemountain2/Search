@@ -246,7 +246,6 @@ struct Command: Identifiable {
         Command("view.reloadOrigin", "Reload Page From Origin", .view, KeyCombo("r", option: true)) { $0.reload(fromOrigin: true) },
         Command("view.reader", "Reading Mode", .view, KeyCombo("r", shift: true)) { $0.toggleReader() },
         Command("view.float", "Float Video", .view, KeyCombo("p", shift: true)) { $0.toggleFloat() },
-        Command("view.cinema", "Cinema Mode", .view, KeyCombo("l", shift: true)) { $0.toggleCinema() },
         Command("view.topBar", "Toggle Top Bar", .view, KeyCombo("t", option: true)) { browser in
             Haptics.tap()
             withAnimation(Motion.glide) { browser.prefs.zenTopBar.toggle() }

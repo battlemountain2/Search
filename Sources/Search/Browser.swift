@@ -1923,6 +1923,28 @@ final class Browser: NSObject, ObservableObject {
         announce("Signed out of everything")
     }
 
+    /// Clears cookies, cache, and storage for just the given tab's host in its active space,
+    /// then reloads the tab from origin.
+    func clearSiteData(for tab: Tab) {
+        guard let host = tab.pageAddress?.host()?.lowercased() else { return }
+        let cleanHost = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        tab.store.fetchDataRecords(ofTypes: types) { records in
+            let matching = records.filter { record in
+                let name = record.displayName.lowercased()
+                return name == host || name == cleanHost || host.hasSuffix("." + name) || name.hasSuffix("." + cleanHost)
+            }
+            guard !matching.isEmpty else {
+                DispatchQueue.main.async { tab.reload(fromOrigin: true) }
+                return
+            }
+            tab.store.removeData(ofTypes: types, for: matching) {
+                DispatchQueue.main.async { tab.reload(fromOrigin: true) }
+            }
+        }
+        announce("Cleared site data for \(cleanHost)")
+    }
+
     /// Only what was fetched to draw pages, not what identifies you: the
     /// HTTP caches, and the copies sites' service workers keep in Cache
     /// Storage. Without those a worker answering from its own copy kept
