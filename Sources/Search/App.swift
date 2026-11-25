@@ -745,6 +745,7 @@ struct ContentView: View {
                     .padding(.leading, leadingGap)
                     .padding(.trailing, trailingGap)
                     .padding(.top, 5)
+                    .zIndex(10)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }

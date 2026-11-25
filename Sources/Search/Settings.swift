@@ -916,14 +916,11 @@ struct SettingsPanel: View {
             .fixedSize()
         case "links.peek.stays": Switch(on: $prefs.peekStays)
         case "links.optionAction":
-            Picker("Option-click a link", selection: $prefs.optionClickAction) {
-                ForEach(Preferences.OptionClickAction.allCases) { action in
-                    Text(action.title).tag(action)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .fixedSize()
+            Pictures(options: [
+                (Preferences.OptionClickAction.off, "Off", AnyView(OptionClickPicture(kind: .off))),
+                (.split, "Split View", AnyView(OptionClickPicture(kind: .split))),
+                (.burner, "Burner Tab", AnyView(OptionClickPicture(kind: .burner))),
+            ], selection: $prefs.optionClickAction)
         case "autoscroll": Switch(on: $prefs.autoScroll)
         case "wheel.smooth": Switch(on: $prefs.wheelGlides)
         case "pages.bounce": Switch(on: $prefs.bounces)
@@ -1337,6 +1334,54 @@ private struct UpdaterVersionControl: View {
 }
 
 // MARK: - pieces
+
+private struct OptionClickPicture: View {
+    let kind: Preferences.OptionClickAction
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Palette.ink.opacity(0.05))
+            switch kind {
+            case .off:
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Palette.ground)
+                    .padding(6)
+                    .overlay {
+                        Image(systemName: "cursorarrow.click")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Palette.muted)
+                    }
+            case .split:
+                HStack(spacing: 3) {
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(Palette.ground)
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.22))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .strokeBorder(Color.accentColor.opacity(0.5), lineWidth: 0.75)
+                        )
+                }
+                .padding(6)
+            case .burner:
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Color.orange.opacity(0.14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .strokeBorder(Color.orange.opacity(0.45), lineWidth: 0.75)
+                    )
+                    .padding(6)
+                    .overlay {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color(red: 1.0, green: 0.62, blue: 0.16))
+                    }
+            }
+        }
+        .frame(width: 72, height: 42)
+    }
+}
 
 private extension View {
     /// A list under a row's words (sites, profiles, languages): its lines

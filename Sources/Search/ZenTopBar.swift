@@ -14,6 +14,8 @@ struct ZenTopBar: View {
     @State private var capsuleHovered = false
     @State private var showToolbox = false
     @State private var showSiteCard = false
+    @State private var capsuleFrame: CGRect = .zero
+    @State private var inlineClicks: Any?
 
     var body: some View {
         HStack(spacing: 6) {
@@ -127,21 +129,29 @@ struct ZenTopBar: View {
                         .background(Color.purple.opacity(0.3), in: RoundedRectangle(cornerRadius: 3))
                 }
 
-                // Domain text button (expands to fill capsule center)
-                Button {
-                    Haptics.tap()
-                    browser.edit()
-                } label: {
-                    Text(displayDomain(for: tab))
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(Palette.ink)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .center)
+                // Domain text / inline address editor
+                if browser.editingInline {
+                    AddressField(browser: browser, size: 11.5)
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Button {
+                        Haptics.tap()
+                        if !browser.editing {
+                            browser.edit()
+                            browser.inlineEdit = true
+                        }
+                    } label: {
+                        Text(displayDomain(for: tab))
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(Palette.ink)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .focusEffectDisabled()
+                    .help("Click to edit URL or search inline   ⌘L for floating")
                 }
-                .buttonStyle(.plain)
-                .focusable(false)
-                .focusEffectDisabled()
-                .help("Click to edit URL or search   ⌘L")
 
                 if let pwa = tab.pwa {
                     pwaButton(for: tab, pwa: pwa)
@@ -171,7 +181,7 @@ struct ZenTopBar: View {
             }
             .padding(.leading, 7)
             .padding(.trailing, 3)
-            .frame(minWidth: 170, maxWidth: 320, maxHeight: 22)
+            .frame(minWidth: 170, maxWidth: browser.editingInline ? 420 : 320, maxHeight: 22)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(capsuleFill(for: tab))
@@ -192,6 +202,15 @@ struct ZenTopBar: View {
                     )
                     .allowsHitTesting(false)
             )
+            .overlay(alignment: .topLeading) {
+                if browser.editingInline {
+                    Omnibox(browser: browser, over: false, listOnly: max(capsuleFrame.width, 340))
+                        .offset(y: 26)
+                }
+            }
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { capsuleFrame = $0 }
+            .onChange(of: browser.editingInline, initial: true) { _, on in watchInlineClicks(on) }
+            .onDisappear { watchInlineClicks(false) }
             .onHover { capsuleHovered = $0 }
         } else {
             HStack(spacing: 5) {
@@ -200,28 +219,45 @@ struct ZenTopBar: View {
                     .foregroundStyle(Palette.muted)
                     .frame(width: 15, height: 15)
 
-                Button {
-                    Haptics.tap()
-                    browser.launch()
-                } label: {
-                    Text("Search or enter address")
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(Palette.muted)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .center)
+                if browser.editingInline {
+                    AddressField(browser: browser, size: 11.5)
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Button {
+                        Haptics.tap()
+                        if !browser.editing {
+                            browser.edit()
+                            browser.inlineEdit = true
+                        }
+                    } label: {
+                        Text("Search or enter address")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(Palette.muted)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .focusEffectDisabled()
+                    .help("Click to search inline   ⌘L for floating")
                 }
-                .buttonStyle(.plain)
-                .focusable(false)
-                .focusEffectDisabled()
-                .help("Search or enter address   ⌘L")
             }
             .padding(.leading, 7)
             .padding(.trailing, 3)
-            .frame(minWidth: 170, maxWidth: 320, maxHeight: 22)
+            .frame(minWidth: 170, maxWidth: browser.editingInline ? 420 : 320, maxHeight: 22)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(capsuleHovered ? Color.white.opacity(0.08) : Color.white.opacity(0.04))
+                    .fill(capsuleHovered || browser.editingInline ? Color.white.opacity(0.08) : Color.white.opacity(0.04))
             )
+            .overlay(alignment: .topLeading) {
+                if browser.editingInline {
+                    Omnibox(browser: browser, over: false, listOnly: max(capsuleFrame.width, 340))
+                        .offset(y: 26)
+                }
+            }
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { capsuleFrame = $0 }
+            .onChange(of: browser.editingInline, initial: true) { _, on in watchInlineClicks(on) }
+            .onDisappear { watchInlineClicks(false) }
             .onHover { capsuleHovered = $0 }
         }
     }
@@ -240,9 +276,29 @@ struct ZenTopBar: View {
     }
 
     private func capsuleStroke(for tab: Tab) -> Color {
+        if browser.editingInline { return Color.accentColor.opacity(0.45) }
         if tab.burner { return Color(red: 1.0, green: 0.62, blue: 0.16).opacity(0.36) }
         if tab.shy { return Color(red: 0.78, green: 0.65, blue: 1.0).opacity(0.32) }
         return .clear
+    }
+
+    private func watchInlineClicks(_ on: Bool) {
+        if let inlineClicks { NSEvent.removeMonitor(inlineClicks) }
+        inlineClicks = nil
+        guard on else { return }
+        inlineClicks = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { event in
+            MainActor.assumeIsolated {
+                guard browser.editingInline, let view = event.window?.contentView else { return }
+                let at = event.locationInWindow
+                let point = CGPoint(x: at.x, y: view.bounds.height - at.y)
+                let below = browser.offers.isEmpty ? 0 : CGFloat(browser.offers.count) * 44 + 20
+                let w = max(capsuleFrame.width, 340)
+                let room = CGRect(x: capsuleFrame.minX, y: capsuleFrame.minY, width: w, height: capsuleFrame.height + below)
+                guard !room.contains(point) else { return }
+                browser.dismiss()
+            }
+            return event
+        }
     }
 
     @ViewBuilder
