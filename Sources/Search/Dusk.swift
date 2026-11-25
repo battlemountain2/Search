@@ -90,12 +90,17 @@ final class Dusk: ObservableObject {
     /// A page's darkening changed; the View menu's line says so.
     func heard() { objectWillChange.send() }
 
+    private static let nativelyDarkHosts: Set<String> = [
+        "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"
+    ]
+
     /// Whether a page on `host` is darkened from its first frame: on, not
     /// paused, Search dark, and the site switched on by hand or measured
     /// light already this session. Nothing goes into any other page.
     func wanted(_ host: String?) -> Bool {
         guard active, Dusk.frameIsDark, let host else { return false }
         if let chosen = sites[host] { return chosen }
+        if Dusk.nativelyDarkHosts.contains(host) { return false }
         return seen[host] == false
     }
 
@@ -103,13 +108,14 @@ final class Dusk: ObservableObject {
     /// (see look): on, Search dark, and neither switched nor known light.
     func unsure(_ host: String?) -> Bool {
         guard active, Dusk.frameIsDark, let host, sites[host] == nil else { return false }
+        if Dusk.nativelyDarkHosts.contains(host) { return false }
         return seen[host] != false
     }
 
     /// For each new document on `host`, or nil. `light`: what the page up
     /// now was just seen to be, for a private tab, which keeps nothing.
     func script(for host: String?, light: Bool = false) -> String? {
-        guard let host, wanted(host) || light && active && Dusk.frameIsDark && sites[host] != false else { return nil }
+        guard let host, wanted(host) || (light && active && Dusk.frameIsDark && sites[host] != false && !Dusk.nativelyDarkHosts.contains(host)) else { return nil }
         return Dusk.page(config(for: host, light: light))
     }
 

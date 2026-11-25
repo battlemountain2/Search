@@ -1438,6 +1438,9 @@ final class Tab: ObservableObject, Identifiable {
         // (see YouTubeAds.swift). Every frame; each script does nothing in a
         // frame that isn't YouTube's.
         scripts += YouTubeAds.scripts(for: Dusk.host(of: url ?? pageAddress))
+        if let ytPolish = YouTubeAds.theaterPolishScript(for: Dusk.host(of: url ?? pageAddress)) {
+            scripts.append(ytPolish)
+        }
         if !css.isEmpty {
             add(Veiling.style(css), .atDocumentStart, mainFrameOnly: true, in: Web.world)
         }

@@ -74,6 +74,38 @@ enum YouTubeAds {
         "youtube-nocookie.com", "www.youtube-nocookie.com",
     ]
 
+    /// Lightweight CSS compositing hints for YouTube Theater Mode: promotes
+    /// the player and theater container to their own GPU layers and avoids
+    /// heavy ambient blur transitions during viewport-wide theater resizes.
+    static func theaterPolishScript(for host: String?) -> WKUserScript? {
+        guard let host, ["youtube.com", "www.youtube.com", "m.youtube.com"].contains(host) else { return nil }
+        let css = """
+        #player-theater-container, #full-bleed-container, .html5-video-player {
+            transform: translateZ(0);
+            will-change: transform;
+        }
+        ytd-watch-flexy[theater] #player-theater-container,
+        ytd-watch-flexy[theater] #full-bleed-container {
+            contain: layout style;
+        }
+        ytd-watch-flexy #cinematics,
+        ytd-watch-flexy #cinematics canvas {
+            transition: none !important;
+        }
+        """
+        let source = """
+        (() => {
+            const id = '__search_yt_theater_polish';
+            if (document.getElementById(id)) return;
+            const style = document.createElement('style');
+            style.id = id;
+            style.textContent = \(String(reflecting: css));
+            (document.head || document.documentElement).appendChild(style);
+        })();
+        """
+        return WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Web.world)
+    }
+
     /// The hosts for this run: test runs can add a local stand-in for
     /// YouTube (`test.youtubeHosts` in the test settings), so a fixture page
     /// can be checked without YouTube.
