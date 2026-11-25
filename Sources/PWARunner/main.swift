@@ -338,6 +338,9 @@ struct PWARunnerRootView: View {
         if let pageColor = model.pageThemeColor {
             return pageColor
         }
+        if let hex = config.themeColorHex, let parsed = parseCSSColor(hex) {
+            return parsed
+        }
         return NSColor.windowBackgroundColor
     }
 
@@ -347,7 +350,7 @@ struct PWARunnerRootView: View {
         let g = color.greenComponent
         let b = color.blueComponent
         let luminance = 0.299 * r + 0.587 * g + 0.114 * b
-        return luminance < 0.65
+        return luminance < 0.55
     }
 
     var body: some View {
@@ -386,7 +389,7 @@ struct PWARunnerRootView: View {
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(model.canGoBack ? (isDarkHeader ? Color.white : Color.primary) : (isDarkHeader ? Color.white.opacity(0.35) : Color.primary.opacity(0.25)))
+                    .foregroundStyle(model.canGoBack ? (isDarkHeader ? Color.white : Color.black) : (isDarkHeader ? Color.white.opacity(0.35) : Color.black.opacity(0.25)))
                     .frame(width: 22, height: 22)
                     .background(hoveringBack && model.canGoBack ? (isDarkHeader ? Color.white.opacity(0.18) : Color.black.opacity(0.08)) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
             }
@@ -401,7 +404,7 @@ struct PWARunnerRootView: View {
             } label: {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(model.canGoForward ? (isDarkHeader ? Color.white : Color.primary) : (isDarkHeader ? Color.white.opacity(0.35) : Color.primary.opacity(0.25)))
+                    .foregroundStyle(model.canGoForward ? (isDarkHeader ? Color.white : Color.black) : (isDarkHeader ? Color.white.opacity(0.35) : Color.black.opacity(0.25)))
                     .frame(width: 22, height: 22)
                     .background(hoveringForward && model.canGoForward ? (isDarkHeader ? Color.white.opacity(0.18) : Color.black.opacity(0.08)) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
             }
@@ -416,7 +419,7 @@ struct PWARunnerRootView: View {
             } label: {
                 Image(systemName: model.isLoading ? "xmark" : "arrow.clockwise")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(isDarkHeader ? Color.white.opacity(0.85) : Color.primary.opacity(0.75))
+                    .foregroundStyle(isDarkHeader ? Color.white.opacity(0.85) : Color.black.opacity(0.75))
                     .frame(width: 22, height: 22)
                     .background(hoveringReload ? (isDarkHeader ? Color.white.opacity(0.18) : Color.black.opacity(0.08)) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
             }
@@ -452,7 +455,7 @@ struct PWARunnerRootView: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(isDarkHeader ? Color.white.opacity(0.85) : Color.primary.opacity(0.75))
+                    .foregroundStyle(isDarkHeader ? Color.white.opacity(0.85) : Color.black.opacity(0.75))
                     .frame(width: 22, height: 22)
                     .background(isDarkHeader ? Color.white.opacity(0.12) : Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 4))
                     .contentShape(Rectangle())
@@ -468,7 +471,7 @@ struct PWARunnerRootView: View {
             // True Mathematical Center - Clean title, NO capsule bubble
             Text(config.name)
                 .font(.system(size: 11.5, weight: .semibold))
-                .foregroundStyle(isDarkHeader ? Color.white : Color.primary)
+                .foregroundStyle(isDarkHeader ? Color.white : Color.black)
                 .lineLimit(1)
                 .allowsHitTesting(false)
         }
@@ -692,32 +695,63 @@ struct PWAWebViewRepresentable: NSViewRepresentable {
             model.isLoading = false
             model.currentURL = webView.url
 
-            // Dynamic theme color sampling from WebKit
-            if #available(macOS 12.0, *), let tc = webView.themeColor {
-                model.pageThemeColor = tc
-            } else {
-                let js = """
-                (function() {
-                    let meta = document.querySelector('meta[name="theme-color"]');
-                    if (meta && meta.content) return meta.content;
-                    let header = document.querySelector('header') || document.querySelector('#o365header') || document.querySelector('.ms-Fabric');
-                    if (header) {
-                        let bg = window.getComputedStyle(header).backgroundColor;
-                        if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return bg;
-                    }
-                    return null;
-                })()
-                """
-                webView.evaluateJavaScript(js) { [weak model] result, _ in
-                    if let str = result as? String, let parsed = parseCSSColor(str) {
-                        DispatchQueue.main.async {
-                            model?.pageThemeColor = parsed
-                        }
+            sampleThemeColor(from: webView)
+            // Re-sample shortly after SPA hydration (e.g. Instagram dark mode)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self, weak webView] in
+                guard let self, let webView else { return }
+                self.sampleThemeColor(from: webView)
+            }
+        }
+
+        private func sampleThemeColor(from webView: WKWebView) {
+            let js = """
+            (function() {
+                let bodyBg = document.body ? window.getComputedStyle(document.body).backgroundColor : null;
+                let rootBg = window.getComputedStyle(document.documentElement).backgroundColor;
+                let header = document.querySelector('header') || document.querySelector('#o365header') || document.querySelector('.ms-Fabric');
+                let headerBg = header ? window.getComputedStyle(header).backgroundColor : null;
+                let meta = document.querySelector('meta[name="theme-color"]');
+                return {
+                    meta: meta ? meta.content : null,
+                    header: (headerBg && headerBg !== 'rgba(0, 0, 0, 0)' && headerBg !== 'transparent') ? headerBg : null,
+                    body: (bodyBg && bodyBg !== 'rgba(0, 0, 0, 0)' && bodyBg !== 'transparent') ? bodyBg : null,
+                    root: (rootBg && rootBg !== 'rgba(0, 0, 0, 0)' && rootBg !== 'transparent') ? rootBg : null
+                };
+            })()
+            """
+            let wkTheme: NSColor? = if #available(macOS 12.0, *) { webView.themeColor } else { nil }
+            webView.evaluateJavaScript(js) { [weak model] result, _ in
+                let dict = result as? [String: Any]
+                let pageBg = (dict?["body"] as? String).flatMap(parseCSSColor)
+                    ?? (dict?["root"] as? String).flatMap(parseCSSColor)
+                let headerBg = (dict?["header"] as? String).flatMap(parseCSSColor)
+                let metaBg = (dict?["meta"] as? String).flatMap(parseCSSColor)
+
+                func lum(_ c: NSColor) -> CGFloat {
+                    let s = c.usingColorSpace(.sRGB) ?? c
+                    return 0.299 * s.redComponent + 0.587 * s.greenComponent + 0.114 * s.blueComponent
+                }
+
+                // Prefer body/page dark background if meta/WebKit themeColor is pure white on a dark-mode page (e.g. Instagram)
+                let chosen: NSColor?
+                if let wkTheme {
+                    if lum(wkTheme) > 0.85, let pageBg, lum(pageBg) < 0.35 {
+                        chosen = pageBg
                     } else {
-                        DispatchQueue.main.async {
-                            model?.pageThemeColor = nil
-                        }
+                        chosen = wkTheme
                     }
+                } else if let metaBg {
+                    if lum(metaBg) > 0.85, let pageBg, lum(pageBg) < 0.35 {
+                        chosen = pageBg
+                    } else {
+                        chosen = metaBg
+                    }
+                } else {
+                    chosen = headerBg ?? pageBg
+                }
+
+                DispatchQueue.main.async {
+                    model?.pageThemeColor = chosen
                 }
             }
         }
