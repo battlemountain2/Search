@@ -164,7 +164,8 @@ struct SettingsPanel: View {
                 .strokeBorder(Palette.hairline, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.16), radius: 34, y: 12)
+        .compositingGroup()
+        .shadow(color: .black.opacity(0.16), radius: 24, y: 10)
         .onChange(of: page) { _, page in Store.settings.set(page.rawValue, forKey: "settings.page") }
     }
 
@@ -174,7 +175,7 @@ struct SettingsPanel: View {
     private var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
     private var pages: some View {
-        let counts = Dictionary(grouping: hits, by: \.page).mapValues(\.count)
+        let counts = searching ? Dictionary(grouping: hits, by: \.page).mapValues(\.count) : [:]
         return VStack(alignment: .leading, spacing: 2) {
             Text("Settings")
                 .font(.system(size: 13, weight: .semibold))

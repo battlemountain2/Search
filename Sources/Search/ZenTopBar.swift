@@ -180,6 +180,18 @@ struct ZenTopBar: View {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .strokeBorder(capsuleStroke(for: tab), lineWidth: 0.5)
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.14), .clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 0.5
+                    )
+                    .allowsHitTesting(false)
+            )
             .onHover { capsuleHovered = $0 }
         } else {
             HStack(spacing: 5) {

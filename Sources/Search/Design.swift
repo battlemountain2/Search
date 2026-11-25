@@ -588,10 +588,23 @@ struct CardEdge: ViewModifier {
                 }
             }
             .overlay {
-                shape
-                    .strokeBorder(Color.primary.opacity(on && corner > 0 ? CardEdge.edge : 0),
-                                  lineWidth: crisp ? 1 / scale : 1)
-                    .allowsHitTesting(false)
+                ZStack {
+                    shape
+                        .strokeBorder(Color.primary.opacity(on && corner > 0 ? CardEdge.edge : 0),
+                                      lineWidth: crisp ? 1 / scale : 1)
+                    if on && corner > 0 {
+                        shape
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.16), Color.white.opacity(0.02), .clear],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ),
+                                lineWidth: crisp ? max(0.5, 1 / scale) : 0.5
+                            )
+                    }
+                }
+                .allowsHitTesting(false)
             }
     }
 

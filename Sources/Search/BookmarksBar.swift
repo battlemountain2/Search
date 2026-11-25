@@ -154,7 +154,9 @@ struct BookmarksBar: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if !onFrame { Rectangle().fill(Palette.hairline).frame(height: 1) }
+            if !onFrame && !browser.prefs.zenBorderless && !browser.prefs.zenTopBar {
+                Rectangle().fill(Palette.hairline).frame(height: 0.5)
+            }
         }
     }
 
