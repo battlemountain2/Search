@@ -920,55 +920,64 @@ private struct CompletedDownloadRow: View {
     }
 
     var body: some View {
-        Button {
-            if keep.stillThere {
-                NSWorkspace.shared.open(keep.url)
+        HStack(spacing: 8) {
+            Image(nsImage: icon)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 24, height: 24)
+                .opacity(keep.stillThere ? 1 : 0.45)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(keep.name)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(keep.stillThere ? Palette.ink : greys.muted)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(greys.muted)
+                    .lineLimit(1)
             }
-        } label: {
-            HStack(spacing: 8) {
-                Image(nsImage: icon)
-                    .resizable()
-                    .interpolation(.high)
-                    .frame(width: 24, height: 24)
-                    .opacity(keep.stillThere ? 1 : 0.45)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(keep.name)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(keep.stillThere ? Palette.ink : greys.muted)
-                        .lineLimit(1)
-                    Text(subtitle)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(greys.muted)
-                        .lineLimit(1)
-                }
+            Spacer(minLength: 0)
 
-                Spacer(minLength: 0)
-
-                if hovering {
-                    Button {
-                        loot.reveal(keep)
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(Palette.ink.opacity(0.75))
-                            .frame(width: 20, height: 20)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Show in Finder")
-                }
+            if hovering {
+                Color.clear
+                    .frame(width: 20, height: 20)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(hovering ? greys.hover.opacity(0.65) : .clear)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(hovering ? greys.hover.opacity(0.65) : .clear)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            if keep.stillThere {
+                FileDragOverlay(
+                    url: keep.url,
+                    fallbackIcon: icon,
+                    dragSize: CGSize(width: 34, height: 34),
+                    onTap: { NSWorkspace.shared.open(keep.url) }
+                )
+            }
+        }
+        .overlay(alignment: .trailing) {
+            if hovering {
+                Button {
+                    loot.reveal(keep)
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Palette.ink.opacity(0.75))
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+                .help("Show in Finder")
+                .padding(.trailing, 8)
+            }
+        }
         .onHover { hovering = $0 }
-        .onDrag { keep.dragged ?? NSItemProvider() }
         .contextMenu {
             if keep.stillThere {
                 Button("Open") { NSWorkspace.shared.open(keep.url) }
@@ -1028,94 +1037,225 @@ private struct MediaGridCard: View {
     @Environment(\.greys) private var greys
 
     var body: some View {
-        Button(action: open) {
-            Color.clear
-                .frame(height: 104)
-                .overlay {
-                    if let thumbnail {
-                        Image(nsImage: thumbnail)
-                            .resizable()
-                            .scaledToFill()
-                    } else {
-                        ZStack {
-                            greys.hover.opacity(0.55)
-                            VStack(spacing: 4) {
-                                Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 34, height: 34)
-                                Text(item.ext.uppercased())
-                                    .font(.system(size: 9.5, weight: .semibold))
-                                    .foregroundStyle(greys.muted)
-                            }
+        Color.clear
+            .frame(height: 104)
+            .overlay {
+                if let thumbnail {
+                    Image(nsImage: thumbnail)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    ZStack {
+                        greys.hover.opacity(0.55)
+                        VStack(spacing: 4) {
+                            Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 34, height: 34)
+                            Text(item.ext.uppercased())
+                                .font(.system(size: 9.5, weight: .semibold))
+                                .foregroundStyle(greys.muted)
                         }
                     }
                 }
-                .overlay(alignment: .topLeading) {
-                    if item.ext == "pdf" || item.ext == "mp4" || item.ext == "mov" {
-                        Text(item.ext.uppercased())
-                            .font(.system(size: 8.5, weight: .bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(.black.opacity(0.55), in: Capsule())
-                            .padding(6)
-                    }
+            }
+            .overlay(alignment: .topLeading) {
+                if item.ext == "pdf" || item.ext == "mp4" || item.ext == "mov" {
+                    Text(item.ext.uppercased())
+                        .font(.system(size: 8.5, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .padding(6)
+                        .allowsHitTesting(false)
                 }
-                .overlay(alignment: .bottomLeading) {
-                    if hovering {
-                        ZStack(alignment: .bottomLeading) {
-                            LinearGradient(
-                                colors: [.clear, .black.opacity(0.75)],
-                                startPoint: .center,
-                                endPoint: .bottom
-                            )
-                            HStack(spacing: 4) {
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(item.name)
-                                        .font(.system(size: 10, weight: .medium))
-                                        .foregroundStyle(.white)
-                                        .lineLimit(1)
-                                    Text(item.source)
-                                        .font(.system(size: 9))
-                                        .foregroundStyle(.white.opacity(0.75))
-                                        .lineLimit(1)
-                                }
-                                Spacer(minLength: 0)
-                                Button(action: reveal) {
-                                    Image(systemName: "magnifyingglass")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(.white)
-                                        .frame(width: 20, height: 20)
-                                        .background(.black.opacity(0.45), in: Circle())
-                                }
-                                .buttonStyle(.plain)
-                                .help("Show in Finder")
-                            }
-                            .padding(6)
+            }
+            .overlay(alignment: .bottomLeading) {
+                if hovering {
+                    ZStack(alignment: .bottomLeading) {
+                        LinearGradient(
+                            colors: [.clear, .black.opacity(0.75)],
+                            startPoint: .center,
+                            endPoint: .bottom
+                        )
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(item.name)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                            Text(item.source)
+                                .font(.system(size: 9))
+                                .foregroundStyle(.white.opacity(0.75))
+                                .lineLimit(1)
                         }
-                        .transition(.opacity)
+                        .padding(.leading, 6)
+                        .padding(.trailing, 30)
+                        .padding(.bottom, 6)
                     }
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(hovering ? Color.white.opacity(0.28) : Palette.hairline, lineWidth: 1)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                FileDragOverlay(
+                    url: item.url,
+                    thumbnail: thumbnail,
+                    fallbackIcon: NSWorkspace.shared.icon(forFile: item.url.path),
+                    dragSize: CGSize(width: 72, height: 72),
+                    onTap: open
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if hovering {
+                    Button(action: reveal) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.white)
+                            .frame(width: 20, height: 20)
+                            .background(.black.opacity(0.45), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Show in Finder")
+                    .padding(6)
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(hovering ? Color.white.opacity(0.28) : Palette.hairline, lineWidth: 1)
+                    .allowsHitTesting(false)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .onHover { hovering = $0 }
+            .animation(Motion.quick, value: hovering)
+            .contextMenu {
+                Button("Quick Preview") { open() }
+                Button("Open in New Tab") { openInTab() }
+                Button("Show in Finder") { reveal() }
+            }
+    }
+}
+
+/// Transparent AppKit click-and-file-drag bridge that initiates a native
+/// `NSDraggingSession` carrying `url as NSURL` (so webpages, `<input type="file">`,
+/// Finder, and other apps receive the file directly), while letting hover,
+/// context menus, and scroll wheel events pass straight through to SwiftUI.
+private struct FileDragOverlay: NSViewRepresentable {
+    let url: URL
+    var thumbnail: NSImage? = nil
+    let fallbackIcon: NSImage
+    var dragSize: CGSize = CGSize(width: 72, height: 72)
+    let onTap: () -> Void
+
+    func makeNSView(context: Context) -> DragView {
+        let view = DragView()
+        sync(view)
+        return view
+    }
+
+    func updateNSView(_ nsView: DragView, context: Context) {
+        sync(nsView)
+    }
+
+    private func sync(_ view: DragView) {
+        view.url = url
+        view.thumbnail = thumbnail
+        view.fallbackIcon = fallbackIcon
+        view.dragSize = dragSize
+        view.onTap = onTap
+    }
+
+    final class DragView: NSView, NSDraggingSource {
+        var url: URL = URL(fileURLWithPath: "/")
+        var thumbnail: NSImage?
+        var fallbackIcon: NSImage?
+        var dragSize: CGSize = CGSize(width: 72, height: 72)
+        var onTap: () -> Void = {}
+
+        private var pressEvent: NSEvent?
+        private var didDrag = false
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let type = NSApp.currentEvent?.type,
+                  type == .leftMouseDown || type == .leftMouseDragged || type == .leftMouseUp
+            else { return nil }
+            return super.hitTest(point)
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .animation(Motion.quick, value: hovering)
-        .onDrag {
-            let provider = NSItemProvider(object: item.url as NSURL)
-            provider.suggestedName = item.name
-            return provider
+
+        override func mouseDown(with event: NSEvent) {
+            pressEvent = event
+            didDrag = false
         }
-        .contextMenu {
-            Button("Quick Preview") { open() }
-            Button("Open in New Tab") { openInTab() }
-            Button("Show in Finder") { reveal() }
+
+        override func mouseDragged(with event: NSEvent) {
+            guard let press = pressEvent, !didDrag else { return }
+            let dx = event.locationInWindow.x - press.locationInWindow.x
+            let dy = event.locationInWindow.y - press.locationInWindow.y
+            guard hypot(dx, dy) >= 4 else { return }
+
+            didDrag = true
+            pressEvent = nil
+            guard FileManager.default.fileExists(atPath: url.path) else { return }
+
+            let image = makeDragPreview()
+            let item = NSDraggingItem(pasteboardWriter: url as NSURL)
+            let local = convert(press.locationInWindow, from: nil)
+            let size = image.size
+            let dragFrame = NSRect(
+                x: local.x - size.width / 2,
+                y: local.y - size.height / 2,
+                width: size.width,
+                height: size.height
+            )
+            item.setDraggingFrame(dragFrame, contents: image)
+            beginDraggingSession(with: [item], event: press, source: self)
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            let wasTap = pressEvent != nil && !didDrag
+            pressEvent = nil
+            didDrag = false
+            if wasTap, bounds.contains(convert(event.locationInWindow, from: nil)) {
+                onTap()
+            }
+        }
+
+        func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+            [.copy, .generic]
+        }
+
+        func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+            pressEvent = nil
+            didDrag = false
+        }
+
+        private func makeDragPreview() -> NSImage {
+            guard let source = thumbnail else {
+                let icon = (fallbackIcon?.copy() as? NSImage) ?? NSWorkspace.shared.icon(forFile: url.path)
+                icon.size = dragSize
+                return icon
+            }
+            let aspect = source.size.height > 0 ? source.size.width / source.size.height : 1
+            let w: CGFloat
+            let h: CGFloat
+            if aspect >= 1 {
+                w = dragSize.width
+                h = max(28, dragSize.width / aspect)
+            } else {
+                h = dragSize.height
+                w = max(28, dragSize.height * aspect)
+            }
+            let target = NSSize(width: w, height: h)
+            return NSImage(size: target, flipped: false) { rect in
+                let path = NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8)
+                path.addClip()
+                source.draw(in: rect, from: .zero, operation: .copy, fraction: 1)
+                NSColor.white.withAlphaComponent(0.28).setStroke()
+                path.lineWidth = 1
+                path.stroke()
+                return true
+            }
         }
     }
 }
