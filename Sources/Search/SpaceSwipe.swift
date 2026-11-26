@@ -149,10 +149,18 @@ final class SpaceSwipe {
         guard let browser = Browsers.browser(for: window(of: event)), !browser.isPopup, browser.prefs.usesSpaces,
               !browser.folded || browser.peeking, overTabs(event, in: browser) else { return false }
         self.browser = browser
+        if browser.librarySection != nil {
+            if step > 0 {
+                withAnimation(Motion.quick) { browser.librarySection = nil }
+            }
+            return true
+        }
         let here = shown(browser)
         let target = here + step
         if let other = beyond(browser, target) {
             leave(browser, for: other, step: step)
+        } else if target < 0, browser.prefs.sidebar, !browser.prefs.iconColumn {
+            withAnimation(Motion.quick) { browser.librarySection = .downloads }
         } else if target >= 0, target <= furthest(browser) {
             slide(browser, to: target, from: here)
         }
@@ -409,10 +417,18 @@ final class SpaceSwipe {
             let rested = now.timeIntervalSince(notched) > 0.3 && now > resting
             notched = now
             guard rested else { return true }
+            if browser.librarySection != nil {
+                if step < 0 {
+                    withAnimation(Motion.quick) { browser.librarySection = nil }
+                }
+                return true
+            }
             let here = shown(browser)
             let target = here + (step < 0 ? 1 : -1)
             if let other = beyond(browser, target) {
                 leave(browser, for: other, step: target - here)
+            } else if target < 0, browser.prefs.sidebar, !browser.prefs.iconColumn {
+                withAnimation(Motion.quick) { browser.librarySection = .downloads }
             } else if target >= 0, target <= furthest(browser) {
                 slide(browser, to: target, from: here)
             }
@@ -559,9 +575,21 @@ final class SpaceSwipe {
             ? abs(travel) >= 2 * SpaceSwipe.enough(for: browser)
             : abs(travel) >= SpaceSwipe.enough(for: browser) || flick
         // Fingers to the left, or up, bring what is next.
+        if browser.librarySection != nil {
+            if !cancelled, far, travel < 0 {
+                withAnimation(Motion.quick) { browser.librarySection = nil }
+            }
+            browser.spaceSwipe = 0
+            return
+        }
         let target = cancelled || !far ? here : here + (travel < 0 ? 1 : -1)
         if target != here, let other = beyond(browser, target) {
             leave(browser, for: other, step: target - here)
+            return
+        }
+        if target < 0, browser.prefs.sidebar, !browser.prefs.iconColumn {
+            browser.spaceSwipe = 0
+            withAnimation(Motion.quick) { browser.librarySection = .downloads }
             return
         }
         guard target != here, target >= 0, target <= furthest(browser) else {

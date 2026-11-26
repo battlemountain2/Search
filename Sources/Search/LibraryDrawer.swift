@@ -89,6 +89,8 @@ struct LibraryDrawer: View {
 
     private var rail: some View {
         VStack(spacing: 6) {
+            Spacer(minLength: 0)
+
             ForEach(LibrarySection.allCases, id: \.self) { item in
                 let active = item == section
                 Button {
@@ -198,6 +200,26 @@ struct LibraryDrawer: View {
                 }
                 .buttonStyle(.plain)
                 .help("Refresh Media")
+            } else if section == .history {
+                Button { browser.lead(to: InternalPage(.history)) } label: {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Palette.ink.opacity(0.75))
+                        .frame(width: 28, height: 28)
+                        .background(greys.hover.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .help("Open Full History (⌘Y)")
+            } else if section == .archive, !browser.ghosts.isEmpty {
+                Button { browser.reopen() } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Palette.ink.opacity(0.75))
+                        .frame(width: 28, height: 28)
+                        .background(greys.hover.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .help("Reopen Last Closed Tab")
             }
         }
     }
@@ -314,32 +336,7 @@ struct LibraryDrawer: View {
             ForEach(grouped, id: \.title) { bucket in
                 sectionHeading(bucket.title)
                 ForEach(bucket.items, id: \.key) { trace in
-                    Button {
-                        _ = browser.open(trace.url, foreground: true)
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "globe")
-                                .font(.system(size: 11))
-                                .foregroundStyle(greys.muted)
-                                .frame(width: 18)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(trace.title.isEmpty ? (trace.url.host() ?? trace.url.absoluteString) : trace.title)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(Palette.ink)
-                                    .lineLimit(1)
-                                Text(trace.url.host() ?? trace.url.absoluteString)
-                                    .font(.system(size: 10.5))
-                                    .foregroundStyle(greys.muted)
-                                    .lineLimit(1)
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(Color.clear)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
+                    HistoryRow(trace: trace, browser: browser)
                 }
             }
         }
@@ -363,32 +360,7 @@ struct LibraryDrawer: View {
             if !ghosts.isEmpty {
                 sectionHeading("Recently Closed")
                 ForEach(Array(ghosts.enumerated()), id: \.offset) { _, ghost in
-                    Button {
-                        _ = browser.open(ghost.url, foreground: true)
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "arrow.uturn.backward.circle")
-                                .font(.system(size: 12))
-                                .foregroundStyle(greys.muted)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(ghost.title.isEmpty ? "Closed Tab" : ghost.title)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(Palette.ink)
-                                    .lineLimit(1)
-                                if let host = ghost.url.host() {
-                                    Text(host)
-                                        .font(.system(size: 10.5))
-                                        .foregroundStyle(greys.muted)
-                                        .lineLimit(1)
-                                }
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
+                    ArchiveGhostRow(ghost: ghost, browser: browser)
                 }
             }
             if !sleeping.isEmpty {
@@ -476,27 +448,35 @@ struct LibraryDrawer: View {
     private func loadMedia() {
         guard !loadingMedia else { return }
         loadingMedia = true
-        let folder = prefs.downloads
+        let downloadsFolder = prefs.downloads
+        let picturesFolder = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
         DispatchQueue.global(qos: .utility).async {
             let exts: Set<String> = ["png", "jpg", "jpeg", "webp", "gif", "heic", "mp4", "mov", "pdf"]
             let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
-            let urls = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])) ?? []
+            var roots: [(url: URL, source: String)] = [(downloadsFolder, "Downloads")]
+            if let picturesFolder, picturesFolder.standardizedFileURL != downloadsFolder.standardizedFileURL {
+                roots.append((picturesFolder, "Pictures"))
+            }
             var found: [MediaFile] = []
-            for url in urls {
-                let ext = url.pathExtension.lowercased()
-                guard exts.contains(ext),
-                      let vals = try? url.resourceValues(forKeys: Set(keys)),
-                      vals.isRegularFile == true else { continue }
-                found.append(MediaFile(
-                    url: url,
-                    name: url.lastPathComponent,
-                    ext: ext,
-                    size: Int64(vals.fileSize ?? 0),
-                    modified: vals.contentModificationDate ?? .distantPast
-                ))
+            for root in roots {
+                let urls = (try? FileManager.default.contentsOfDirectory(at: root.url, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])) ?? []
+                for url in urls {
+                    let ext = url.pathExtension.lowercased()
+                    guard exts.contains(ext),
+                          let vals = try? url.resourceValues(forKeys: Set(keys)),
+                          vals.isRegularFile == true else { continue }
+                    found.append(MediaFile(
+                        url: url,
+                        name: url.lastPathComponent,
+                        ext: ext,
+                        source: root.source,
+                        size: Int64(vals.fileSize ?? 0),
+                        modified: vals.contentModificationDate ?? .distantPast
+                    ))
+                }
             }
             found.sort { $0.modified > $1.modified }
-            let clipped = Array(found.prefix(80))
+            let clipped = Array(found.prefix(100))
             DispatchQueue.main.async {
                 mediaItems = clipped
                 loadingMedia = false
@@ -528,6 +508,7 @@ private struct MediaFile: Identifiable {
     let url: URL
     let name: String
     let ext: String
+    let source: String
     let size: Int64
     let modified: Date
     var id: URL { url }
@@ -697,7 +678,7 @@ private struct MediaRow: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Palette.ink)
                         .lineLimit(1)
-                    Text("\(ByteCountFormatter.string(fromByteCount: item.size, countStyle: .file)) · \(item.ext.uppercased())")
+                    Text("\(ByteCountFormatter.string(fromByteCount: item.size, countStyle: .file)) · \(item.ext.uppercased()) · \(item.source)")
                         .font(.system(size: 10.5))
                         .foregroundStyle(greys.muted)
                         .lineLimit(1)
@@ -725,5 +706,147 @@ private struct MediaRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .onDrag {
+            let provider = NSItemProvider(object: item.url as NSURL)
+            provider.suggestedName = item.name
+            return provider
+        }
+    }
+}
+
+private struct HistoryRow: View {
+    let trace: History.Trace
+    let browser: Browser
+    @State private var hovering = false
+    @Environment(\.greys) private var greys
+
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.timeStyle = .short
+        f.dateStyle = .none
+        return f
+    }()
+
+    var body: some View {
+        Button {
+            _ = browser.open(trace.url, foreground: true)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "globe")
+                    .font(.system(size: 11))
+                    .foregroundStyle(greys.muted)
+                    .frame(width: 18)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(trace.title.isEmpty ? (trace.url.host() ?? trace.url.absoluteString) : trace.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(1)
+                    Text(trace.url.host() ?? trace.url.absoluteString)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(greys.muted)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if hovering {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(trace.url.absoluteString, forType: .string)
+                    } label: {
+                        Image(systemName: "link")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.ink.opacity(0.75))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Copy Address")
+                } else {
+                    Text(Self.timeFormatter.string(from: trace.last))
+                        .font(.system(size: 10))
+                        .foregroundStyle(greys.muted)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(hovering ? greys.hover.opacity(0.65) : .clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .contextMenu {
+            Button("Open in New Tab") { _ = browser.open(trace.url, foreground: true) }
+            Button("Open in Split View") {
+                if let active = browser.active {
+                    browser.openLinkBeside(trace.url, from: active, onLeft: false)
+                } else {
+                    _ = browser.open(trace.url, foreground: true)
+                }
+            }
+            Button("Copy Address") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(trace.url.absoluteString, forType: .string)
+            }
+        }
+    }
+}
+
+private struct ArchiveGhostRow: View {
+    let ghost: Browser.Ghost
+    let browser: Browser
+    @State private var hovering = false
+    @Environment(\.greys) private var greys
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f
+    }()
+
+    var body: some View {
+        Button {
+            _ = browser.open(ghost.url, foreground: true)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.uturn.backward.circle")
+                    .font(.system(size: 12))
+                    .foregroundStyle(greys.muted)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(ghost.title.isEmpty ? "Closed Tab" : ghost.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(1)
+                    if let host = ghost.url.host() {
+                        Text(host)
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(greys.muted)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+                Text(Self.relativeFormatter.localizedString(for: ghost.at, relativeTo: Date()))
+                    .font(.system(size: 10))
+                    .foregroundStyle(greys.muted)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(hovering ? greys.hover.opacity(0.65) : .clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .contextMenu {
+            Button("Restore Tab") { _ = browser.open(ghost.url, foreground: true) }
+            Button("Open in Split View") {
+                if let active = browser.active {
+                    browser.openLinkBeside(ghost.url, from: active, onLeft: false)
+                } else {
+                    _ = browser.open(ghost.url, foreground: true)
+                }
+            }
+        }
     }
 }
