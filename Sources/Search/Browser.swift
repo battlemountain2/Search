@@ -436,6 +436,10 @@ final class Browser: NSObject, ObservableObject {
     /// Sidebar Library drawer section (Downloads, Media, History, Archive); nil shows normal tabs.
     @Published var librarySection: LibrarySection? = nil
 
+    var effectiveColumnWidth: CGFloat {
+        (librarySection != nil && !prefs.iconColumn) ? max(prefs.columnWidth, LibraryDrawer.preferredWidth) : prefs.columnWidth
+    }
+
     func toggleLibrary(_ section: LibrarySection = .downloads) {
         withAnimation(Motion.quick) {
             if librarySection == section {
