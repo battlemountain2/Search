@@ -748,6 +748,12 @@ struct ContentView: View {
                     .zIndex(10)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
+
+            if let preview = browser.mediaPreview {
+                MediaPreviewOverlay(browser: browser, preview: preview)
+                    .zIndex(50)
+                    .transition(.opacity)
+            }
         }
         .ignoresSafeArea()
         .background { fullscreenWatch }

@@ -433,8 +433,15 @@ final class Browser: NSObject, ObservableObject {
         didSet { if !launching { launchGroup = nil } }
     }
     /// The group the floating field was raised for, by New Tab in Group
-    /// Sidebar Library drawer section (Downloads, Media, History, Archive); nil shows normal tabs.
+    /// Sidebar Library drawer section (Downloads, Media, Bookmarks, History, Spaces, Extensions); nil shows normal tabs.
     @Published var librarySection: LibrarySection? = nil
+
+    struct MediaPreviewState: Equatable {
+        var items: [URL]
+        var index: Int
+        var current: URL? { items.indices.contains(index) ? items[index] : nil }
+    }
+    @Published var mediaPreview: MediaPreviewState? = nil
 
     var effectiveColumnWidth: CGFloat {
         (librarySection != nil && !prefs.iconColumn) ? max(prefs.columnWidth, LibraryDrawer.preferredWidth) : prefs.columnWidth

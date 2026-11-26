@@ -303,6 +303,15 @@ final class Bookmarks {
         return add(url, title: tab.title)
     }
 
+    @discardableResult
+    func addFolder(_ title: String) -> Bookmark {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let folder = Bookmark.folder(trimmed.isEmpty ? "New Folder" : trimmed, [])
+        roots.append(folder)
+        save()
+        return folder
+    }
+
     /// Toggle bookmark state for a tab.
     func toggle(_ tab: Tab) {
         guard let url = tab.address else { return }

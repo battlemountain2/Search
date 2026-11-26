@@ -49,6 +49,8 @@ struct LibraryDrawer: View {
     @AppStorage("library.media.pictures") private var includePictures = true
     @AppStorage("library.media.documents") private var includeDocuments = false
     @State private var archiveExpanded = false
+    @State private var addingFolder = false
+    @State private var newFolderName = ""
     @State private var mediaItems: [MediaFile] = []
     @State private var loadingMedia = false
     @State private var thumbnails: [URL: NSImage] = [:]
@@ -225,15 +227,33 @@ struct LibraryDrawer: View {
                 .fixedSize()
                 .help("Filter Media")
             } else if section == .bookmarks {
-                Button { browser.lead(to: InternalPage(.bookmarks)) } label: {
-                    Image(systemName: "arrow.up.right.square")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Palette.ink.opacity(0.75))
-                        .frame(width: 28, height: 28)
-                        .background(greys.hover.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                HStack(spacing: 4) {
+                    Menu {
+                        if let tab = browser.active, tab.isWeb, let url = tab.address {
+                            Button("Bookmark Current Tab") {
+                                _ = browser.bookmarks.add(url, title: tab.title)
+                            }
+                        }
+                        Button("New Folder…") {
+                            newFolderName = ""
+                            addingFolder = true
+                        }
+                        Divider()
+                        Button("Open Bookmarks Manager") {
+                            browser.lead(to: InternalPage(.bookmarks))
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(Palette.ink.opacity(0.75))
+                            .frame(width: 28, height: 28)
+                            .background(greys.hover.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("Add Bookmark or Folder")
                 }
-                .buttonStyle(.plain)
-                .help("Open Bookmarks Manager")
             } else if section == .history {
                 Button { browser.lead(to: InternalPage(.history)) } label: {
                     Image(systemName: "arrow.up.right.square")
@@ -362,11 +382,18 @@ struct LibraryDrawer: View {
         } else {
             let grouped = groupByDay(items, date: \.modified)
             let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
+            let allURLs = items.map(\.url)
             ForEach(grouped, id: \.title) { bucket in
                 sectionHeading(bucket.title)
                 LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(bucket.items) { item in
                         MediaGridCard(item: item, thumbnail: thumbnails[item.url]) {
+                            if let idx = allURLs.firstIndex(of: item.url) {
+                                withAnimation(Motion.quick) {
+                                    browser.mediaPreview = Browser.MediaPreviewState(items: allURLs, index: idx)
+                                }
+                            }
+                        } openInTab: {
                             _ = browser.open(item.url, foreground: true)
                         } reveal: {
                             NSWorkspace.shared.activateFileViewerSelecting([item.url])
@@ -385,9 +412,35 @@ struct LibraryDrawer: View {
 
     @ViewBuilder
     private var bookmarksList: some View {
+        if addingFolder {
+            HStack(spacing: 6) {
+                Image(systemName: "folder.badge.plus")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.accentColor)
+                TextField("Folder name…", text: $newFolderName)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+                    .onSubmit {
+                        _ = browser.bookmarks.addFolder(newFolderName)
+                        addingFolder = false
+                    }
+                    .onExitCommand { addingFolder = false }
+                Button("Add") {
+                    _ = browser.bookmarks.addFolder(newFolderName)
+                    addingFolder = false
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(greys.hover.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let roots = browser.bookmarks.roots
-        if roots.isEmpty {
+        if roots.isEmpty && !addingFolder {
             emptyState("No bookmarks yet", icon: "bookmark")
         } else if !needle.isEmpty {
             let matches = flattenBookmarks(roots).filter {
@@ -397,7 +450,7 @@ struct LibraryDrawer: View {
                 emptyState("No matching bookmarks", icon: "bookmark")
             } else {
                 ForEach(matches) { item in
-                    BookmarkLibraryRow(item: item, browser: browser)
+                    BookmarkLibraryRow(item: item, browser: browser, canMoveUp: false)
                 }
             }
         } else {
@@ -914,6 +967,7 @@ private struct MediaGridCard: View {
     let item: MediaFile
     let thumbnail: NSImage?
     let open: () -> Void
+    let openInTab: () -> Void
     let reveal: () -> Void
     @State private var hovering = false
     @Environment(\.greys) private var greys
@@ -1004,7 +1058,8 @@ private struct MediaGridCard: View {
             return provider
         }
         .contextMenu {
-            Button("Open") { open() }
+            Button("Quick Preview") { open() }
+            Button("Open in New Tab") { openInTab() }
             Button("Show in Finder") { reveal() }
         }
     }
@@ -1177,34 +1232,85 @@ private struct BookmarkLibraryNode: View {
     let browser: Browser
     let depth: Int
     @State private var expanded = false
+    @State private var hovering = false
+    @State private var dropTargeted = false
+    @State private var renaming = false
+    @State private var draftTitle = ""
     @Environment(\.greys) private var greys
 
     var body: some View {
         if item.isFolder {
             VStack(alignment: .leading, spacing: 2) {
-                Button {
-                    withAnimation(Motion.quick) { expanded.toggle() }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 9.5, weight: .semibold))
-                            .foregroundStyle(greys.muted)
-                            .frame(width: 10)
-                        Image(systemName: "folder")
-                            .font(.system(size: 12))
-                            .foregroundStyle(greys.muted)
-                        Text(item.label)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Palette.ink)
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
+                HStack(spacing: 6) {
+                    Button {
+                        withAnimation(Motion.quick) { expanded.toggle() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                                .font(.system(size: 9.5, weight: .semibold))
+                                .foregroundStyle(greys.muted)
+                                .frame(width: 10)
+                            Image(systemName: dropTargeted ? "folder.fill" : "folder")
+                                .font(.system(size: 12))
+                                .foregroundStyle(dropTargeted ? Color.accentColor : greys.muted)
+                            if renaming {
+                                TextField("Folder name", text: $draftTitle)
+                                    .textFieldStyle(.plain)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .onSubmit {
+                                        BookmarkCard.rename(item.id, draftTitle, in: browser.bookmarks)
+                                        renaming = false
+                                    }
+                                    .onExitCommand { renaming = false }
+                            } else {
+                                Text(item.label)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(Palette.ink)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
                     }
-                    .padding(.leading, CGFloat(depth) * 12 + 8)
-                    .padding(.trailing, 8)
-                    .padding(.vertical, 5)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                .padding(.leading, CGFloat(depth) * 12 + 8)
+                .padding(.trailing, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(dropTargeted ? Color.accentColor.opacity(0.18) : (hovering ? greys.hover.opacity(0.65) : .clear))
+                )
+                .onHover { hovering = $0 }
+                .onDrag {
+                    NSItemProvider(object: item.id.uuidString as NSString)
+                }
+                .onDrop(of: [.text], isTargeted: $dropTargeted) { providers in
+                    guard let first = providers.first else { return false }
+                    _ = first.loadObject(ofClass: NSString.self) { str, _ in
+                        guard let raw = str as? String, let id = UUID(uuidString: raw), id != item.id else { return }
+                        DispatchQueue.main.async {
+                            browser.bookmarks.move(id, into: item.id)
+                            withAnimation(Motion.quick) { expanded = true }
+                        }
+                    }
+                    return true
+                }
+                .contextMenu {
+                    Button("Rename…") {
+                        draftTitle = item.label
+                        renaming = true
+                    }
+                    if depth > 0 {
+                        Button("Move to Top Level") {
+                            browser.bookmarks.move(item.id, into: nil)
+                        }
+                    }
+                    Divider()
+                    Button("Delete Folder", role: .destructive) {
+                        browser.bookmarks.remove(item.id)
+                    }
+                }
 
                 if expanded, let children = item.children {
                     ForEach(children) { child in
@@ -1213,7 +1319,7 @@ private struct BookmarkLibraryNode: View {
                 }
             }
         } else {
-            BookmarkLibraryRow(item: item, browser: browser)
+            BookmarkLibraryRow(item: item, browser: browser, canMoveUp: depth > 0)
                 .padding(.leading, CGFloat(depth) * 12)
         }
     }
@@ -1222,12 +1328,15 @@ private struct BookmarkLibraryNode: View {
 private struct BookmarkLibraryRow: View {
     let item: Bookmark
     let browser: Browser
+    var canMoveUp = false
     @State private var hovering = false
+    @State private var renaming = false
+    @State private var draftTitle = ""
     @Environment(\.greys) private var greys
 
     var body: some View {
         Button {
-            if let url = item.address { _ = browser.open(url, foreground: true) }
+            if !renaming, let url = item.address { _ = browser.open(url, foreground: true) }
         } label: {
             HStack(spacing: 8) {
                 if let url = item.address {
@@ -1240,10 +1349,21 @@ private struct BookmarkLibraryRow: View {
                         .frame(width: 16, height: 16)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(item.label)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Palette.ink)
-                        .lineLimit(1)
+                    if renaming {
+                        TextField("Bookmark name", text: $draftTitle)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12, weight: .medium))
+                            .onSubmit {
+                                BookmarkCard.rename(item.id, draftTitle, in: browser.bookmarks)
+                                renaming = false
+                            }
+                            .onExitCommand { renaming = false }
+                    } else {
+                        Text(item.label)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Palette.ink)
+                            .lineLimit(1)
+                    }
                     if let host = item.host {
                         Text(host)
                             .font(.system(size: 10.5))
@@ -1252,7 +1372,7 @@ private struct BookmarkLibraryRow: View {
                     }
                 }
                 Spacer(minLength: 0)
-                if hovering, let url = item.address {
+                if hovering, !renaming, let url = item.address {
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(url.absoluteString, forType: .string)
@@ -1275,6 +1395,9 @@ private struct BookmarkLibraryRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .onDrag {
+            NSItemProvider(object: item.id.uuidString as NSString)
+        }
         .contextMenu {
             if let url = item.address {
                 Button("Open in New Tab") { _ = browser.open(url, foreground: true) }
@@ -1289,6 +1412,19 @@ private struct BookmarkLibraryRow: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(url.absoluteString, forType: .string)
                 }
+                Divider()
+            }
+            Button("Rename…") {
+                draftTitle = item.label
+                renaming = true
+            }
+            if canMoveUp {
+                Button("Move to Top Level") {
+                    browser.bookmarks.move(item.id, into: nil)
+                }
+            }
+            Button("Remove Bookmark", role: .destructive) {
+                browser.bookmarks.remove(item.id)
             }
         }
     }
@@ -1355,6 +1491,218 @@ private struct ExtensionsLibraryList: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
             }
+        }
+    }
+}
+
+/// Zen-style Quick Preview lightbox overlay for Media items (images, PDFs, videos).
+struct MediaPreviewOverlay: View {
+    @ObservedObject var browser: Browser
+    let preview: Browser.MediaPreviewState
+    @State private var fullImage: NSImage?
+    @State private var modifiedDate: Date?
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f
+    }()
+
+    private var url: URL? { preview.current }
+    private var ext: String { url?.pathExtension.lowercased() ?? "" }
+    private var isImage: Bool { ["png", "jpg", "jpeg", "webp", "gif", "heic", "tiff", "tif", "bmp"].contains(ext) }
+    private var isPDF: Bool { ext == "pdf" }
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.48)
+                .ignoresSafeArea()
+                .onTapGesture { dismiss() }
+
+            VStack(spacing: 0) {
+                header
+                Rectangle().fill(Palette.hairline).frame(height: 1)
+                previewContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(16)
+            }
+            .frame(maxWidth: 740, maxHeight: 620)
+            .background(Palette.ground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Palette.hairline, lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.4), radius: 32, y: 12)
+            .padding(36)
+        }
+        .onAppear { loadCurrent() }
+        .onChange(of: preview.index) { _, _ in loadCurrent() }
+        .onExitCommand { dismiss() }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Close (Esc)")
+
+            HStack(spacing: 2) {
+                Button { step(-1) } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(preview.index > 0 ? Palette.ink : Palette.muted.opacity(0.4))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .disabled(preview.index <= 0)
+
+                Button { step(1) } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(preview.index + 1 < preview.items.count ? Palette.ink : Palette.muted.opacity(0.4))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .disabled(preview.index + 1 >= preview.items.count)
+            }
+
+            if let url {
+                Text(url.lastPathComponent)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+                    .lineLimit(1)
+                if let modifiedDate {
+                    Text(Self.relativeFormatter.localizedString(for: modifiedDate, relativeTo: Date()))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.muted)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            if let url {
+                Menu {
+                    Button("Open in New Tab") {
+                        _ = browser.open(url, foreground: true)
+                        dismiss()
+                    }
+                    Button("Show in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                    }
+                    Button("Copy File Path") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(url.path, forType: .string)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.muted)
+                        .frame(width: 26, height: 26)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    Text("Open in Preview")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Palette.ink)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Palette.wash, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    @ViewBuilder
+    private var previewContent: some View {
+        if let url {
+            if isImage {
+                if let fullImage {
+                    Image(nsImage: fullImage)
+                        .resizable()
+                        .scaledToFit()
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                } else {
+                    ProgressView().controlSize(.small)
+                }
+            } else if isPDF {
+                PDFKitPreviewView(url: url)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            } else {
+                VStack(spacing: 12) {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 72, height: 72)
+                    Text(url.lastPathComponent)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Palette.ink)
+                    Button("Open in Preview") {
+                        NSWorkspace.shared.open(url)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+    }
+
+    private func step(_ delta: Int) {
+        let next = preview.index + delta
+        guard preview.items.indices.contains(next) else { return }
+        browser.mediaPreview?.index = next
+    }
+
+    private func dismiss() {
+        withAnimation(Motion.quick) {
+            browser.mediaPreview = nil
+        }
+    }
+
+    private func loadCurrent() {
+        fullImage = nil
+        modifiedDate = nil
+        guard let url else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let vals = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+            let img = isImage ? NSImage(contentsOf: url) : nil
+            DispatchQueue.main.async {
+                if browser.mediaPreview?.current == url {
+                    modifiedDate = vals?.contentModificationDate
+                    fullImage = img
+                }
+            }
+        }
+    }
+}
+
+private struct PDFKitPreviewView: NSViewRepresentable {
+    let url: URL
+
+    func makeNSView(context: Context) -> PDFView {
+        let view = PDFView()
+        view.autoScales = true
+        view.displayMode = .singlePageContinuous
+        view.backgroundColor = .clear
+        view.document = PDFDocument(url: url)
+        return view
+    }
+
+    func updateNSView(_ nsView: PDFView, context: Context) {
+        if nsView.document?.documentURL != url {
+            nsView.document = PDFDocument(url: url)
         }
     }
 }
