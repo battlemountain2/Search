@@ -74,20 +74,12 @@ enum YouTubeAds {
         "youtube-nocookie.com", "www.youtube-nocookie.com",
     ]
 
-    /// Lightweight CSS compositing hints for YouTube Theater Mode: promotes
-    /// the HTML5 video element to its own GPU layer (without trapping fixed
-    /// overlays in wrapper transforms) and skips heavy cinematics transitions.
+    /// Lightweight CSS hint for YouTube Theater Mode: skips heavy ambient
+    /// cinematics canvas transitions while leaving WebKit's native `<video>`
+    /// hardware presentation layer untouched.
     static func theaterPolishScript(for host: String?) -> WKUserScript? {
         guard let host, ["youtube.com", "www.youtube.com", "m.youtube.com"].contains(host) else { return nil }
         let css = """
-        .html5-video-player video {
-            transform: translateZ(0);
-            backface-visibility: hidden;
-        }
-        ytd-watch-flexy[theater] #player-theater-container,
-        ytd-watch-flexy[theater] #full-bleed-container {
-            contain: layout style;
-        }
         ytd-watch-flexy #cinematics,
         ytd-watch-flexy #cinematics canvas {
             transition: none !important;

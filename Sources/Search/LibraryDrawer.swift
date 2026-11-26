@@ -116,6 +116,13 @@ struct LibraryDrawer: View {
         }
         .onChange(of: includePictures) { _, _ in if section == .media { loadMedia() } }
         .onChange(of: includeDocuments) { _, _ in if section == .media { loadMedia() } }
+        .onChange(of: draggingBookmarkID) { _, id in
+            if id == nil {
+                dropTarget = nil
+                folderExpandWork?.cancel()
+                folderExpandWork = nil
+            }
+        }
     }
 
     // MARK: - Left Rail
@@ -356,23 +363,31 @@ struct LibraryDrawer: View {
     @ViewBuilder
     private var listBody: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 4) {
-                switch section {
-                case .downloads:
-                    downloadsList
-                case .media:
-                    mediaList
-                case .bookmarks:
-                    bookmarksList
-                case .history:
-                    historyList
-                case .spaces:
-                    spacesList
-                case .extensions:
-                    if #available(macOS 15.4, *) {
-                        ExtensionsLibraryList(query: query, browser: browser)
-                    } else {
-                        emptyState("Extensions require macOS 15.4+", icon: "puzzlepiece.extension")
+            Group {
+                if section == .bookmarks {
+                    VStack(alignment: .leading, spacing: 0) {
+                        bookmarksList
+                    }
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        switch section {
+                        case .downloads:
+                            downloadsList
+                        case .media:
+                            mediaList
+                        case .bookmarks:
+                            EmptyView()
+                        case .history:
+                            historyList
+                        case .spaces:
+                            spacesList
+                        case .extensions:
+                            if #available(macOS 15.4, *) {
+                                ExtensionsLibraryList(query: query, browser: browser)
+                            } else {
+                                emptyState("Extensions require macOS 15.4+", icon: "puzzlepiece.extension")
+                            }
+                        }
                     }
                 }
             }
@@ -1460,7 +1475,7 @@ private func settleBookmarkDrag(
     dropTarget: Binding<BookmarkDropTarget?>,
     expandWork: Binding<DispatchWorkItem?>
 ) {
-    Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { timer in
+    Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { timer in
         guard NSEvent.pressedMouseButtons & 1 == 0 else { return }
         timer.invalidate()
         MainActor.assumeIsolated {
@@ -1486,7 +1501,7 @@ private struct BookmarkNodeDropDelegate: DropDelegate {
     var onSpringOpen: (() -> Void)? = nil
 
     private var allows: Bool {
-        guard let moved = draggingID else { return true }
+        guard let moved = draggingID else { return false }
         return moved != targetID && !(browser.bookmarks.path(to: targetID) ?? []).contains { $0.id == moved }
     }
 
@@ -1518,12 +1533,15 @@ private struct BookmarkNodeDropDelegate: DropDelegate {
     }
 
     func dropEntered(info: DropInfo) {
-        guard allows else { updateAim(nil); return }
+        guard allows, NSEvent.pressedMouseButtons & 1 != 0 else {
+            updateAim(nil)
+            return
+        }
         updateAim(BookmarkDropTarget(targetID: targetID, parentID: parentID, index: index, placement: placement(for: info)))
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        guard allows else {
+        guard allows, NSEvent.pressedMouseButtons & 1 != 0 else {
             updateAim(nil)
             return DropProposal(operation: .forbidden)
         }
@@ -1538,9 +1556,14 @@ private struct BookmarkNodeDropDelegate: DropDelegate {
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        guard allows else { return false }
         let place = placement(for: info)
+        let allowed = allows
         updateAim(nil)
+        dropTarget = nil
+        guard allowed else {
+            draggingID = nil
+            return false
+        }
 
         let applyMove: (Bookmark.ID) -> Void = { movedID in
             guard movedID != targetID else { return }
@@ -1551,6 +1574,8 @@ private struct BookmarkNodeDropDelegate: DropDelegate {
                     browser.bookmarks.move(movedID, into: targetID, at: nil)
                 case .before:
                     browser.bookmarks.move(movedID, into: parentID, at: index)
+                case .after where isFolder && isExpanded:
+                    browser.bookmarks.move(movedID, into: targetID, at: 0)
                 case .after:
                     browser.bookmarks.move(movedID, into: parentID, at: index + 1)
                 }
@@ -1563,11 +1588,15 @@ private struct BookmarkNodeDropDelegate: DropDelegate {
             return true
         }
 
-        guard let provider = info.itemProviders(for: [.plainText, .text]).first else { return false }
+        guard let provider = info.itemProviders(for: [.plainText, .text]).first else {
+            draggingID = nil
+            return false
+        }
         _ = provider.loadObject(ofClass: NSString.self) { str, _ in
             guard let raw = str as? String, let id = UUID(uuidString: raw) else { return }
             DispatchQueue.main.async {
                 draggingID = nil
+                dropTarget = nil
                 applyMove(id)
             }
         }
@@ -1583,7 +1612,7 @@ private struct BookmarkEndDropZone: View {
     @Binding var dropTarget: BookmarkDropTarget?
 
     private var active: Bool {
-        dropTarget?.targetID == nil && dropTarget?.parentID == parentID
+        draggingID != nil && dropTarget?.targetID == nil && dropTarget?.parentID == parentID
     }
 
     var body: some View {
@@ -1617,15 +1646,23 @@ private struct BookmarkEndDropDelegate: DropDelegate {
     @Binding var dropTarget: BookmarkDropTarget?
 
     func validateDrop(info: DropInfo) -> Bool {
-        draggingID != nil || info.hasItemsConforming(to: [.plainText, .text])
+        draggingID != nil
     }
 
     func dropEntered(info: DropInfo) {
+        guard draggingID != nil, NSEvent.pressedMouseButtons & 1 != 0 else {
+            dropTarget = nil
+            return
+        }
         dropTarget = BookmarkDropTarget(targetID: nil, parentID: parentID, index: count, placement: .after)
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
+        guard draggingID != nil, NSEvent.pressedMouseButtons & 1 != 0 else {
+            dropTarget = nil
+            return DropProposal(operation: .forbidden)
+        }
+        return DropProposal(operation: .move)
     }
 
     func dropExited(info: DropInfo) {
@@ -1647,11 +1684,15 @@ private struct BookmarkEndDropDelegate: DropDelegate {
             finishMove(movedID)
             return true
         }
-        guard let provider = info.itemProviders(for: [.plainText, .text]).first else { return false }
+        guard let provider = info.itemProviders(for: [.plainText, .text]).first else {
+            draggingID = nil
+            return false
+        }
         _ = provider.loadObject(ofClass: NSString.self) { str, _ in
             guard let raw = str as? String, let id = UUID(uuidString: raw) else { return }
             DispatchQueue.main.async {
                 draggingID = nil
+                dropTarget = nil
                 finishMove(id)
             }
         }
@@ -1661,10 +1702,15 @@ private struct BookmarkEndDropDelegate: DropDelegate {
 
 private struct BookmarkInsertionLine: View {
     var body: some View {
-        Capsule()
-            .fill(Color.accentColor.opacity(0.9))
-            .frame(height: 2)
-            .padding(.horizontal, 8)
+        HStack(spacing: 0) {
+            Circle()
+                .fill(Color.accentColor.opacity(0.9))
+                .frame(width: 5, height: 5)
+            Capsule()
+                .fill(Color.accentColor.opacity(0.85))
+                .frame(height: 1.5)
+        }
+        .padding(.horizontal, 6)
     }
 }
 
@@ -1685,12 +1731,18 @@ private struct BookmarkLibraryNode: View {
     @Environment(\.greys) private var greys
 
     private var dropPlacement: BookmarkDropPlacement? {
-        dropTarget?.targetID == item.id ? dropTarget?.placement : nil
+        draggingID != nil && dropTarget?.targetID == item.id ? dropTarget?.placement : nil
+    }
+
+    private var rowOpacity: Double {
+        if draggingID == item.id { return 0.24 }
+        if draggingID != nil && dropPlacement == nil { return 0.56 }
+        return 1
     }
 
     var body: some View {
         if item.isFolder {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9.5, weight: .semibold))
@@ -1727,18 +1779,25 @@ private struct BookmarkLibraryNode: View {
                 .padding(.vertical, 5)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(dropPlacement == .into ? Color.accentColor.opacity(0.18) : (hovering ? greys.hover.opacity(0.65) : .clear))
+                        .fill(dropPlacement == .into ? greys.wash : (hovering ? greys.hover.opacity(0.65) : .clear))
                 )
+                .overlay {
+                    if dropPlacement == .into {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1)
+                            .allowsHitTesting(false)
+                    }
+                }
                 .overlay(alignment: dropPlacement == .before ? .top : .bottom) {
                     if dropPlacement == .before || dropPlacement == .after {
                         BookmarkInsertionLine()
-                            .padding(.leading, CGFloat(depth) * 14)
-                            .offset(y: dropPlacement == .before ? -1.5 : 1.5)
+                            .padding(.leading, CGFloat(depth + (dropPlacement == .after && expanded ? 1 : 0)) * 14)
+                            .offset(y: dropPlacement == .before ? -1 : 1)
                             .allowsHitTesting(false)
                     }
                 }
                 .contentShape(Rectangle())
-                .opacity(draggingID == item.id ? 0.35 : 1)
+                .opacity(rowOpacity)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowHeight = max($0, 1) }
                 .onTapGesture {
                     guard !renaming else { return }
@@ -1747,6 +1806,7 @@ private struct BookmarkLibraryNode: View {
                 .onHover { hovering = $0 }
                 .animation(Motion.quick, value: hovering)
                 .animation(Motion.quick, value: dropPlacement)
+                .animation(Motion.quick, value: draggingID)
                 .onDrag {
                     draggingID = item.id
                     settleBookmarkDrag(draggingID: $draggingID, dropTarget: $dropTarget, expandWork: $expandWork)
@@ -1803,6 +1863,7 @@ private struct BookmarkLibraryNode: View {
                 item: item,
                 browser: browser,
                 canMoveUp: depth > 0,
+                isDropTarget: dropPlacement != nil,
                 draggingID: $draggingID,
                 dropTarget: $dropTarget,
                 expandWork: $expandWork
@@ -1812,7 +1873,7 @@ private struct BookmarkLibraryNode: View {
                 if dropPlacement == .before || dropPlacement == .after {
                     BookmarkInsertionLine()
                         .padding(.leading, CGFloat(depth) * 14)
-                        .offset(y: dropPlacement == .before ? -1.5 : 1.5)
+                        .offset(y: dropPlacement == .before ? -1 : 1)
                         .allowsHitTesting(false)
                 }
             }
@@ -1838,6 +1899,7 @@ private struct BookmarkLibraryRow: View {
     let item: Bookmark
     let browser: Browser
     var canMoveUp = false
+    var isDropTarget = false
     @Binding var draggingID: Bookmark.ID?
     @Binding var dropTarget: BookmarkDropTarget?
     @Binding var expandWork: DispatchWorkItem?
@@ -1845,6 +1907,12 @@ private struct BookmarkLibraryRow: View {
     @State private var renaming = false
     @State private var draftTitle = ""
     @Environment(\.greys) private var greys
+
+    private var rowOpacity: Double {
+        if draggingID == item.id { return 0.24 }
+        if draggingID != nil && !isDropTarget { return 0.56 }
+        return 1
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1881,7 +1949,7 @@ private struct BookmarkLibraryRow: View {
                 }
             }
             Spacer(minLength: 0)
-            if hovering, !renaming, let url = item.address {
+            if hovering, !renaming, draggingID == nil, let url = item.address {
                 Button {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(url.absoluteString, forType: .string)
@@ -1898,15 +1966,16 @@ private struct BookmarkLibraryRow: View {
         .padding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(hovering ? greys.hover.opacity(0.65) : .clear)
+                .fill(hovering && draggingID == nil ? greys.hover.opacity(0.65) : .clear)
         )
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .opacity(draggingID == item.id ? 0.35 : 1)
+        .opacity(rowOpacity)
         .onTapGesture {
             if !renaming, let url = item.address { _ = browser.open(url, foreground: true) }
         }
         .onHover { hovering = $0 }
         .animation(Motion.quick, value: hovering)
+        .animation(Motion.quick, value: draggingID)
         .onDrag {
             draggingID = item.id
             settleBookmarkDrag(draggingID: $draggingID, dropTarget: $dropTarget, expandWork: $expandWork)

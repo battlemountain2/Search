@@ -684,13 +684,10 @@ final class Tab: ObservableObject, Identifiable {
     /// True while background JavaScript execution and timers are throttled.
     private(set) var throttled = false
 
-    /// Instruct WebKit to throttle background timers when the tab is inactive and not making noise.
+    /// Tracks background inactive state for UI status (WebKit throttles hidden tabs natively).
     func throttle(_ enable: Bool) {
         guard enable != throttled else { return }
         throttled = enable
-        guard let built else { return }
-        let script = enable ? BackgroundThrottler.throttle : BackgroundThrottler.resume
-        built.evaluateJavaScript(script, in: nil, in: .page) { _ in }
     }
     /// Paused from the player at the foot of the sidebar, to be played again
     /// from there (see Player.swift).

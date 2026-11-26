@@ -114,20 +114,11 @@ struct ZenTopBar: View {
                             browser.inlineEdit = true
                         }
                     } label: {
-                        HStack(spacing: 5) {
-                            if tab.isWeb, !tab.isBlank, let icon = tab.icon {
-                                Image(nsImage: icon)
-                                    .resizable()
-                                    .interpolation(.high)
-                                    .frame(width: 12, height: 12)
-                                    .clipShape(RoundedRectangle(cornerRadius: 2.5, style: .continuous))
-                            }
-                            Text(displayDomain(for: tab))
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(tab.isBlank ? Palette.muted : Palette.ink)
-                                .lineLimit(1)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .center)
+                        Text(displayDomain(for: tab))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(tab.isBlank ? Palette.muted : Palette.ink)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .center)
                     }
                     .buttonStyle(.plain)
                     .focusable(false)
@@ -354,13 +345,13 @@ struct ZenTopBar: View {
             }
         } label: {
             Image(systemName: isInstalled ? "arrow.up.forward.app.fill" : "arrow.down.app")
-                .font(.system(size: 9.5, weight: isInstalled ? .semibold : .medium))
-                .foregroundStyle(isInstalled ? Color.accentColor : Palette.muted)
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundStyle(isInstalled ? Palette.ink.opacity(0.8) : Palette.muted)
                 .frame(width: 17, height: 17)
-                .background(isInstalled ? Color.accentColor.opacity(0.16) : Palette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 3.5))
+                .background(Palette.ink.opacity(isInstalled ? 0.08 : 0.05), in: RoundedRectangle(cornerRadius: 3.5))
                 .overlay(
                     RoundedRectangle(cornerRadius: 3.5)
-                        .strokeBorder(isInstalled ? Color.accentColor.opacity(0.3) : Color.clear, lineWidth: 0.5)
+                        .strokeBorder(isInstalled ? Palette.hairline.opacity(0.75) : Color.clear, lineWidth: 0.5)
                 )
                 .contentShape(Rectangle())
         }
@@ -391,302 +382,175 @@ struct UrlToolboxView: View {
     @State private var copiedLink = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // 1. Quick Actions Section
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Quick actions")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Palette.muted)
-
-                HStack(spacing: 6) {
-                    // Share / Clean Copy
-                    ToolboxPillButton(
-                        icon: copiedLink ? "checkmark" : "square.and.arrow.up",
-                        label: copiedLink ? "Copied" : "Share",
-                        iconColor: copiedLink ? Palette.safe : nil
-                    ) {
-                        if let url = tab.address {
-                            CleanLink.copy(url)
-                            copiedLink = true
-                            Haptics.tap()
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copiedLink = false }
-                        }
-                    }
-
-                    // Screenshot / Capture
-                    ToolboxPillButton(
-                        icon: "camera",
-                        label: "Capture"
-                    ) {
-                        Haptics.click()
-                        browser.toggleSnap()
-                        onDismiss()
-                    }
-
-                    // Hide Page Element (Curtain / Veiling)
-                    ToolboxPillButton(
-                        icon: browser.veiling ? "eye.slash.fill" : "eye.slash",
-                        label: "Hide",
-                        iconColor: browser.veiling ? Color.accentColor : nil
-                    ) {
+        VStack(alignment: .leading, spacing: 0) {
+            // 1. Quick Actions Row
+            HStack(spacing: 4) {
+                ToolboxPillButton(
+                    icon: copiedLink ? "checkmark" : "square.and.arrow.up",
+                    label: copiedLink ? "Copied" : "Share",
+                    iconColor: copiedLink ? Palette.safe : nil
+                ) {
+                    if let url = tab.address {
+                        CleanLink.copy(url)
+                        copiedLink = true
                         Haptics.tap()
-                        onDismiss()
-                        DispatchQueue.main.async {
-                            browser.toggleHiding()
-                        }
-                    }
-
-                    // Bookmark
-                    let bookmarked = tab.address.map { browser.bookmarks.contains($0) } ?? false
-                    ToolboxPillButton(
-                        icon: bookmarked ? "bookmark.fill" : "bookmark",
-                        label: bookmarked ? "Saved" : "Save",
-                        iconColor: bookmarked ? Color.yellow : nil
-                    ) {
-                        Haptics.tap()
-                        browser.bookmarks.toggle(tab)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copiedLink = false }
                     }
                 }
-            }
 
-            // 2. Extensions Section
+                ToolboxPillButton(icon: "camera", label: "Capture") {
+                    Haptics.click()
+                    browser.toggleSnap()
+                    onDismiss()
+                }
+
+                ToolboxPillButton(
+                    icon: browser.veiling ? "eye.slash.fill" : "eye.slash",
+                    label: "Hide",
+                    isActive: browser.veiling
+                ) {
+                    Haptics.tap()
+                    onDismiss()
+                    DispatchQueue.main.async { browser.toggleHiding() }
+                }
+
+                let bookmarked = tab.address.map { browser.bookmarks.contains($0) } ?? false
+                ToolboxPillButton(
+                    icon: bookmarked ? "bookmark.fill" : "bookmark",
+                    label: bookmarked ? "Saved" : "Save",
+                    isActive: bookmarked
+                ) {
+                    Haptics.tap()
+                    browser.bookmarks.toggle(tab)
+                }
+            }
+            .padding(.horizontal, MenuMetrics.text - MenuMetrics.inset)
+            .padding(.top, 6)
+            .padding(.bottom, 6)
+
+            // 2. Extensions Strip
             if #available(macOS 15.4, *) {
                 let extensions = Extensions.shared
                 if !extensions.installed.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Extensions")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Palette.muted)
+                    PopoverSeparator()
 
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(extensions.buttons) { button in
-                                    Button {
-                                        Haptics.tap()
-                                        extensions.press(button.id, in: browser)
-                                        onDismiss()
-                                    } label: {
-                                        VStack(spacing: 3) {
-                                            ExtensionIcon(button: button, size: 16)
-                                                .frame(width: 32, height: 32)
-                                                .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                                                .overlay(
-                                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                                        .strokeBorder(Palette.hairline.opacity(0.6), lineWidth: 0.5)
-                                                )
-                                            Text(button.name)
-                                                .font(.system(size: 9))
-                                                .foregroundStyle(Palette.ink)
-                                                .lineLimit(1)
-                                                .frame(width: 48)
-                                        }
-                                    }
-                                    .buttonStyle(.plain)
-                                    .focusable(false)
-                                    .focusEffectDisabled()
-                                }
+                    PopoverSectionHeader(title: "Extensions")
 
-                                // Manage Extensions (+) button
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(extensions.buttons) { button in
                                 Button {
                                     Haptics.tap()
-                                    browser.lead(to: InternalPage(.settings, "extensions"))
+                                    extensions.press(button.id, in: browser)
                                     onDismiss()
                                 } label: {
                                     VStack(spacing: 3) {
-                                        Image(systemName: "plus")
-                                            .font(.system(size: 12, weight: .semibold))
-                                            .foregroundStyle(Palette.muted)
-                                            .frame(width: 32, height: 32)
-                                            .background(Palette.ink.opacity(0.035), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                                    .strokeBorder(Palette.hairline.opacity(0.6), lineWidth: 0.5)
-                                            )
-                                        Text("Manage")
-                                            .font(.system(size: 9))
-                                            .foregroundStyle(Palette.muted)
-                                            .frame(width: 48)
+                                        ExtensionIcon(button: button, size: 16)
+                                            .frame(width: 30, height: 30)
+                                            .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                        Text(button.name)
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(Color(nsColor: .labelColor))
+                                            .lineLimit(1)
+                                            .frame(width: 46)
                                     }
                                 }
                                 .buttonStyle(.plain)
                                 .focusable(false)
                                 .focusEffectDisabled()
                             }
+
+                            Button {
+                                Haptics.tap()
+                                browser.lead(to: InternalPage(.settings, "extensions"))
+                                onDismiss()
+                            } label: {
+                                VStack(spacing: 3) {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                                        .frame(width: 30, height: 30)
+                                        .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                    Text("Manage")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                                        .frame(width: 46)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .focusable(false)
+                            .focusEffectDisabled()
                         }
+                        .padding(.horizontal, MenuMetrics.text)
                     }
+                    .padding(.vertical, 4)
                 }
             }
 
-            // 3. Page Controls Section
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Page controls")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Palette.muted)
+            PopoverSeparator()
 
-                VStack(spacing: 4) {
-                    // Zoom control row
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Palette.muted)
-                            .frame(width: 22, height: 22)
-                            .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            // 3. Page Controls (Office Commun MenuMetrics rows)
+            PopoverZoomRow(browser: browser, tab: tab)
 
-                        Text("Zoom")
-                            .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(Palette.ink)
-
-                        Spacer()
-
-                        HStack(spacing: 2) {
-                            Button {
-                                Haptics.tap()
-                                let snapped = ((tab.zoom * 10).rounded() / 10) - 0.1
-                                tab.magnify(to: max(0.4, snapped))
-                            } label: {
-                                Image(systemName: "minus")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .frame(width: 22, height: 22)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .focusable(false)
-                            .focusEffectDisabled()
-
-                            Button {
-                                Haptics.tap()
-                                browser.resetZoom()
-                            } label: {
-                                Text("\(Int((tab.zoom * 100).rounded()))%")
-                                    .font(.system(size: 10.5, weight: .medium))
-                                    .monospacedDigit()
-                                    .frame(width: 40)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .focusable(false)
-                            .focusEffectDisabled()
-
-                            Button {
-                                Haptics.tap()
-                                let snapped = ((tab.zoom * 10).rounded() / 10) + 0.1
-                                tab.magnify(to: min(3.0, snapped))
-                            } label: {
-                                Image(systemName: "plus")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .frame(width: 22, height: 22)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .focusable(false)
-                            .focusEffectDisabled()
-                        }
-                        .padding(.horizontal, 2)
-                        .background(Palette.ink.opacity(0.06), in: Capsule())
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 5)
-
-                    // Reader Mode Row
-                    ToolboxSettingRow(
-                        icon: "doc.plaintext",
-                        title: "Reader View",
-                        subtitle: tab.reader ? "Clean reading mode active" : "Distraction-free article reader",
-                        actionTitle: tab.reader ? "Exit" : "Read",
-                        isActive: tab.reader
-                    ) {
-                        Haptics.tap()
-                        browser.toggleReader()
-                        onDismiss()
-                    }
-
-                    // Split View Row
-                    ToolboxSettingRow(
-                        icon: "rectangle.split.2x1",
-                        title: "Split View",
-                        subtitle: browser.prefs.splitView ? "Active side-by-side" : "Browse two tabs together",
-                        actionTitle: browser.prefs.splitView ? "Close" : "Split",
-                        isActive: browser.prefs.splitView
-                    ) {
-                        Haptics.click()
-                        browser.splitKey()
-                        onDismiss()
-                    }
-
-                    // Standalone Desktop App Row
-                    let isInstalled = PWAInstaller.isInstalled(for: tab)
-                    let pwaName = tab.pwa?.name ?? "Desktop App"
-                    ToolboxSettingRow(
-                        icon: isInstalled ? "arrow.up.forward.app.fill" : "arrow.down.app",
-                        title: isInstalled ? "Open in \(pwaName)" : "Install as Desktop App",
-                        subtitle: isInstalled ? "Dedicated app bundle in ~/Applications" : "Installs to ~/Applications with shared sign-ins & Dock icon",
-                        actionTitle: isInstalled ? "Open" : "Install"
-                    ) {
-                        Haptics.tap()
-                        if isInstalled {
-                            PWAInstaller.launch(for: tab)
-                        } else {
-                            PWAInstaller.install(for: tab, browser: browser)
-                        }
-                        onDismiss()
-                    }
-
-                    if isInstalled {
-                        Button {
-                            Haptics.tap()
-                            PWAInstaller.install(for: tab, browser: browser)
-                            onDismiss()
-                        } label: {
-                            Text("Reinstall Desktop App...")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(Palette.muted)
-                                .frame(maxWidth: .infinity, alignment: .trailing)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 2)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(6)
-                .background(Palette.ink.opacity(0.035), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Palette.hairline.opacity(0.6), lineWidth: 0.5)
-                )
+            PopoverMenuRow(
+                title: tab.reader ? "Exit Reader View" : "Reader View",
+                trailing: tab.reader ? "On" : nil
+            ) {
+                Haptics.tap()
+                browser.toggleReader()
+                onDismiss()
             }
 
-            Divider().opacity(0.25)
+            PopoverMenuRow(
+                title: browser.prefs.splitView ? "Close Split View" : "Split View",
+                trailing: browser.prefs.splitView ? "On" : nil
+            ) {
+                Haptics.click()
+                browser.splitKey()
+                onDismiss()
+            }
 
-            // 4. Bottom Bar: Security & Copy URL
-            HStack {
-                HStack(spacing: 5) {
-                    Image(systemName: tab.address?.scheme == "https" ? "lock.fill" : "globe")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(tab.address?.scheme == "https" ? Palette.safe : Palette.muted)
-                    Text(tab.address?.scheme == "https" ? "Secure Connection" : "Insecure")
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(Palette.muted)
+            let isInstalled = PWAInstaller.isInstalled(for: tab)
+            let pwaName = tab.pwa?.name ?? "Desktop App"
+            PopoverMenuRow(
+                title: isInstalled ? "Open in \(pwaName)" : "Install as Desktop App…",
+                trailing: isInstalled ? "App" : nil
+            ) {
+                Haptics.tap()
+                if isInstalled {
+                    PWAInstaller.launch(for: tab)
+                } else {
+                    PWAInstaller.install(for: tab, browser: browser)
                 }
+                onDismiss()
+            }
 
-                Spacer()
-
-                Button {
+            if isInstalled {
+                PopoverMenuRow(title: "Reinstall Desktop App…") {
                     Haptics.tap()
-                    browser.copyAddress()
-                    copiedLink = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copiedLink = false }
-                } label: {
-                    Text(copiedLink ? "Copied" : "Copy URL")
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(Color.accentColor)
+                    PWAInstaller.install(for: tab, browser: browser)
+                    onDismiss()
                 }
-                .buttonStyle(.plain)
-                .focusable(false)
-                .focusEffectDisabled()
+            }
+
+            PopoverSeparator()
+
+            PopoverMenuRow(
+                title: copiedLink ? "Copied Address" : "Copy Clean Address",
+                trailing: "⌘L"
+            ) {
+                Haptics.tap()
+                if let url = tab.address {
+                    CleanLink.copy(url)
+                } else {
+                    browser.copyAddress()
+                }
+                copiedLink = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copiedLink = false }
             }
         }
-        .padding(12)
-        .frame(width: 308)
+        .padding(.vertical, MenuMetrics.pad)
+        .frame(width: 268)
         .popoverGround()
     }
 }
@@ -728,6 +592,7 @@ private struct ToolboxPillButton: View {
     let icon: String
     let label: String
     var iconColor: Color? = nil
+    var isActive: Bool = false
     let action: () -> Void
 
     @State private var hovered = false
@@ -736,23 +601,19 @@ private struct ToolboxPillButton: View {
         Button(action: action) {
             VStack(spacing: 3) {
                 Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(iconColor ?? Palette.ink)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(iconColor ?? (isActive ? Color(nsColor: .labelColor) : Color(nsColor: .labelColor).opacity(0.85)))
                 Text(label)
-                    .font(.system(size: 9.5, weight: .medium))
-                    .foregroundStyle(Palette.muted)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
                     .lineLimit(1)
             }
-            .frame(maxWidth: .infinity, minHeight: 40)
+            .frame(maxWidth: .infinity, minHeight: 38)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(hovered ? Palette.ink.opacity(0.08) : Palette.ink.opacity(0.035))
+                RoundedRectangle(cornerRadius: MenuMetrics.highlight, style: .continuous)
+                    .fill(hovered ? Palette.ink.opacity(0.08) : (isActive ? Palette.ink.opacity(0.06) : Palette.ink.opacity(0.03)))
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Palette.hairline.opacity(0.6), lineWidth: 0.5)
-            )
-            .animation(Motion.settle, value: hovered)
+            .animation(Motion.quick, value: hovered)
         }
         .buttonStyle(.plain)
         .focusable(false)
@@ -761,53 +622,132 @@ private struct ToolboxPillButton: View {
     }
 }
 
-private struct ToolboxSettingRow: View {
-    let icon: String
+private struct PopoverSectionHeader: View {
     let title: String
-    let subtitle: String
-    let actionTitle: String
-    var isActive: Bool = false
-    let action: () -> Void
-
-    @State private var hovered = false
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(isActive ? Color.accentColor : Palette.ink)
-                    .frame(width: 22, height: 22)
-                    .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+            .lineLimit(1)
+            .padding(.leading, MenuMetrics.text)
+            .padding(.trailing, MenuMetrics.trailing)
+            .frame(height: 20, alignment: .leading)
+    }
+}
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(Palette.ink)
-                    Text(subtitle)
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(Palette.muted)
-                        .lineLimit(1)
-                }
+private struct PopoverSeparator: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(height: 1)
+            .padding(.horizontal, MenuMetrics.rule)
+            .frame(height: MenuMetrics.separator)
+    }
+}
 
-                Spacer(minLength: 4)
+private struct PopoverMenuRow: View {
+    let title: String
+    var trailing: String? = nil
+    var destructive: Bool = false
+    let action: () -> Void
 
-                Text(actionTitle)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(isActive ? Color.accentColor : Palette.muted)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3.5)
-                    .background(isActive ? Color.accentColor.opacity(0.12) : Palette.ink.opacity(0.05), in: Capsule())
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text(title)
+                .font(MenuMetrics.font)
+                .foregroundStyle(hovering ? Color.white : (destructive ? Palette.unsafe : Color(nsColor: .labelColor)))
+                .lineLimit(1)
+            Spacer(minLength: 16)
+            if let trailing {
+                Text(trailing)
+                    .font(MenuMetrics.font)
+                    .foregroundStyle(hovering ? Color.white : Color(nsColor: .secondaryLabelColor))
+                    .lineLimit(1)
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 5)
-            .background(hovered ? Palette.ink.opacity(0.05) : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .animation(Motion.settle, value: hovered)
+        }
+        .padding(.leading, MenuMetrics.text - MenuMetrics.inset)
+        .padding(.trailing, MenuMetrics.trailing - MenuMetrics.inset)
+        .frame(height: MenuMetrics.row)
+        .background(
+            RoundedRectangle(cornerRadius: MenuMetrics.highlight, style: .continuous)
+                .fill(hovering ? MenuMetrics.selection : .clear)
+        )
+        .padding(.horizontal, MenuMetrics.inset)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: action)
+        .onHover { hovering = $0 }
+    }
+}
+
+private struct PopoverZoomRow: View {
+    @ObservedObject var browser: Browser
+    @ObservedObject var tab: Tab
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text("Zoom")
+                .font(MenuMetrics.font)
+                .foregroundStyle(Color(nsColor: .labelColor))
+            Spacer(minLength: 20)
+            ZoomStepButton(symbol: "minus", help: "Zoom Out") {
+                let snapped = ((tab.zoom * 10).rounded() / 10) - 0.1
+                tab.magnify(to: max(0.4, snapped))
+            }
+            Button {
+                Haptics.tap()
+                browser.resetZoom()
+            } label: {
+                Text("\(Int((tab.zoom * 100).rounded()))%")
+                    .font(MenuMetrics.font)
+                    .monospacedDigit()
+                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                    .frame(width: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusable(false)
+            .focusEffectDisabled()
+            .help("Actual Size")
+            ZoomStepButton(symbol: "plus", help: "Zoom In") {
+                let snapped = ((tab.zoom * 10).rounded() / 10) + 0.1
+                tab.magnify(to: min(3.0, snapped))
+            }
+        }
+        .padding(.leading, MenuMetrics.text)
+        .padding(.trailing, MenuMetrics.inset + 4)
+        .frame(height: MenuMetrics.row)
+    }
+}
+
+private struct ZoomStepButton: View {
+    let symbol: String
+    let help: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(hovering ? Color.white : Color(nsColor: .labelColor))
+                .frame(width: 22, height: 18)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(hovering ? MenuMetrics.selection : .clear)
+                )
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .focusable(false)
         .focusEffectDisabled()
-        .onHover { hovered = $0 }
+        .onHover { hovering = $0 }
+        .help(help)
     }
 }
 
@@ -832,7 +772,7 @@ final class WindowDragNSView: NSView {
     }
 }
 
-// MARK: - Modern Site Security & Permissions Popover (Column / Zen Style)
+// MARK: - Site Security & Permissions Popover (Office Commun Menu Style)
 
 struct SiteSecurityPopoverView: View {
     @ObservedObject var browser: Browser
@@ -841,342 +781,181 @@ struct SiteSecurityPopoverView: View {
 
     @State private var copiedAddress = false
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if tab.shy {
-                HStack(spacing: 8) {
-                    Image(systemName: "eye.slash.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color(red: 0.78, green: 0.65, blue: 1.0))
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Private Browsing Tab")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color(red: 0.88, green: 0.80, blue: 1.0))
-                        Text("Search won't save your browsing history, cookies, or site data once closed.")
-                            .font(.system(size: 9.5))
-                            .foregroundStyle(Palette.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .padding(8)
-                .background(Color.purple.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.purple.opacity(0.25), lineWidth: 0.5))
-
-                Divider().opacity(0.25)
-            }
-
-            // 1. Hero Connection Status Header
-            headerSection
-
-            Divider().opacity(0.25)
-
-            // 2. Protection & Controls Group
-            controlsSection
-
-            // 3. Permissions Group
-            permissionsSection
-
-            Divider().opacity(0.25)
-
-            // 4. Bottom Action Bar
-            bottomSection
-        }
-        .padding(12)
-        .frame(width: 308)
-        .popoverGround()
-        .focusable(false)
-        .focusEffectDisabled()
-        .onAppear(perform: certify)
+    private var hostTitle: String {
+        if let host = tab.address?.host(), !host.isEmpty { return host }
+        return tab.title.isEmpty ? "This Page" : tab.title
     }
 
     private var isSecure: Bool {
         tab.address?.scheme == "https"
     }
 
-    private var headerSection: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: isSecure ? "lock.fill" : "lock.open.fill")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(isSecure ? Palette.safe : Palette.unsafe)
-                .frame(width: 30, height: 30)
-                .background((isSecure ? Palette.safe : Palette.unsafe).opacity(0.12), in: Circle())
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PopoverSectionHeader(title: hostTitle)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(isSecure ? "Connection is secure" : "Connection is not secure")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Palette.ink)
+            // Connection Status
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: tab.shy ? "eye.slash" : (isSecure ? "lock" : "lock.open"))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(tab.shy ? Color.purple : (isSecure ? Palette.safe : Palette.unsafe))
+                    .frame(width: 14, alignment: .center)
+                    .padding(.top, 1)
 
-                Text(isSecure
-                     ? "Your connection is encrypted. Passwords, messages, and cards stay private."
-                     : "This site is not encrypted. Don't enter sensitive info or passwords.")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Palette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if let trust = tab.built?.serverTrust {
-                    Button {
-                        close()
-                        DispatchQueue.main.async {
-                            if let window = Links.window {
-                                SFCertificatePanel.shared().beginSheet(
-                                    for: window, modalDelegate: nil, didEnd: nil, contextInfo: nil, trust: trust, showGroup: false
-                                )
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 3) {
-                            Text("Certificate Details")
-                                .font(.system(size: 10.5, weight: .medium))
-                            Image(systemName: "arrow.up.forward.app")
-                                .font(.system(size: 8.5))
-                        }
-                        .foregroundStyle(Color.accentColor)
-                    }
-                    .buttonStyle(.plain)
-                    .focusable(false)
-                    .focusEffectDisabled()
-                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tab.shy ? "Private tab" : (isSecure ? "Connection is secure" : "Connection is not secure"))
+                        .font(MenuMetrics.font)
+                        .foregroundStyle(Color(nsColor: .labelColor))
+                    Text(tab.shy
+                         ? "History, cookies, and site data aren't saved once closed."
+                         : (isSecure
+                            ? "Your passwords and messages are private when sent to this site."
+                            : "Don't enter passwords or sensitive info on this site."))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-        }
-    }
+            .padding(.leading, MenuMetrics.text)
+            .padding(.trailing, MenuMetrics.trailing)
+            .padding(.vertical, 6)
 
-    @ViewBuilder
-    private var controlsSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Protection & controls")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Palette.muted)
-
-            VStack(spacing: 7) {
-                // Shield / Ad blocker toggle
-                if let url = tab.pageAddress, let host = browser.curtain.host(of: url) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "shield.lefthalf.filled")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Shield.shared.isPaused(on: host) ? Palette.muted : Palette.safe)
-                            .frame(width: 20, height: 20)
-                            .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Block Ads & Trackers")
-                                .font(.system(size: 11.5, weight: .medium))
-                                .foregroundStyle(Palette.ink)
-                            Text(Shield.shared.isPaused(on: host) ? "Paused for this site" : "Active protection")
-                                .font(.system(size: 9.5))
-                                .foregroundStyle(Palette.muted)
+            if let trust = tab.built?.serverTrust {
+                PopoverMenuRow(title: "Certificate Details…") {
+                    close()
+                    DispatchQueue.main.async {
+                        if let window = Links.window {
+                            SFCertificatePanel.shared().beginSheet(
+                                for: window, modalDelegate: nil, didEnd: nil, contextInfo: nil, trust: trust, showGroup: false
+                            )
                         }
-
-                        Spacer()
-
-                        Switch(on: Binding(
-                            get: { !Shield.shared.isPaused(on: host) },
-                            set: { on in
-                                Shield.shared.pause(host, !on)
-                                tab.reload()
-                            }
-                        ))
                     }
-                }
-
-                // Dark mode toggle for this site (fixed toggle with instant feedback)
-                if browser.canDusk(tab) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "moon.fill")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(tab.dusked ? Color.indigo : Palette.muted)
-                            .frame(width: 20, height: 20)
-                            .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Darken this site")
-                                .font(.system(size: 11.5, weight: .medium))
-                                .foregroundStyle(Palette.ink)
-                            Text(tab.dusked ? "Applied dark theme" : "Default light appearance")
-                                .font(.system(size: 9.5))
-                                .foregroundStyle(Palette.muted)
-                        }
-
-                        Spacer()
-
-                        Switch(on: Binding(
-                            get: { tab.dusked },
-                            set: { on in
-                                browser.dusk(on, tab)
-                                if !on {
-                                    tab.built?.evaluateInSearch("if (window.__officeDusk) { window.__officeDusk.force(false); window.__officeDusk.update({on:false}); }")
-                                }
-                            }
-                        ))
-                    }
-                }
-
-                // Chrome Mask (per-site User-Agent spoof)
-                if tab.pageAddress?.host() != nil {
-                    let masked = ChromeMask.shared.isMasked(url: tab.pageAddress)
-                    HStack(spacing: 8) {
-                        Image(systemName: "theatermasks.fill")
-                            .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(masked ? Color.accentColor : Palette.muted)
-                            .frame(width: 20, height: 20)
-                            .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Chrome Mask")
-                                .font(.system(size: 11.5, weight: .medium))
-                                .foregroundStyle(Palette.ink)
-                            Text(masked ? "Presenting as Chrome on this site" : "Default Safari/WebKit identity")
-                                .font(.system(size: 9.5))
-                                .foregroundStyle(Palette.muted)
-                        }
-
-                        Spacer()
-
-                        Switch(on: Binding(
-                            get: { ChromeMask.shared.isMasked(url: tab.pageAddress) },
-                            set: { _ in
-                                let nowMasked = ChromeMask.shared.toggle(for: tab.pageAddress)
-                                tab.built?.customUserAgent = nowMasked ? ChromeMask.chromeUserAgent : nil
-                                tab.reload(fromOrigin: true)
-                            }
-                        ))
-                    }
-                }
-
-                // Clear Cookies & Site Data for this host
-                if let host = tab.pageAddress?.host(), !host.isEmpty {
-                    let cleanHost = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
-                    Button {
-                        Haptics.click()
-                        browser.clearSiteData(for: tab)
-                        close()
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "trash")
-                                .font(.system(size: 11.5, weight: .medium))
-                                .foregroundStyle(Palette.unsafe)
-                                .frame(width: 20, height: 20)
-                                .background(Palette.unsafe.opacity(0.10), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text("Clear Cookies & Site Data")
-                                    .font(.system(size: 11.5, weight: .medium))
-                                    .foregroundStyle(Palette.ink)
-                                Text("Wipe storage for \(cleanHost) & reload")
-                                    .font(.system(size: 9.5))
-                                    .foregroundStyle(Palette.muted)
-                                    .lineLimit(1)
-                            }
-
-                            Spacer()
-
-                            Text("Clear")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(Palette.unsafe)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(Palette.unsafe.opacity(0.10), in: Capsule())
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .focusable(false)
-                    .focusEffectDisabled()
                 }
             }
-            .padding(8)
-            .background(Palette.ink.opacity(0.035), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Palette.hairline.opacity(0.6), lineWidth: 0.5)
-            )
-        }
-    }
 
-    @ViewBuilder
-    private var permissionsSection: some View {
-        if let url = tab.pageAddress, let scheme = url.scheme, let host = url.host() {
-            let origin = Browser.origin(scheme, host, url.port ?? 0)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Site permissions")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Palette.muted)
+            PopoverSeparator()
 
-                VStack(spacing: 5) {
-                    permissionRow(title: "Camera", icon: "video", kind: .camera, origin: origin)
-                    permissionRow(title: "Microphone", icon: "mic", kind: .microphone, origin: origin)
-                    permissionRow(title: "Location", icon: "location", kind: .location, origin: origin)
-                    permissionRow(title: "Notifications", icon: "bell", kind: .notifications, origin: origin)
+            if let url = tab.pageAddress, let host = browser.curtain.host(of: url) {
+                HStack {
+                    Text("Block Ads & Trackers")
+                        .font(MenuMetrics.font)
+                        .foregroundStyle(Color(nsColor: .labelColor))
+                    Spacer(minLength: 20)
+                    Switch(on: Binding(
+                        get: { !Shield.shared.isPaused(on: host) },
+                        set: { on in
+                            Shield.shared.pause(host, !on)
+                            tab.reload()
+                        }
+                    ))
                 }
-                .padding(8)
-                .background(Palette.ink.opacity(0.035), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Palette.hairline.opacity(0.6), lineWidth: 0.5)
-                )
+                .padding(.leading, MenuMetrics.text)
+                .padding(.trailing, MenuMetrics.trailing)
+                .frame(height: MenuMetrics.row)
             }
-        }
-    }
 
-    private func permissionRow(title: String, icon: String, kind: CaptureChoices.Kind, origin: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 11))
-                .foregroundStyle(Palette.muted)
-                .frame(width: 16)
-            Text(title)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Palette.ink)
-            Spacer()
-            Menu {
-                Button("Ask") { browser.setSitePermission(nil, kind: kind, origin: origin) }
-                Button("Allow") { browser.setSitePermission(true, kind: kind, origin: origin) }
-                    .disabled(kind == .notifications && !browser.prefs.siteNotifications)
-                Button("Block") { browser.setSitePermission(false, kind: kind, origin: origin) }
-            } label: {
-                Text(CaptureChoices.choice(kind, origin: origin).title)
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(Palette.ink)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2.5)
-                    .background(Palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            if browser.canDusk(tab) {
+                HStack {
+                    Text("Darken This Site")
+                        .font(MenuMetrics.font)
+                        .foregroundStyle(Color(nsColor: .labelColor))
+                    Spacer(minLength: 20)
+                    Switch(on: Binding(
+                        get: { tab.dusked },
+                        set: { on in
+                            browser.dusk(on, tab)
+                            if !on {
+                                tab.built?.evaluateInSearch("if (window.__officeDusk) { window.__officeDusk.force(false); window.__officeDusk.update({on:false}); }")
+                            }
+                        }
+                    ))
+                }
+                .padding(.leading, MenuMetrics.text)
+                .padding(.trailing, MenuMetrics.trailing)
+                .frame(height: MenuMetrics.row)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .focusable(false)
-            .focusEffectDisabled()
-        }
-    }
 
-    private var bottomSection: some View {
-        HStack {
-            Text(tab.address?.host ?? "")
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(Palette.muted)
-                .lineLimit(1)
+            if tab.pageAddress?.host() != nil {
+                HStack {
+                    Text("Chrome Mask")
+                        .font(MenuMetrics.font)
+                        .foregroundStyle(Color(nsColor: .labelColor))
+                    Spacer(minLength: 20)
+                    Switch(on: Binding(
+                        get: { ChromeMask.shared.isMasked(url: tab.pageAddress) },
+                        set: { _ in
+                            let nowMasked = ChromeMask.shared.toggle(for: tab.pageAddress)
+                            tab.built?.customUserAgent = nowMasked ? ChromeMask.chromeUserAgent : nil
+                            tab.reload(fromOrigin: true)
+                        }
+                    ))
+                }
+                .padding(.leading, MenuMetrics.text)
+                .padding(.trailing, MenuMetrics.trailing)
+                .frame(height: MenuMetrics.row)
+            }
 
-            Spacer()
+            if let url = tab.pageAddress, let scheme = url.scheme, let host = url.host() {
+                let origin = Browser.origin(scheme, host, url.port ?? 0)
+                PopoverSeparator()
+                PopoverSectionHeader(title: "Permissions")
+                permissionRow(title: "Camera", kind: .camera, origin: origin)
+                permissionRow(title: "Microphone", kind: .microphone, origin: origin)
+                permissionRow(title: "Location", kind: .location, origin: origin)
+                permissionRow(title: "Notifications", kind: .notifications, origin: origin)
+            }
 
-            Button {
+            PopoverSeparator()
+
+            PopoverMenuRow(title: copiedAddress ? "Copied Address" : "Copy Clean Address") {
                 Haptics.tap()
                 if let url = tab.address {
                     CleanLink.copy(url)
                     copiedAddress = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copiedAddress = false }
                 }
-            } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: copiedAddress ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: 9.5))
-                    Text(copiedAddress ? "Copied" : "Copy Clean URL")
-                        .font(.system(size: 10.5, weight: .medium))
-                }
-                .foregroundStyle(Color.accentColor)
             }
-            .buttonStyle(.plain)
+
+            if tab.pageAddress?.host()?.isEmpty == false {
+                PopoverMenuRow(title: "Clear Cookies & Site Data", destructive: true) {
+                    Haptics.click()
+                    browser.clearSiteData(for: tab)
+                    close()
+                }
+            }
+        }
+        .padding(.vertical, MenuMetrics.pad)
+        .frame(width: 268)
+        .popoverGround()
+        .focusable(false)
+        .focusEffectDisabled()
+        .onAppear(perform: certify)
+    }
+
+    private func permissionRow(title: String, kind: CaptureChoices.Kind, origin: String) -> some View {
+        HStack {
+            Text(title)
+                .font(MenuMetrics.font)
+                .foregroundStyle(Color(nsColor: .labelColor))
+            Spacer(minLength: 20)
+            Menu {
+                Button("Ask") { browser.setSitePermission(nil, kind: kind, origin: origin) }
+                Button("Allow") { browser.setSitePermission(true, kind: kind, origin: origin) }
+                    .disabled(kind == .notifications && !browser.prefs.siteNotifications)
+                Button("Refuse") { browser.setSitePermission(false, kind: kind, origin: origin) }
+            } label: {
+                Text(CaptureChoices.choice(kind, origin: origin).title)
+                    .font(MenuMetrics.font)
+                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
             .focusable(false)
             .focusEffectDisabled()
         }
+        .padding(.leading, MenuMetrics.text)
+        .padding(.trailing, MenuMetrics.trailing)
+        .frame(height: MenuMetrics.row)
     }
 
     private func certify() {

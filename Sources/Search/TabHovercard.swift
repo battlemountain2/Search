@@ -140,9 +140,9 @@ struct TabHovercard: View {
                     .background(Palette.safe.opacity(0.12), in: Capsule())
             } else if tab.throttled {
                 let memStr = tab.activeMemoryMB.map { " (\($0) MB)" } ?? ""
-                Text("Throttled\(memStr)")
-                    .foregroundStyle(Palette.unsafe)
-                    .background(Palette.unsafe.opacity(0.12), in: Capsule())
+                Text("Background\(memStr)")
+                    .foregroundStyle(Palette.muted)
+                    .background(Palette.ink.opacity(0.06), in: Capsule())
             } else {
                 let memText = tab.activeMemoryMB.map { "\($0) MB" } ?? "Active"
                 Text(memText)
