@@ -1,5 +1,6 @@
 import AppKit
 import ImageIO
+import PDFKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -45,6 +46,8 @@ struct LibraryDrawer: View {
     @State private var query = ""
     @State private var downloadFilter: DownloadFilter = .all
     @State private var mediaFilter: MediaFilter = .all
+    @AppStorage("library.media.pictures") private var includePictures = true
+    @AppStorage("library.media.documents") private var includeDocuments = false
     @State private var archiveExpanded = false
     @State private var mediaItems: [MediaFile] = []
     @State private var loadingMedia = false
@@ -77,7 +80,7 @@ struct LibraryDrawer: View {
     var body: some View {
         HStack(spacing: 0) {
             rail
-                .frame(width: 60)
+                .frame(width: 58)
                 .padding(.vertical, 6)
 
             Rectangle()
@@ -101,6 +104,8 @@ struct LibraryDrawer: View {
             query = ""
             if next == .media { loadMedia() }
         }
+        .onChange(of: includePictures) { _, _ in if section == .media { loadMedia() } }
+        .onChange(of: includeDocuments) { _, _ in if section == .media { loadMedia() } }
     }
 
     // MARK: - Left Rail
@@ -110,28 +115,11 @@ struct LibraryDrawer: View {
             Spacer(minLength: 0)
 
             ForEach(LibrarySection.allCases, id: \.self) { item in
-                let active = item == section
-                Button {
-                    withAnimation(Motion.quick) { browser.librarySection = item }
-                } label: {
-                    VStack(spacing: 3) {
-                        Image(systemName: item.icon)
-                            .font(.system(size: 14, weight: active ? .semibold : .regular))
-                        Text(item.title)
-                            .font(.system(size: 9, weight: active ? .semibold : .medium))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
-                    .foregroundStyle(active ? Palette.ink : Palette.ink.opacity(0.75))
-                    .frame(width: 54, height: 46)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(active ? greys.wash : .clear)
-                    )
-                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .help(item.title)
+                RailButton(
+                    item: item,
+                    active: item == section,
+                    action: { withAnimation(Motion.quick) { browser.librarySection = item } }
+                )
             }
 
             Spacer(minLength: 0)
@@ -175,7 +163,11 @@ struct LibraryDrawer: View {
             }
             .padding(.horizontal, 8)
             .frame(height: 28)
-            .background(greys.hover.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(greys.hover.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Palette.hairline, lineWidth: 1)
+            )
 
             if section == .downloads {
                 Menu {
@@ -216,6 +208,9 @@ struct LibraryDrawer: View {
                             Text(f.rawValue).tag(f)
                         }
                     }
+                    Divider()
+                    Toggle("Include Pictures", isOn: $includePictures)
+                    Toggle("Include Documents", isOn: $includeDocuments)
                     Divider()
                     Button("Refresh Media") { loadMedia() }
                 } label: {
@@ -657,8 +652,8 @@ struct LibraryDrawer: View {
         guard !loadingMedia else { return }
         loadingMedia = true
         let downloadsFolder = prefs.downloads
-        let picturesFolder = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
-        let documentsFolder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        let picturesFolder = includePictures ? FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first : nil
+        let documentsFolder = includeDocuments ? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first : nil
         DispatchQueue.global(qos: .utility).async {
             let exts: Set<String> = ["png", "jpg", "jpeg", "webp", "gif", "heic", "tiff", "tif", "bmp", "mp4", "mov", "pdf"]
             let skipDirs: Set<String> = ["Photos Library.photoslibrary", "Photo Booth Library", "node_modules", ".git", ".build", "Codex", "Image-Line", "Splice Projects"]
@@ -708,9 +703,21 @@ struct LibraryDrawer: View {
     }
 
     private func ensureThumbnail(for item: MediaFile) {
-        guard thumbnails[item.url] == nil,
-              ["png", "jpg", "jpeg", "webp", "gif", "heic", "tiff", "tif", "bmp"].contains(item.ext) else { return }
+        guard thumbnails[item.url] == nil else { return }
         let url = item.url
+        let ext = item.ext
+        if ext == "pdf" {
+            DispatchQueue.global(qos: .utility).async {
+                guard let doc = PDFDocument(url: url),
+                      let page = doc.page(at: 0) else { return }
+                let img = page.thumbnail(of: CGSize(width: 260, height: 204), for: .cropBox)
+                DispatchQueue.main.async {
+                    thumbnails[url] = img
+                }
+            }
+            return
+        }
+        guard ["png", "jpg", "jpeg", "webp", "gif", "heic", "tiff", "tif", "bmp"].contains(ext) else { return }
         DispatchQueue.global(qos: .utility).async {
             guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return }
             let opts: [CFString: Any] = [
@@ -871,6 +878,38 @@ private struct CompletedDownloadRow: View {
     }
 }
 
+private struct RailButton: View {
+    let item: LibrarySection
+    let active: Bool
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.greys) private var greys
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: item.icon)
+                    .font(.system(size: 14, weight: active ? .semibold : .regular))
+                Text(item.title)
+                    .font(.system(size: 9, weight: active ? .semibold : .medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(active ? Palette.ink : (hovering ? Palette.ink.opacity(0.9) : greys.muted))
+            .frame(width: 52, height: 46)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(active ? greys.wash : (hovering ? greys.hover.opacity(0.75) : .clear))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(Motion.quick, value: hovering)
+        .help(item.title)
+    }
+}
+
 private struct MediaGridCard: View {
     let item: MediaFile
     let thumbnail: NSImage?
@@ -881,70 +920,84 @@ private struct MediaGridCard: View {
 
     var body: some View {
         Button(action: open) {
-            ZStack(alignment: .bottomLeading) {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(greys.hover.opacity(0.55))
-
-                if let thumbnail {
-                    Image(nsImage: thumbnail)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .clipped()
-                } else {
-                    VStack(spacing: 4) {
-                        Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
+            Color.clear
+                .frame(height: 104)
+                .overlay {
+                    if let thumbnail {
+                        Image(nsImage: thumbnail)
                             .resizable()
-                            .scaledToFit()
-                            .frame(width: 36, height: 36)
+                            .scaledToFill()
+                    } else {
+                        ZStack {
+                            greys.hover.opacity(0.55)
+                            VStack(spacing: 4) {
+                                Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 34, height: 34)
+                                Text(item.ext.uppercased())
+                                    .font(.system(size: 9.5, weight: .semibold))
+                                    .foregroundStyle(greys.muted)
+                            }
+                        }
+                    }
+                }
+                .overlay(alignment: .topLeading) {
+                    if item.ext == "pdf" || item.ext == "mp4" || item.ext == "mov" {
                         Text(item.ext.uppercased())
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(greys.muted)
+                            .font(.system(size: 8.5, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(.black.opacity(0.55), in: Capsule())
+                            .padding(6)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-
-                if hovering {
-                    LinearGradient(
-                        colors: [.clear, .black.opacity(0.7)],
-                        startPoint: .center,
-                        endPoint: .bottom
-                    )
-                    HStack(spacing: 4) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(item.name)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-                            Text(item.source)
-                                .font(.system(size: 9))
-                                .foregroundStyle(.white.opacity(0.75))
-                                .lineLimit(1)
+                .overlay(alignment: .bottomLeading) {
+                    if hovering {
+                        ZStack(alignment: .bottomLeading) {
+                            LinearGradient(
+                                colors: [.clear, .black.opacity(0.75)],
+                                startPoint: .center,
+                                endPoint: .bottom
+                            )
+                            HStack(spacing: 4) {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(item.name)
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(.white)
+                                        .lineLimit(1)
+                                    Text(item.source)
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(.white.opacity(0.75))
+                                        .lineLimit(1)
+                                }
+                                Spacer(minLength: 0)
+                                Button(action: reveal) {
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.white)
+                                        .frame(width: 20, height: 20)
+                                        .background(.black.opacity(0.45), in: Circle())
+                                }
+                                .buttonStyle(.plain)
+                                .help("Show in Finder")
+                            }
+                            .padding(6)
                         }
-                        Spacer(minLength: 0)
-                        Button(action: reveal) {
-                            Image(systemName: "magnifyingglass")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.white)
-                                .frame(width: 20, height: 20)
-                                .background(.black.opacity(0.45), in: Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .help("Show in Finder")
+                        .transition(.opacity)
                     }
-                    .padding(6)
                 }
-            }
-            .frame(height: 102)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(hovering ? Color.white.opacity(0.25) : Palette.hairline, lineWidth: 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(hovering ? Color.white.opacity(0.28) : Palette.hairline, lineWidth: 1)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .animation(Motion.quick, value: hovering)
         .onDrag {
             let provider = NSItemProvider(object: item.url as NSURL)
             provider.suggestedName = item.name
