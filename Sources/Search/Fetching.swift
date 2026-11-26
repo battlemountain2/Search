@@ -788,6 +788,7 @@ struct FetchDoor: View {
             .shortcutHelp("Downloads", "history.downloads")
             .contextMenu {
                 Button("Show Downloads") { browser.showDownloads() }
+                Button("Open Library in Sidebar") { browser.toggleLibrary(.downloads) }
                 Button("Clear Downloads") { browser.loot.forgetAll() }
                     .disabled(browser.loot.kept.isEmpty)
             }

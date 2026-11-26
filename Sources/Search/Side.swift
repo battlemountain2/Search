@@ -293,7 +293,12 @@ struct SideBar: View {
                 // The spaces side by side, as pages: two fingers sideways move
                 // the one on screen and the next one together, the next one
                 // coming in as this one goes, with nothing between them.
-                pages
+                if !icons, browser.librarySection != nil {
+                    LibraryDrawer(browser: browser, fetches: browser.fetches, loot: browser.loot, prefs: prefs)
+                        .transition(.opacity)
+                } else {
+                    pages
+                }
 
                 Spacer(minLength: 0)
             }
@@ -1747,6 +1752,7 @@ private struct SideFoot: View {
                 if prefs.usesSpaces && !prefs.showsSpaceButtons { SpaceDot(browser: browser, names: false) }
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: .bottom, live: live)
                 if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: .bottom) }
+                LibraryDoor(browser: browser)
                 SpaceButtons(browser: browser)
                 ExtensionSlot(browser: browser, edge: .bottom, room: room, puzzle: !prefs.hidesExtensionsDoor, live: live)
             }
@@ -1758,6 +1764,7 @@ private struct SideFoot: View {
                     ExtensionSlot(browser: browser, edge: prefs.sidePosition == .right ? .leading : .trailing, room: room, puzzle: !prefs.hidesExtensionsDoor, live: live)
                 }
                 if !prefs.hidesBookmarksDoor { BookmarkDoor(browser: browser, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing) }
+                LibraryDoor(browser: browser)
                 SpaceButtons(browser: browser, squeezes: true)
                 // Only while a download is running, and a moment after.
                 FetchDoor(browser: browser, fetches: fetches, arrowEdge: prefs.sidePosition == .right ? .leading : .trailing, live: live)
@@ -1789,7 +1796,7 @@ private struct SideFoot: View {
     /// The doors that always show, and downloads, side by side: what the
     /// lights' row must have to take them (SideBar.doorsUp).
     @MainActor static func keptWidth(_ prefs: Preferences, spaces: Int = 0) -> CGFloat {
-        var kept = 1 + spaces  // downloads and a button per space
+        var kept = 2 + spaces  // library, downloads, and a button per space
         if !prefs.hidesExtensionsDoor { kept += 1 }  // the puzzle
         if !prefs.hidesBookmarksDoor { kept += 1 }
         if prefs.usesSpaces && !prefs.showsSpaceButtons { kept += 1 }  // the dot
@@ -1801,7 +1808,7 @@ private struct SideFoot: View {
     /// is 26 points, with 2 between them.
     private var room: Int {
         let door: CGFloat = 26 + 2
-        var kept = SpaceButtons.count(prefs, browser.spaces)  // the spaces' buttons
+        var kept = 1 + SpaceButtons.count(prefs, browser.spaces)  // library + spaces' buttons
         if !prefs.hidesExtensionsDoor { kept += 1 }  // the puzzle
         if !prefs.hidesBookmarksDoor { kept += 1 }
         if prefs.usesSpaces && !prefs.showsSpaceButtons { kept += 1 }  // the dot
@@ -1810,6 +1817,32 @@ private struct SideFoot: View {
         if up || FetchDoor.shows(fetches, prefs, hanging: browser.downloadsHanging) { kept += 1 }
         let free = (up ? width : width - 2 * 10) + 2 - CGFloat(kept) * door
         return max(0, Int((free / door).rounded(.down)))
+    }
+}
+
+private struct LibraryDoor: View {
+    @ObservedObject var browser: Browser
+    @State private var hovering = false
+    @Environment(\.greys) private var greys
+
+    private var active: Bool { browser.librarySection != nil }
+
+    var body: some View {
+        Button { browser.toggleLibrary(.downloads) } label: {
+            Image(systemName: active ? "books.vertical.fill" : "books.vertical")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(active ? Palette.ink : (hovering ? Palette.ink.opacity(0.75) : greys.muted))
+                .frame(width: 26, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(active ? greys.wash : (hovering ? greys.hover : .clear))
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Library (Downloads, Media, History, Archive)")
+        .animation(Motion.quick, value: hovering)
     }
 }
 

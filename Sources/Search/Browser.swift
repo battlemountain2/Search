@@ -433,6 +433,18 @@ final class Browser: NSObject, ObservableObject {
         didSet { if !launching { launchGroup = nil } }
     }
     /// The group the floating field was raised for, by New Tab in Group
+    /// Sidebar Library drawer section (Downloads, Media, History, Archive); nil shows normal tabs.
+    @Published var librarySection: LibrarySection? = nil
+
+    func toggleLibrary(_ section: LibrarySection = .downloads) {
+        withAnimation(Motion.quick) {
+            if librarySection == section {
+                librarySection = nil
+            } else {
+                librarySection = section
+            }
+        }
+    }
     /// (newTab(inGroup:)): the tab Return makes goes to its end. Gone with
     /// the field.
     private var launchGroup: UUID?
