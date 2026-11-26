@@ -75,14 +75,14 @@ enum YouTubeAds {
     ]
 
     /// Lightweight CSS compositing hints for YouTube Theater Mode: promotes
-    /// the player and theater container to their own GPU layers and avoids
-    /// heavy ambient blur transitions during viewport-wide theater resizes.
+    /// the HTML5 video element to its own GPU layer (without trapping fixed
+    /// overlays in wrapper transforms) and skips heavy cinematics transitions.
     static func theaterPolishScript(for host: String?) -> WKUserScript? {
         guard let host, ["youtube.com", "www.youtube.com", "m.youtube.com"].contains(host) else { return nil }
         let css = """
-        #player-theater-container, #full-bleed-container, .html5-video-player {
+        .html5-video-player video {
             transform: translateZ(0);
-            will-change: transform;
+            backface-visibility: hidden;
         }
         ytd-watch-flexy[theater] #player-theater-container,
         ytd-watch-flexy[theater] #full-bleed-container {

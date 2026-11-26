@@ -92,6 +92,8 @@ struct AudioWaveformPill: View {
                 isHovering = over
             }
         }
+        .animation(Motion.quick, value: playHovering)
+        .animation(Motion.quick, value: muteHovering)
     }
 }
 

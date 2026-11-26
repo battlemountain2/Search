@@ -16,122 +16,95 @@ struct ZenTopBar: View {
     @State private var showSiteCard = false
     @State private var capsuleFrame: CGRect = .zero
     @State private var inlineClicks: Any?
+    @State private var navWidth: CGFloat = 76
+    @State private var extWidth: CGFloat = 76
 
     var body: some View {
-        HStack(spacing: 6) {
-            // Navigation Cluster (Back, Forward, Reload)
-            navigationControls
+        ZStack {
+            HStack(spacing: 6) {
+                navigationControls
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { navWidth = $0 }
+                Spacer(minLength: 0)
+                pinnedExtensionsCluster
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { extWidth = $0 }
+            }
 
-            Spacer(minLength: 0)
-
-            // Seamless Arc/Zen style Address Capsule with integrated URL toolbox
             addressCapsule
-
-            Spacer(minLength: 0)
-
-            // Pinned Extensions cluster aligned to the right (like Zen)
-            pinnedExtensionsCluster
+                .padding(.horizontal, max(navWidth, extWidth) + 10)
         }
         .padding(.horizontal, 6)
         .frame(height: ZenTopBar.height)
         .background(WindowDragBar())
+        .animation(Motion.glide, value: browser.editingInline)
     }
 
     // MARK: - Navigation Controls
 
     @ViewBuilder
     private var navigationControls: some View {
-        if let tab = browser.active {
-            let back = !tab.isBlank && tab.canGoBack
-            let forward = !tab.isBlank && tab.canGoForward
+        HStack(spacing: 2) {
+            if browser.folded {
+                ZenToolbarButton(
+                    icon: prefs.sidePosition == .right ? "sidebar.right" : "sidebar.left",
+                    help: "Show Sidebar   ⌘S"
+                ) {
+                    browser.toggleFold()
+                }
+            }
 
-            HStack(spacing: 2) {
-                // Back Button
-                Button {
-                    Haptics.tap()
+            if let tab = browser.active {
+                let back = !tab.isBlank && tab.canGoBack
+                let forward = !tab.isBlank && tab.canGoForward
+
+                ZenToolbarButton(icon: "chevron.backward", disabled: !back, help: "Back   ⌘[") {
                     browser.back()
-                } label: {
-                    Image(systemName: "chevron.backward")
-                        .font(.system(size: 9.75, weight: .semibold))
-                        .foregroundStyle(back ? Palette.ink : Palette.muted.opacity(0.35))
-                        .frame(width: 21, height: 21)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .focusable(false)
-                .focusEffectDisabled()
-                .disabled(!back)
-                .help("Back   ⌘[")
-
-                // Forward Button
-                Button {
-                    Haptics.tap()
+                ZenToolbarButton(icon: "chevron.forward", disabled: !forward, help: "Forward   ⌘]") {
                     browser.forward()
-                } label: {
-                    Image(systemName: "chevron.forward")
-                        .font(.system(size: 9.75, weight: .semibold))
-                        .foregroundStyle(forward ? Palette.ink : Palette.muted.opacity(0.35))
-                        .frame(width: 21, height: 21)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .focusable(false)
-                .focusEffectDisabled()
-                .disabled(!forward)
-                .help("Forward   ⌘]")
-
-                // Reload / Stop Button
-                Button {
-                    Haptics.tap()
+                ZenToolbarButton(
+                    icon: tab.loading ? "xmark" : "arrow.clockwise",
+                    help: tab.loading ? "Stop Loading   esc" : "Reload Page   ⌘R"
+                ) {
                     if tab.loading {
                         tab.stop()
                     } else {
                         tab.reload()
                     }
-                } label: {
-                    Image(systemName: tab.loading ? "xmark" : "arrow.clockwise")
-                        .font(.system(size: 9.75, weight: .medium))
-                        .foregroundStyle(Palette.ink)
-                        .frame(width: 21, height: 21)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .focusable(false)
-                .focusEffectDisabled()
-                .help(tab.loading ? "Stop Loading   esc" : "Reload Page   ⌘R")
+            } else {
+                Color.clear.frame(width: 76, height: 24)
             }
-        } else {
-            Color.clear.frame(width: 69, height: 21)
         }
     }
 
-    // MARK: - Address Capsule (Clean Arc / Zen Company Style)
+    // MARK: - Address Capsule (Clean Office Commun / Zen Style)
 
     @ViewBuilder
     private var addressCapsule: some View {
         if let tab = browser.active {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 securityButton(for: tab)
 
                 if tab.burner {
                     Text("BURNER")
-                        .font(.system(size: 7.5, weight: .bold))
+                        .font(.system(size: 8, weight: .bold))
                         .foregroundStyle(Color(red: 1.0, green: 0.72, blue: 0.30))
-                        .padding(.horizontal, 3.5)
+                        .padding(.horizontal, 4)
                         .padding(.vertical, 1)
-                        .background(Color.orange.opacity(0.24), in: RoundedRectangle(cornerRadius: 3))
+                        .background(Color.orange.opacity(0.24), in: RoundedRectangle(cornerRadius: 3.5))
                 } else if tab.shy {
                     Text("PRIVATE")
-                        .font(.system(size: 7.5, weight: .bold))
-                        .foregroundStyle(Color(red: 0.88, green: 0.80, blue: 1.0))
-                        .padding(.horizontal, 3.5)
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(Color.purple.opacity(0.95))
+                        .padding(.horizontal, 4)
                         .padding(.vertical, 1)
-                        .background(Color.purple.opacity(0.3), in: RoundedRectangle(cornerRadius: 3))
+                        .background(Color.purple.opacity(0.18), in: RoundedRectangle(cornerRadius: 3.5))
                 }
 
                 // Domain text / inline address editor
                 if browser.editingInline {
-                    AddressField(browser: browser, size: 11.5)
+                    AddressField(browser: browser, size: 12)
                         .frame(maxWidth: .infinity)
                 } else {
                     Button {
@@ -141,11 +114,20 @@ struct ZenTopBar: View {
                             browser.inlineEdit = true
                         }
                     } label: {
-                        Text(displayDomain(for: tab))
-                            .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(Palette.ink)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .center)
+                        HStack(spacing: 5) {
+                            if tab.isWeb, !tab.isBlank, let icon = tab.icon {
+                                Image(nsImage: icon)
+                                    .resizable()
+                                    .interpolation(.high)
+                                    .frame(width: 12, height: 12)
+                                    .clipShape(RoundedRectangle(cornerRadius: 2.5, style: .continuous))
+                            }
+                            Text(displayDomain(for: tab))
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(tab.isBlank ? Palette.muted : Palette.ink)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
                     }
                     .buttonStyle(.plain)
                     .focusable(false)
@@ -163,10 +145,10 @@ struct ZenTopBar: View {
                     showToolbox.toggle()
                 } label: {
                     Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(showToolbox ? Color.accentColor : Palette.muted)
-                        .frame(width: 18, height: 18)
-                        .background(showToolbox ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
+                        .frame(width: 19, height: 19)
+                        .background(showToolbox ? Palette.ink.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -181,31 +163,42 @@ struct ZenTopBar: View {
             }
             .padding(.leading, 7)
             .padding(.trailing, 3)
-            .frame(minWidth: 170, maxWidth: browser.editingInline ? 420 : 320, maxHeight: 22)
+            .frame(minWidth: 180, maxWidth: browser.editingInline ? 460 : 380, maxHeight: 24)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(capsuleFill(for: tab))
             )
+            .overlay(alignment: .bottom) {
+                if tab.loading {
+                    Capsule()
+                        .fill(Color.accentColor.opacity(0.75))
+                        .frame(height: 1.5)
+                        .padding(.horizontal, 8)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                }
+            }
             .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .strokeBorder(capsuleStroke(for: tab), lineWidth: 0.5)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [Color.white.opacity(0.14), .clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 0.5
-                    )
-                    .allowsHitTesting(false)
-            )
+            .overlay {
+                if !tab.shy && !tab.burner && !browser.editingInline {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(
+                            Palette.hairline.opacity(capsuleHovered || showToolbox ? 0.95 : 0.65),
+                            lineWidth: 0.5
+                        )
+                        .allowsHitTesting(false)
+                }
+            }
+            .animation(Motion.quick, value: capsuleHovered)
+            .animation(Motion.quick, value: showToolbox)
+            .animation(Motion.quick, value: tab.loading)
             .overlay(alignment: .topLeading) {
                 if browser.editingInline {
-                    Omnibox(browser: browser, over: false, listOnly: max(capsuleFrame.width, 340))
-                        .offset(y: 26)
+                    Omnibox(browser: browser, over: false, listOnly: max(capsuleFrame.width, 360))
+                        .offset(y: 28)
                 }
             }
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { capsuleFrame = $0 }
@@ -213,14 +206,14 @@ struct ZenTopBar: View {
             .onDisappear { watchInlineClicks(false) }
             .onHover { capsuleHovered = $0 }
         } else {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 8.5, weight: .semibold))
+                    .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(Palette.muted)
                     .frame(width: 15, height: 15)
 
                 if browser.editingInline {
-                    AddressField(browser: browser, size: 11.5)
+                    AddressField(browser: browser, size: 12)
                         .frame(maxWidth: .infinity)
                 } else {
                     Button {
@@ -231,7 +224,7 @@ struct ZenTopBar: View {
                         }
                     } label: {
                         Text("Search or enter address")
-                            .font(.system(size: 11.5, weight: .medium))
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Palette.muted)
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .center)
@@ -244,15 +237,24 @@ struct ZenTopBar: View {
             }
             .padding(.leading, 7)
             .padding(.trailing, 3)
-            .frame(minWidth: 170, maxWidth: browser.editingInline ? 420 : 320, maxHeight: 22)
+            .frame(minWidth: 180, maxWidth: browser.editingInline ? 460 : 380, maxHeight: 24)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(capsuleHovered || browser.editingInline ? Color.white.opacity(0.08) : Color.white.opacity(0.04))
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(capsuleHovered || browser.editingInline ? Palette.ink.opacity(0.085) : Palette.ink.opacity(0.045))
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(
+                        browser.editingInline ? Color.accentColor.opacity(0.45) : Palette.hairline.opacity(capsuleHovered ? 0.95 : 0.65),
+                        lineWidth: 0.5
+                    )
+                    .allowsHitTesting(false)
+            )
+            .animation(Motion.quick, value: capsuleHovered)
             .overlay(alignment: .topLeading) {
                 if browser.editingInline {
-                    Omnibox(browser: browser, over: false, listOnly: max(capsuleFrame.width, 340))
-                        .offset(y: 26)
+                    Omnibox(browser: browser, over: false, listOnly: max(capsuleFrame.width, 360))
+                        .offset(y: 28)
                 }
             }
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { capsuleFrame = $0 }
@@ -272,7 +274,7 @@ struct ZenTopBar: View {
     private func capsuleFill(for tab: Tab) -> Color {
         if tab.burner { return Color.orange.opacity(0.12) }
         if tab.shy { return Color.purple.opacity(0.12) }
-        return (capsuleHovered || showToolbox) ? Color.white.opacity(0.08) : Color.white.opacity(0.04)
+        return (capsuleHovered || showToolbox || browser.editingInline) ? Palette.ink.opacity(0.085) : Palette.ink.opacity(0.045)
     }
 
     private func capsuleStroke(for tab: Tab) -> Color {
@@ -324,7 +326,7 @@ struct ZenTopBar: View {
                     .font(.system(size: 8.5, weight: .semibold))
                     .foregroundStyle(tab.address?.scheme == "https" ? Palette.safe : Palette.muted)
                     .frame(width: 15, height: 15)
-                    .background(showSiteCard ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 3.5))
+                    .background(showSiteCard ? Palette.ink.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 3.5))
             }
         }
         .buttonStyle(.plain)
@@ -355,7 +357,7 @@ struct ZenTopBar: View {
                 .font(.system(size: 9.5, weight: isInstalled ? .semibold : .medium))
                 .foregroundStyle(isInstalled ? Color.accentColor : Palette.muted)
                 .frame(width: 17, height: 17)
-                .background(isInstalled ? Color.accentColor.opacity(0.16) : Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 3.5))
+                .background(isInstalled ? Color.accentColor.opacity(0.16) : Palette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 3.5))
                 .overlay(
                     RoundedRectangle(cornerRadius: 3.5)
                         .strokeBorder(isInstalled ? Color.accentColor.opacity(0.3) : Color.clear, lineWidth: 0.5)
@@ -392,9 +394,8 @@ struct UrlToolboxView: View {
         VStack(alignment: .leading, spacing: 10) {
             // 1. Quick Actions Section
             VStack(alignment: .leading, spacing: 6) {
-                Text("QUICK ACTIONS")
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .tracking(0.6)
+                Text("Quick actions")
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Palette.muted)
 
                 HStack(spacing: 6) {
@@ -453,9 +454,8 @@ struct UrlToolboxView: View {
                 let extensions = Extensions.shared
                 if !extensions.installed.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("EXTENSIONS")
-                            .font(.system(size: 9.5, weight: .semibold))
-                            .tracking(0.6)
+                        Text("Extensions")
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Palette.muted)
 
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -489,7 +489,7 @@ struct UrlToolboxView: View {
                                 // Manage Extensions (+) button
                                 Button {
                                     Haptics.tap()
-                                    browser.tuning = true
+                                    browser.lead(to: InternalPage(.settings, "extensions"))
                                     onDismiss()
                                 } label: {
                                     VStack(spacing: 3) {
@@ -519,9 +519,8 @@ struct UrlToolboxView: View {
 
             // 3. Page Controls Section
             VStack(alignment: .leading, spacing: 6) {
-                Text("PAGE CONTROLS")
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .tracking(0.6)
+                Text("Page controls")
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Palette.muted)
 
                 VStack(spacing: 4) {
@@ -687,13 +686,41 @@ struct UrlToolboxView: View {
             }
         }
         .padding(12)
-        .frame(width: 300)
-        .background(
-            ZStack {
-                VisualEffectView(material: .popover, blendingMode: .withinWindow)
-                Palette.ground.opacity(0.85)
-            }
-        )
+        .frame(width: 308)
+        .popoverGround()
+    }
+}
+
+private struct ZenToolbarButton: View {
+    let icon: String
+    var disabled = false
+    let help: String
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(disabled ? Palette.muted.opacity(0.35) : Palette.ink)
+                .frame(width: 24, height: 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(!disabled && hovering ? Palette.ink.opacity(0.08) : .clear)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .focusEffectDisabled()
+        .disabled(disabled)
+        .onHover { hovering = $0 }
+        .animation(Motion.quick, value: hovering)
+        .help(help)
     }
 }
 
@@ -855,13 +882,8 @@ struct SiteSecurityPopoverView: View {
             bottomSection
         }
         .padding(12)
-        .frame(width: 300)
-        .background(
-            ZStack {
-                VisualEffectView(material: .popover, blendingMode: .withinWindow)
-                Palette.ground.opacity(0.85)
-            }
-        )
+        .frame(width: 308)
+        .popoverGround()
         .focusable(false)
         .focusEffectDisabled()
         .onAppear(perform: certify)
@@ -922,9 +944,8 @@ struct SiteSecurityPopoverView: View {
     @ViewBuilder
     private var controlsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("PROTECTION & CONTROLS")
-                .font(.system(size: 9.5, weight: .semibold))
-                .tracking(0.6)
+            Text("Protection & controls")
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Palette.muted)
 
             VStack(spacing: 7) {
@@ -1077,9 +1098,8 @@ struct SiteSecurityPopoverView: View {
         if let url = tab.pageAddress, let scheme = url.scheme, let host = url.host() {
             let origin = Browser.origin(scheme, host, url.port ?? 0)
             VStack(alignment: .leading, spacing: 6) {
-                Text("SITE PERMISSIONS")
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .tracking(0.6)
+                Text("Site permissions")
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Palette.muted)
 
                 VStack(spacing: 5) {

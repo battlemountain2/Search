@@ -231,17 +231,19 @@ struct SideBar: View {
                 DragStrip(menu: columnMenu)
                     .frame(height: lightsBand)
             } else {
+                let topBand: CGFloat = prefs.zenTopBar ? 38 : Metrics.strip
+                let reservedHelm: CGFloat = prefs.zenTopBar ? SideBar.foldDoor(fold) : (SideBar.foldDoor(fold) + Metrics.helm(prefs))
                 HStack(spacing: 0) {
                     DragStrip(menu: columnMenu)
                         .frame(width: 10 + lights)
                     // Back, forward and reload's, as tall as they are: above
                     // and below them the band is still title bar.
-                    DragStrip(reserved: SideBar.foldDoor(fold) + Metrics.helm(prefs), band: 30, menu: columnMenu)
-                        .frame(width: SideBar.foldDoor(fold) + Metrics.helm(prefs))
+                    DragStrip(reserved: reservedHelm, band: 30, menu: columnMenu)
+                        .frame(width: reservedHelm)
                     // The doors, when they are up here, at its far end.
                     DragStrip(trailing: doorsTop ? upRoom + 10 : 0, menu: columnMenu)
                 }
-                .frame(height: Metrics.strip)
+                .frame(height: topBand)
             }
 
             VStack(alignment: .leading, spacing: 0) {
@@ -272,7 +274,7 @@ struct SideBar: View {
                         }
                         Spacer(minLength: 0)
                     }
-                    .frame(height: Metrics.strip)
+                    .frame(height: prefs.zenTopBar ? 38 : Metrics.strip)
                     // At the column's far end, fading out as the foot rises,
                     // and back (settleDoors). Laid over the row, the width
                     // let go at, not the one held: sized to the edge as it
@@ -301,7 +303,7 @@ struct SideBar: View {
                 // coming in as this one goes, with nothing between them.
                 if !icons, browser.librarySection != nil {
                     LibraryDrawer(browser: browser, fetches: browser.fetches, loot: browser.loot, prefs: prefs)
-                        .transition(.opacity)
+                        .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .leading)))
                 } else {
                     pages
                 }

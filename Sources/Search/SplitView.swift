@@ -310,7 +310,7 @@ private struct EdgeURLDropStrip: View {
             }
             EdgeURLDropNSView(targeted: $targeted, onDropURL: onDropURL)
         }
-        .frame(width: 24)
+        .frame(width: 14)
         .frame(maxHeight: .infinity)
         .animation(Motion.quick, value: targeted)
     }

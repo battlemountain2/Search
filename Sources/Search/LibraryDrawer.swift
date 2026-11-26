@@ -53,6 +53,7 @@ struct LibraryDrawer: View {
     @State private var newFolderName = ""
     @State private var draggingBookmarkID: Bookmark.ID? = nil
     @State private var dropTarget: BookmarkDropTarget? = nil
+    @State private var folderExpandWork: DispatchWorkItem? = nil
     @State private var mediaItems: [MediaFile] = []
     @State private var loadingMedia = false
     @State private var thumbnails: [URL: NSImage] = [:]
@@ -159,12 +160,13 @@ struct LibraryDrawer: View {
                     ForEach(DownloadFilter.allCases) { f in
                         let on = downloadFilter == f
                         Button {
+                            Haptics.tap()
                             withAnimation(Motion.quick) { downloadFilter = f }
                         } label: {
                             Text(f.rawValue)
-                                .font(.system(size: 10.5, weight: on ? .semibold : .medium))
+                                .font(.system(size: 11, weight: on ? .semibold : .medium))
                                 .foregroundStyle(on ? Palette.ink : greys.muted)
-                                .padding(.horizontal, 8)
+                                .padding(.horizontal, 9)
                                 .padding(.vertical, 4)
                                 .background(
                                     Capsule()
@@ -178,12 +180,13 @@ struct LibraryDrawer: View {
                     ForEach(visible) { f in
                         let on = mediaFilter == f
                         Button {
+                            Haptics.tap()
                             withAnimation(Motion.quick) { mediaFilter = f }
                         } label: {
                             Text(f.rawValue)
-                                .font(.system(size: 10.5, weight: on ? .semibold : .medium))
+                                .font(.system(size: 11, weight: on ? .semibold : .medium))
                                 .foregroundStyle(on ? Palette.ink : greys.muted)
-                                .padding(.horizontal, 8)
+                                .padding(.horizontal, 9)
                                 .padding(.vertical, 4)
                                 .background(
                                     Capsule()
@@ -195,6 +198,7 @@ struct LibraryDrawer: View {
                 }
             }
             .padding(.horizontal, 2)
+            .padding(.vertical, 1)
         }
     }
 
@@ -204,11 +208,11 @@ struct LibraryDrawer: View {
         HStack(spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11))
+                    .font(.system(size: 11.5))
                     .foregroundStyle(greys.muted)
                 TextField("Search \(section.title)…", text: $query)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12))
+                    .font(.system(size: 12.5))
                     .foregroundStyle(Palette.ink)
                 if !query.isEmpty {
                     Button { query = "" } label: {
@@ -523,7 +527,9 @@ struct LibraryDrawer: View {
                         item: item,
                         browser: browser,
                         canMoveUp: false,
-                        draggingID: $draggingBookmarkID
+                        draggingID: $draggingBookmarkID,
+                        dropTarget: $dropTarget,
+                        expandWork: $folderExpandWork
                     )
                 }
             }
@@ -536,18 +542,17 @@ struct LibraryDrawer: View {
                     browser: browser,
                     depth: 0,
                     draggingID: $draggingBookmarkID,
-                    dropTarget: $dropTarget
+                    dropTarget: $dropTarget,
+                    expandWork: $folderExpandWork
                 )
             }
-            if draggingBookmarkID != nil {
-                BookmarkEndDropZone(
-                    parentID: nil,
-                    count: roots.count,
-                    browser: browser,
-                    draggingID: $draggingBookmarkID,
-                    dropTarget: $dropTarget
-                )
-            }
+            BookmarkEndDropZone(
+                parentID: nil,
+                count: roots.count,
+                browser: browser,
+                draggingID: $draggingBookmarkID,
+                dropTarget: $dropTarget
+            )
         }
     }
 
@@ -584,9 +589,10 @@ struct LibraryDrawer: View {
                         withAnimation(Motion.quick) { archiveExpanded.toggle() }
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: archiveExpanded ? "chevron.down" : "chevron.right")
+                            Image(systemName: "chevron.right")
                                 .font(.system(size: 9.5, weight: .semibold))
                                 .foregroundStyle(greys.muted)
+                                .rotationEffect(.degrees(archiveExpanded ? 90 : 0))
                                 .frame(width: 10)
                             Image(systemName: "archivebox")
                                 .font(.system(size: 11.5))
@@ -900,23 +906,12 @@ private struct CompletedDownloadRow: View {
     let keep: Keep
     let loot: Loot
     @State private var hovering = false
+    @State private var cachedIcon: NSImage?
+    @State private var cachedSubtitle: String?
     @Environment(\.greys) private var greys
 
     private var icon: NSImage {
-        NSWorkspace.shared.icon(forFile: keep.path)
-    }
-
-    private var subtitle: String {
-        guard keep.stillThere else { return "File moved or missing" }
-        let size = (try? keep.url.resourceValues(forKeys: [.fileSizeKey, .localizedTypeDescriptionKey]))
-        let bytes = size?.fileSize.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }
-        let kind = size?.localizedTypeDescription
-        switch (bytes, kind) {
-        case let (b?, k?): return "\(b) · \(k)"
-        case let (b?, nil): return b
-        case let (nil, k?): return k
-        default: return keep.from
-        }
+        cachedIcon ?? NSWorkspace.shared.icon(for: .data)
     }
 
     var body: some View {
@@ -929,11 +924,11 @@ private struct CompletedDownloadRow: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(keep.name)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(keep.stillThere ? Palette.ink : greys.muted)
                     .lineLimit(1)
-                Text(subtitle)
-                    .font(.system(size: 10.5))
+                Text(cachedSubtitle ?? keep.from)
+                    .font(.system(size: 11).monospacedDigit())
                     .foregroundStyle(greys.muted)
                     .lineLimit(1)
             }
@@ -978,6 +973,31 @@ private struct CompletedDownloadRow: View {
             }
         }
         .onHover { hovering = $0 }
+        .animation(Motion.quick, value: hovering)
+        .task(id: keep.path) {
+            let url = keep.url
+            let path = keep.path
+            let fallbackFrom = keep.from
+            let result = await Task.detached(priority: .utility) { () -> (NSImage, String) in
+                let icon = NSWorkspace.shared.icon(forFile: path)
+                guard FileManager.default.fileExists(atPath: path) else {
+                    return (icon, "File moved or missing")
+                }
+                let vals = try? url.resourceValues(forKeys: [.fileSizeKey, .localizedTypeDescriptionKey])
+                let bytes = vals?.fileSize.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }
+                let kind = vals?.localizedTypeDescription
+                let sub: String
+                switch (bytes, kind) {
+                case let (b?, k?): sub = "\(b) · \(k)"
+                case let (b?, nil): sub = b
+                case let (nil, k?): sub = k
+                default: sub = fallbackFrom
+                }
+                return (icon, sub)
+            }.value
+            cachedIcon = result.0
+            cachedSubtitle = result.1
+        }
         .contextMenu {
             if keep.stillThere {
                 Button("Open") { NSWorkspace.shared.open(keep.url) }
@@ -1282,11 +1302,11 @@ private struct HistoryRow: View {
                     .frame(width: 16, height: 16)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(trace.title.isEmpty ? (trace.url.host() ?? trace.url.absoluteString) : trace.title)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(Palette.ink)
                         .lineLimit(1)
                     Text(trace.url.host() ?? trace.url.absoluteString)
-                        .font(.system(size: 10.5))
+                        .font(.system(size: 11))
                         .foregroundStyle(greys.muted)
                         .lineLimit(1)
                 }
@@ -1304,7 +1324,7 @@ private struct HistoryRow: View {
                     .help("Copy Address")
                 } else {
                     Text(Self.timeFormatter.string(from: trace.last))
-                        .font(.system(size: 10))
+                        .font(.system(size: 10.5).monospacedDigit())
                         .foregroundStyle(greys.muted)
                 }
             }
@@ -1318,6 +1338,7 @@ private struct HistoryRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .animation(Motion.quick, value: hovering)
         .contextMenu {
             Button("Open in New Tab") { _ = browser.open(trace.url, foreground: true) }
             Button("Open in Split View") {
@@ -1356,19 +1377,19 @@ private struct ArchiveGhostRow: View {
                     .frame(width: 16, height: 16)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(ghost.title.isEmpty ? "Closed Tab" : ghost.title)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(Palette.ink)
                         .lineLimit(1)
                     if let host = ghost.url.host() {
                         Text(host)
-                            .font(.system(size: 10.5))
+                            .font(.system(size: 11))
                             .foregroundStyle(greys.muted)
                             .lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
                 Text(Self.relativeFormatter.localizedString(for: ghost.at, relativeTo: Date()))
-                    .font(.system(size: 10))
+                    .font(.system(size: 10.5).monospacedDigit())
                     .foregroundStyle(greys.muted)
             }
             .padding(.horizontal, 8)
@@ -1381,6 +1402,7 @@ private struct ArchiveGhostRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .animation(Motion.quick, value: hovering)
         .contextMenu {
             Button("Restore Tab") { _ = browser.open(ghost.url, foreground: true) }
             Button("Open in Split View") {
@@ -1433,60 +1455,105 @@ private struct BookmarkDropTarget: Equatable {
     let placement: BookmarkDropPlacement
 }
 
+private func settleBookmarkDrag(
+    draggingID: Binding<Bookmark.ID?>,
+    dropTarget: Binding<BookmarkDropTarget?>,
+    expandWork: Binding<DispatchWorkItem?>
+) {
+    Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { timer in
+        guard NSEvent.pressedMouseButtons & 1 == 0 else { return }
+        timer.invalidate()
+        MainActor.assumeIsolated {
+            expandWork.wrappedValue?.cancel()
+            expandWork.wrappedValue = nil
+            dropTarget.wrappedValue = nil
+            draggingID.wrappedValue = nil
+        }
+    }
+}
+
 private struct BookmarkNodeDropDelegate: DropDelegate {
     let targetID: Bookmark.ID
     let isFolder: Bool
+    let isExpanded: Bool
     let parentID: Bookmark.ID?
     let index: Int
+    let rowHeight: CGFloat
     let browser: Browser
     @Binding var draggingID: Bookmark.ID?
     @Binding var dropTarget: BookmarkDropTarget?
+    @Binding var expandWork: DispatchWorkItem?
+    var onSpringOpen: (() -> Void)? = nil
+
+    private var allows: Bool {
+        guard let moved = draggingID else { return true }
+        return moved != targetID && !(browser.bookmarks.path(to: targetID) ?? []).contains { $0.id == moved }
+    }
 
     private func placement(for info: DropInfo) -> BookmarkDropPlacement {
-        let y = info.location.y
+        let part = info.location.y / max(rowHeight, 1)
         if isFolder {
-            if y < 7 { return .before }
-            if y > 23 { return .after }
+            if part < 0.25 { return .before }
+            if part > 0.75 { return .after }
             return .into
         }
-        return y < 15 ? .before : .after
+        return part < 0.5 ? .before : .after
+    }
+
+    private func updateAim(_ target: BookmarkDropTarget?) {
+        guard target != dropTarget else { return }
+        dropTarget = target
+        expandWork?.cancel()
+        expandWork = nil
+        if let target, target.placement == .into, isFolder, !isExpanded, let onSpringOpen {
+            let work = DispatchWorkItem { onSpringOpen() }
+            expandWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.65, execute: work)
+        }
     }
 
     func validateDrop(info: DropInfo) -> Bool {
-        guard draggingID != targetID else { return false }
+        guard allows else { return false }
         return draggingID != nil || info.hasItemsConforming(to: [.plainText, .text])
     }
 
     func dropEntered(info: DropInfo) {
-        guard draggingID != targetID else { return }
-        dropTarget = BookmarkDropTarget(targetID: targetID, parentID: parentID, index: index, placement: placement(for: info))
+        guard allows else { updateAim(nil); return }
+        updateAim(BookmarkDropTarget(targetID: targetID, parentID: parentID, index: index, placement: placement(for: info)))
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        guard draggingID != targetID else { return DropProposal(operation: .forbidden) }
-        dropTarget = BookmarkDropTarget(targetID: targetID, parentID: parentID, index: index, placement: placement(for: info))
+        guard allows else {
+            updateAim(nil)
+            return DropProposal(operation: .forbidden)
+        }
+        updateAim(BookmarkDropTarget(targetID: targetID, parentID: parentID, index: index, placement: placement(for: info)))
         return DropProposal(operation: .move)
     }
 
     func dropExited(info: DropInfo) {
         if dropTarget?.targetID == targetID {
-            dropTarget = nil
+            updateAim(nil)
         }
     }
 
     func performDrop(info: DropInfo) -> Bool {
+        guard allows else { return false }
         let place = placement(for: info)
-        dropTarget = nil
+        updateAim(nil)
 
         let applyMove: (Bookmark.ID) -> Void = { movedID in
             guard movedID != targetID else { return }
-            switch place {
-            case .into:
-                browser.bookmarks.move(movedID, into: targetID, at: nil)
-            case .before:
-                browser.bookmarks.move(movedID, into: parentID, at: index)
-            case .after:
-                browser.bookmarks.move(movedID, into: parentID, at: index + 1)
+            Haptics.tap()
+            withAnimation(Motion.settle) {
+                switch place {
+                case .into:
+                    browser.bookmarks.move(movedID, into: targetID, at: nil)
+                case .before:
+                    browser.bookmarks.move(movedID, into: parentID, at: index)
+                case .after:
+                    browser.bookmarks.move(movedID, into: parentID, at: index + 1)
+                }
             }
         }
 
@@ -1520,20 +1587,18 @@ private struct BookmarkEndDropZone: View {
     }
 
     var body: some View {
-        HStack {
-            Spacer()
-            Text(parentID == nil ? "Drop to move to bottom (Top Level)" : "Drop to move to end of folder")
-                .font(.system(size: 10.5))
-                .foregroundStyle(active ? Color.accentColor : Palette.muted)
-            Spacer()
+        ZStack(alignment: .top) {
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .frame(height: 36)
+                .contentShape(Rectangle())
+            if active {
+                BookmarkInsertionLine()
+                    .padding(.top, 2)
+                    .allowsHitTesting(false)
+            }
         }
-        .frame(height: 24)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(active ? Color.accentColor : Palette.hairline, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-        )
-        .padding(.horizontal, 8)
-        .padding(.top, 4)
+        .animation(Motion.quick, value: active)
         .onDrop(of: [.plainText, .text], delegate: BookmarkEndDropDelegate(
             parentID: parentID,
             count: count,
@@ -1571,9 +1636,15 @@ private struct BookmarkEndDropDelegate: DropDelegate {
 
     func performDrop(info: DropInfo) -> Bool {
         dropTarget = nil
+        let finishMove: (Bookmark.ID) -> Void = { movedID in
+            Haptics.tap()
+            withAnimation(Motion.settle) {
+                browser.bookmarks.move(movedID, into: parentID, at: nil)
+            }
+        }
         if let movedID = draggingID {
             draggingID = nil
-            browser.bookmarks.move(movedID, into: parentID, at: nil)
+            finishMove(movedID)
             return true
         }
         guard let provider = info.itemProviders(for: [.plainText, .text]).first else { return false }
@@ -1581,7 +1652,7 @@ private struct BookmarkEndDropDelegate: DropDelegate {
             guard let raw = str as? String, let id = UUID(uuidString: raw) else { return }
             DispatchQueue.main.async {
                 draggingID = nil
-                browser.bookmarks.move(id, into: parentID, at: nil)
+                finishMove(id)
             }
         }
         return true
@@ -1590,8 +1661,8 @@ private struct BookmarkEndDropDelegate: DropDelegate {
 
 private struct BookmarkInsertionLine: View {
     var body: some View {
-        Rectangle()
-            .fill(Color.accentColor)
+        Capsule()
+            .fill(Color.accentColor.opacity(0.9))
             .frame(height: 2)
             .padding(.horizontal, 8)
     }
@@ -1605,10 +1676,12 @@ private struct BookmarkLibraryNode: View {
     let depth: Int
     @Binding var draggingID: Bookmark.ID?
     @Binding var dropTarget: BookmarkDropTarget?
+    @Binding var expandWork: DispatchWorkItem?
     @State private var expanded = false
     @State private var hovering = false
     @State private var renaming = false
     @State private var draftTitle = ""
+    @State private var rowHeight: CGFloat = 28
     @Environment(\.greys) private var greys
 
     private var dropPlacement: BookmarkDropPlacement? {
@@ -1618,12 +1691,11 @@ private struct BookmarkLibraryNode: View {
     var body: some View {
         if item.isFolder {
             VStack(alignment: .leading, spacing: 2) {
-                if dropPlacement == .before { BookmarkInsertionLine() }
-
                 HStack(spacing: 6) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    Image(systemName: "chevron.right")
                         .font(.system(size: 9.5, weight: .semibold))
                         .foregroundStyle(greys.muted)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
                         .frame(width: 10)
                     Image(systemName: dropPlacement == .into ? "folder.fill" : "folder")
                         .font(.system(size: 12))
@@ -1631,7 +1703,7 @@ private struct BookmarkLibraryNode: View {
                     if renaming {
                         TextField("Folder name", text: $draftTitle)
                             .textFieldStyle(.plain)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 12.5, weight: .medium))
                             .onSubmit {
                                 BookmarkCard.rename(item.id, draftTitle, in: browser.bookmarks)
                                 renaming = false
@@ -1639,37 +1711,61 @@ private struct BookmarkLibraryNode: View {
                             .onExitCommand { renaming = false }
                     } else {
                         Text(item.label)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 12.5, weight: .medium))
                             .foregroundStyle(Palette.ink)
                             .lineLimit(1)
                     }
                     Spacer(minLength: 0)
+                    if let kids = item.children, !kids.isEmpty {
+                        Text("\(Bookmarks.count(kids))")
+                            .font(.system(size: 11).monospacedDigit())
+                            .foregroundStyle(greys.muted)
+                    }
                 }
-                .padding(.leading, CGFloat(depth) * 12 + 8)
+                .padding(.leading, CGFloat(depth) * 14 + 8)
                 .padding(.trailing, 8)
                 .padding(.vertical, 5)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(dropPlacement == .into ? Color.accentColor.opacity(0.18) : (hovering ? greys.hover.opacity(0.65) : .clear))
                 )
+                .overlay(alignment: dropPlacement == .before ? .top : .bottom) {
+                    if dropPlacement == .before || dropPlacement == .after {
+                        BookmarkInsertionLine()
+                            .padding(.leading, CGFloat(depth) * 14)
+                            .offset(y: dropPlacement == .before ? -1.5 : 1.5)
+                            .allowsHitTesting(false)
+                    }
+                }
                 .contentShape(Rectangle())
+                .opacity(draggingID == item.id ? 0.35 : 1)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowHeight = max($0, 1) }
                 .onTapGesture {
                     guard !renaming else { return }
                     withAnimation(Motion.quick) { expanded.toggle() }
                 }
                 .onHover { hovering = $0 }
+                .animation(Motion.quick, value: hovering)
+                .animation(Motion.quick, value: dropPlacement)
                 .onDrag {
                     draggingID = item.id
+                    settleBookmarkDrag(draggingID: $draggingID, dropTarget: $dropTarget, expandWork: $expandWork)
                     return NSItemProvider(object: item.id.uuidString as NSString)
                 }
                 .onDrop(of: [.plainText, .text], delegate: BookmarkNodeDropDelegate(
                     targetID: item.id,
                     isFolder: true,
+                    isExpanded: expanded,
                     parentID: parentID,
                     index: index,
+                    rowHeight: rowHeight,
                     browser: browser,
                     draggingID: $draggingID,
-                    dropTarget: $dropTarget
+                    dropTarget: $dropTarget,
+                    expandWork: $expandWork,
+                    onSpringOpen: {
+                        withAnimation(Motion.settle) { expanded = true }
+                    }
                 ))
                 .contextMenu {
                     Button("Rename…") {
@@ -1687,8 +1783,6 @@ private struct BookmarkLibraryNode: View {
                     }
                 }
 
-                if dropPlacement == .after { BookmarkInsertionLine() }
-
                 if expanded, let children = item.children {
                     ForEach(Array(children.enumerated()), id: \.element.id) { childIndex, child in
                         BookmarkLibraryNode(
@@ -1698,32 +1792,44 @@ private struct BookmarkLibraryNode: View {
                             browser: browser,
                             depth: depth + 1,
                             draggingID: $draggingID,
-                            dropTarget: $dropTarget
+                            dropTarget: $dropTarget,
+                            expandWork: $expandWork
                         )
                     }
                 }
             }
         } else {
-            VStack(alignment: .leading, spacing: 2) {
-                if dropPlacement == .before { BookmarkInsertionLine().padding(.leading, CGFloat(depth) * 12) }
-                BookmarkLibraryRow(
-                    item: item,
-                    browser: browser,
-                    canMoveUp: depth > 0,
-                    draggingID: $draggingID
-                )
-                .padding(.leading, CGFloat(depth) * 12)
-                .onDrop(of: [.plainText, .text], delegate: BookmarkNodeDropDelegate(
-                    targetID: item.id,
-                    isFolder: false,
-                    parentID: parentID,
-                    index: index,
-                    browser: browser,
-                    draggingID: $draggingID,
-                    dropTarget: $dropTarget
-                ))
-                if dropPlacement == .after { BookmarkInsertionLine().padding(.leading, CGFloat(depth) * 12) }
+            BookmarkLibraryRow(
+                item: item,
+                browser: browser,
+                canMoveUp: depth > 0,
+                draggingID: $draggingID,
+                dropTarget: $dropTarget,
+                expandWork: $expandWork
+            )
+            .padding(.leading, CGFloat(depth) * 14)
+            .overlay(alignment: dropPlacement == .before ? .top : .bottom) {
+                if dropPlacement == .before || dropPlacement == .after {
+                    BookmarkInsertionLine()
+                        .padding(.leading, CGFloat(depth) * 14)
+                        .offset(y: dropPlacement == .before ? -1.5 : 1.5)
+                        .allowsHitTesting(false)
+                }
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowHeight = max($0, 1) }
+            .onDrop(of: [.plainText, .text], delegate: BookmarkNodeDropDelegate(
+                targetID: item.id,
+                isFolder: false,
+                isExpanded: false,
+                parentID: parentID,
+                index: index,
+                rowHeight: rowHeight,
+                browser: browser,
+                draggingID: $draggingID,
+                dropTarget: $dropTarget,
+                expandWork: $expandWork
+            ))
+            .animation(Motion.quick, value: dropPlacement)
         }
     }
 }
@@ -1733,6 +1839,8 @@ private struct BookmarkLibraryRow: View {
     let browser: Browser
     var canMoveUp = false
     @Binding var draggingID: Bookmark.ID?
+    @Binding var dropTarget: BookmarkDropTarget?
+    @Binding var expandWork: DispatchWorkItem?
     @State private var hovering = false
     @State private var renaming = false
     @State private var draftTitle = ""
@@ -1753,7 +1861,7 @@ private struct BookmarkLibraryRow: View {
                 if renaming {
                     TextField("Bookmark name", text: $draftTitle)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12.5, weight: .medium))
                         .onSubmit {
                             BookmarkCard.rename(item.id, draftTitle, in: browser.bookmarks)
                             renaming = false
@@ -1761,13 +1869,13 @@ private struct BookmarkLibraryRow: View {
                         .onExitCommand { renaming = false }
                 } else {
                     Text(item.label)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(Palette.ink)
                         .lineLimit(1)
                 }
                 if let host = item.host {
                     Text(host)
-                        .font(.system(size: 10.5))
+                        .font(.system(size: 11))
                         .foregroundStyle(greys.muted)
                         .lineLimit(1)
                 }
@@ -1793,12 +1901,15 @@ private struct BookmarkLibraryRow: View {
                 .fill(hovering ? greys.hover.opacity(0.65) : .clear)
         )
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .opacity(draggingID == item.id ? 0.35 : 1)
         .onTapGesture {
             if !renaming, let url = item.address { _ = browser.open(url, foreground: true) }
         }
         .onHover { hovering = $0 }
+        .animation(Motion.quick, value: hovering)
         .onDrag {
             draggingID = item.id
+            settleBookmarkDrag(draggingID: $draggingID, dropTarget: $dropTarget, expandWork: $expandWork)
             return NSItemProvider(object: item.id.uuidString as NSString)
         }
         .contextMenu {
@@ -2121,13 +2232,20 @@ struct MediaPreviewOverlay: View {
                     .padding(16)
             }
             .frame(maxWidth: 740, maxHeight: 620)
-            .background(Palette.ground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(
+                ZStack {
+                    VisualEffectView(material: .popover, blendingMode: .withinWindow)
+                    Palette.ground.opacity(0.86)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            )
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(Palette.hairline, lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.4), radius: 32, y: 12)
+            .shadow(color: .black.opacity(0.36), radius: 32, y: 12)
             .padding(36)
+            .transition(.scale(scale: 0.97).combined(with: .opacity))
         }
         .onAppear { loadCurrent() }
         .onChange(of: preview.index) { _, _ in loadCurrent() }
@@ -2175,8 +2293,16 @@ struct MediaPreviewOverlay: View {
                     .lineLimit(1)
                 if let modifiedDate {
                     Text(Self.relativeFormatter.localizedString(for: modifiedDate, relativeTo: Date()))
-                        .font(.system(size: 11.5))
+                        .font(.system(size: 11.5).monospacedDigit())
                         .foregroundStyle(Palette.muted)
+                }
+                if preview.items.count > 1 {
+                    Text("\(preview.index + 1)/\(preview.items.count)")
+                        .font(.system(size: 10.5, weight: .medium).monospacedDigit())
+                        .foregroundStyle(Palette.muted)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Palette.wash, in: Capsule())
                 }
             }
 

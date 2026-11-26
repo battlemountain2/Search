@@ -91,6 +91,7 @@ enum Web {
         config.processPool = pool
         config.websiteDataStore = .nonPersistent()
         let view = WKWebView(frame: .zero, configuration: config)
+        view.loadHTMLString("", baseURL: nil)
         warmStandby = view
     }
 
@@ -688,7 +689,8 @@ final class Tab: ObservableObject, Identifiable {
         guard enable != throttled else { return }
         throttled = enable
         guard let built else { return }
-        built.evaluateInSearch(enable ? BackgroundThrottler.throttle : BackgroundThrottler.resume)
+        let script = enable ? BackgroundThrottler.throttle : BackgroundThrottler.resume
+        built.evaluateJavaScript(script, in: nil, in: .page) { _ in }
     }
     /// Paused from the player at the foot of the sidebar, to be played again
     /// from there (see Player.swift).

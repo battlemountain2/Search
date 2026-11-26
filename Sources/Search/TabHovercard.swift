@@ -127,39 +127,33 @@ struct TabHovercard: View {
 
     @ViewBuilder
     private var memoryBadge: some View {
-        if tab.asleep {
-            let saved = Browser.isHeavyTab(tab) ? "450" : "180"
-            Text("Asleep (Saved ~\(saved) MB)")
-                .font(.system(size: 9.5, weight: .medium))
-                .foregroundStyle(Color.purple.opacity(0.95))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.purple.opacity(0.12), in: Capsule())
-        } else if tab.noisy {
-            let memStr = tab.activeMemoryMB.map { " (\($0) MB)" } ?? ""
-            Text("Playing\(memStr)")
-                .font(.system(size: 9.5, weight: .medium))
-                .foregroundStyle(Palette.safe)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Palette.safe.opacity(0.12), in: Capsule())
-        } else if tab.throttled {
-            let memStr = tab.activeMemoryMB.map { " (\($0) MB)" } ?? ""
-            Text("Throttled\(memStr)")
-                .font(.system(size: 9.5, weight: .medium))
-                .foregroundStyle(Palette.unsafe)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Palette.unsafe.opacity(0.12), in: Capsule())
-        } else {
-            let memText = tab.activeMemoryMB.map { "\($0) MB" } ?? "Active"
-            Text(memText)
-                .font(.system(size: 9.5, weight: .medium))
-                .foregroundStyle(Palette.muted)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Palette.ink.opacity(0.06), in: Capsule())
+        Group {
+            if tab.asleep {
+                let saved = Browser.isHeavyTab(tab) ? "450" : "180"
+                Text("Asleep (Saved ~\(saved) MB)")
+                    .foregroundStyle(Color.purple.opacity(0.9))
+                    .background(Color.purple.opacity(0.12), in: Capsule())
+            } else if tab.noisy {
+                let memStr = tab.activeMemoryMB.map { " (\($0) MB)" } ?? ""
+                Text("Playing\(memStr)")
+                    .foregroundStyle(Palette.safe)
+                    .background(Palette.safe.opacity(0.12), in: Capsule())
+            } else if tab.throttled {
+                let memStr = tab.activeMemoryMB.map { " (\($0) MB)" } ?? ""
+                Text("Throttled\(memStr)")
+                    .foregroundStyle(Palette.unsafe)
+                    .background(Palette.unsafe.opacity(0.12), in: Capsule())
+            } else {
+                let memText = tab.activeMemoryMB.map { "\($0) MB" } ?? "Active"
+                Text(memText)
+                    .foregroundStyle(Palette.muted)
+                    .background(Palette.ink.opacity(0.06), in: Capsule())
+            }
         }
+        .font(.system(size: 9.5, weight: .medium))
+        .monospacedDigit()
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
     }
 
     // MARK: - 3. Integrated Media Bar
@@ -205,18 +199,7 @@ struct TabHovercard: View {
             Spacer(minLength: 0)
 
             if tab.noisy {
-                // Mini Equalizer Bars
-                HStack(spacing: 2) {
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(Palette.safe)
-                        .frame(width: 2, height: 8)
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(Palette.safe)
-                        .frame(width: 2, height: 12)
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(Palette.safe)
-                        .frame(width: 2, height: 6)
-                }
+                EqualizerView(isPlaying: true, tint: Palette.safe)
             }
         }
         .padding(.horizontal, 8)
@@ -263,7 +246,7 @@ struct TabHovercard: View {
             HovercardPill(
                 icon: bookmarked ? "star.fill" : "star",
                 label: bookmarked ? "Saved" : "Save",
-                iconColor: bookmarked ? Color.yellow : nil
+                iconColor: bookmarked ? Color.orange : nil
             ) {
                 browser.bookmarks.toggle(tab)
             }

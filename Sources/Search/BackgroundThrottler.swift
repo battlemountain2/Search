@@ -40,12 +40,18 @@ enum BackgroundThrottler {
           window.requestAnimationFrame = window.__search_orig_raf;
           window.cancelAnimationFrame = window.__search_orig_caf;
         }
-        if (document.visibilityState !== 'visible') {
+        var changed = document.visibilityState === 'hidden';
+        try {
+          delete document.hidden;
+          delete document.visibilityState;
+        } catch (e) {
           try {
             Object.defineProperty(document, 'hidden', { value: false, configurable: true });
             Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
-            document.dispatchEvent(new Event('visibilitychange'));
-          } catch (e) {}
+          } catch (e2) {}
+        }
+        if (changed) {
+          document.dispatchEvent(new Event('visibilitychange'));
         }
       } catch (e) {}
     })();

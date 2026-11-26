@@ -213,7 +213,7 @@ struct BookmarksBar: View {
                 }
                 if !bare {
                     Text(node.title)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(Palette.ink.opacity(0.85))
                         .lineLimit(1)
                         .frame(maxWidth: 150, alignment: .leading)
@@ -225,16 +225,16 @@ struct BookmarksBar: View {
                         .foregroundStyle(Palette.ink.opacity(0.35))
                 }
             }
-            .padding(.horizontal, bare ? 4 : 6)
-            .frame(minWidth: bare ? 20 : nil)
-            .frame(height: 20)
+            .padding(.horizontal, bare ? 5 : 7)
+            .frame(minWidth: bare ? 21 : nil)
+            .frame(height: 21)
             .background(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(hovering ? Palette.ink.opacity(0.08) : Color.white.opacity(0.02))
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(hovering ? Palette.hover : .clear)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .strokeBorder(Color.white.opacity(hovering ? 0.08 : 0.0), lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Palette.hairline.opacity(hovering ? 0.75 : 0.0), lineWidth: 0.5)
             )
             .contentShape(Rectangle())
             .onTapGesture(perform: act)
