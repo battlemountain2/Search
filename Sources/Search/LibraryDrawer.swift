@@ -51,6 +51,8 @@ struct LibraryDrawer: View {
     @State private var archiveExpanded = false
     @State private var addingFolder = false
     @State private var newFolderName = ""
+    @State private var draggingBookmarkID: Bookmark.ID? = nil
+    @State private var dropTarget: BookmarkDropTarget? = nil
     @State private var mediaItems: [MediaFile] = []
     @State private var loadingMedia = false
     @State private var thumbnails: [URL: NSImage] = [:]
@@ -450,12 +452,34 @@ struct LibraryDrawer: View {
                 emptyState("No matching bookmarks", icon: "bookmark")
             } else {
                 ForEach(matches) { item in
-                    BookmarkLibraryRow(item: item, browser: browser, canMoveUp: false)
+                    BookmarkLibraryRow(
+                        item: item,
+                        browser: browser,
+                        canMoveUp: false,
+                        draggingID: $draggingBookmarkID
+                    )
                 }
             }
         } else {
-            ForEach(roots) { item in
-                BookmarkLibraryNode(item: item, browser: browser, depth: 0)
+            ForEach(Array(roots.enumerated()), id: \.element.id) { index, item in
+                BookmarkLibraryNode(
+                    item: item,
+                    parentID: nil,
+                    index: index,
+                    browser: browser,
+                    depth: 0,
+                    draggingID: $draggingBookmarkID,
+                    dropTarget: $dropTarget
+                )
+            }
+            if draggingBookmarkID != nil {
+                BookmarkEndDropZone(
+                    parentID: nil,
+                    count: roots.count,
+                    browser: browser,
+                    draggingID: $draggingBookmarkID,
+                    dropTarget: $dropTarget
+                )
             }
         }
     }
@@ -1227,75 +1251,255 @@ private struct LibraryFavicon: View {
     }
 }
 
+private enum BookmarkDropPlacement: Equatable {
+    case before, into, after
+}
+
+private struct BookmarkDropTarget: Equatable {
+    let targetID: Bookmark.ID?
+    let parentID: Bookmark.ID?
+    let index: Int
+    let placement: BookmarkDropPlacement
+}
+
+private struct BookmarkNodeDropDelegate: DropDelegate {
+    let targetID: Bookmark.ID
+    let isFolder: Bool
+    let parentID: Bookmark.ID?
+    let index: Int
+    let browser: Browser
+    @Binding var draggingID: Bookmark.ID?
+    @Binding var dropTarget: BookmarkDropTarget?
+
+    private func placement(for info: DropInfo) -> BookmarkDropPlacement {
+        let y = info.location.y
+        if isFolder {
+            if y < 7 { return .before }
+            if y > 23 { return .after }
+            return .into
+        }
+        return y < 15 ? .before : .after
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        guard draggingID != targetID else { return false }
+        return draggingID != nil || info.hasItemsConforming(to: [.plainText, .text])
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard draggingID != targetID else { return }
+        dropTarget = BookmarkDropTarget(targetID: targetID, parentID: parentID, index: index, placement: placement(for: info))
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        guard draggingID != targetID else { return DropProposal(operation: .forbidden) }
+        dropTarget = BookmarkDropTarget(targetID: targetID, parentID: parentID, index: index, placement: placement(for: info))
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        if dropTarget?.targetID == targetID {
+            dropTarget = nil
+        }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        let place = placement(for: info)
+        dropTarget = nil
+
+        let applyMove: (Bookmark.ID) -> Void = { movedID in
+            guard movedID != targetID else { return }
+            switch place {
+            case .into:
+                browser.bookmarks.move(movedID, into: targetID, at: nil)
+            case .before:
+                browser.bookmarks.move(movedID, into: parentID, at: index)
+            case .after:
+                browser.bookmarks.move(movedID, into: parentID, at: index + 1)
+            }
+        }
+
+        if let movedID = draggingID {
+            draggingID = nil
+            applyMove(movedID)
+            return true
+        }
+
+        guard let provider = info.itemProviders(for: [.plainText, .text]).first else { return false }
+        _ = provider.loadObject(ofClass: NSString.self) { str, _ in
+            guard let raw = str as? String, let id = UUID(uuidString: raw) else { return }
+            DispatchQueue.main.async {
+                draggingID = nil
+                applyMove(id)
+            }
+        }
+        return true
+    }
+}
+
+private struct BookmarkEndDropZone: View {
+    let parentID: Bookmark.ID?
+    let count: Int
+    let browser: Browser
+    @Binding var draggingID: Bookmark.ID?
+    @Binding var dropTarget: BookmarkDropTarget?
+
+    private var active: Bool {
+        dropTarget?.targetID == nil && dropTarget?.parentID == parentID
+    }
+
+    var body: some View {
+        HStack {
+            Spacer()
+            Text(parentID == nil ? "Drop to move to bottom (Top Level)" : "Drop to move to end of folder")
+                .font(.system(size: 10.5))
+                .foregroundStyle(active ? Color.accentColor : Palette.muted)
+            Spacer()
+        }
+        .frame(height: 24)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(active ? Color.accentColor : Palette.hairline, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+        )
+        .padding(.horizontal, 8)
+        .padding(.top, 4)
+        .onDrop(of: [.plainText, .text], delegate: BookmarkEndDropDelegate(
+            parentID: parentID,
+            count: count,
+            browser: browser,
+            draggingID: $draggingID,
+            dropTarget: $dropTarget
+        ))
+    }
+}
+
+private struct BookmarkEndDropDelegate: DropDelegate {
+    let parentID: Bookmark.ID?
+    let count: Int
+    let browser: Browser
+    @Binding var draggingID: Bookmark.ID?
+    @Binding var dropTarget: BookmarkDropTarget?
+
+    func validateDrop(info: DropInfo) -> Bool {
+        draggingID != nil || info.hasItemsConforming(to: [.plainText, .text])
+    }
+
+    func dropEntered(info: DropInfo) {
+        dropTarget = BookmarkDropTarget(targetID: nil, parentID: parentID, index: count, placement: .after)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        if dropTarget?.targetID == nil && dropTarget?.parentID == parentID {
+            dropTarget = nil
+        }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        dropTarget = nil
+        if let movedID = draggingID {
+            draggingID = nil
+            browser.bookmarks.move(movedID, into: parentID, at: nil)
+            return true
+        }
+        guard let provider = info.itemProviders(for: [.plainText, .text]).first else { return false }
+        _ = provider.loadObject(ofClass: NSString.self) { str, _ in
+            guard let raw = str as? String, let id = UUID(uuidString: raw) else { return }
+            DispatchQueue.main.async {
+                draggingID = nil
+                browser.bookmarks.move(id, into: parentID, at: nil)
+            }
+        }
+        return true
+    }
+}
+
+private struct BookmarkInsertionLine: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color.accentColor)
+            .frame(height: 2)
+            .padding(.horizontal, 8)
+    }
+}
+
 private struct BookmarkLibraryNode: View {
     let item: Bookmark
+    let parentID: Bookmark.ID?
+    let index: Int
     let browser: Browser
     let depth: Int
+    @Binding var draggingID: Bookmark.ID?
+    @Binding var dropTarget: BookmarkDropTarget?
     @State private var expanded = false
     @State private var hovering = false
-    @State private var dropTargeted = false
     @State private var renaming = false
     @State private var draftTitle = ""
     @Environment(\.greys) private var greys
 
+    private var dropPlacement: BookmarkDropPlacement? {
+        dropTarget?.targetID == item.id ? dropTarget?.placement : nil
+    }
+
     var body: some View {
         if item.isFolder {
             VStack(alignment: .leading, spacing: 2) {
+                if dropPlacement == .before { BookmarkInsertionLine() }
+
                 HStack(spacing: 6) {
-                    Button {
-                        withAnimation(Motion.quick) { expanded.toggle() }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                                .font(.system(size: 9.5, weight: .semibold))
-                                .foregroundStyle(greys.muted)
-                                .frame(width: 10)
-                            Image(systemName: dropTargeted ? "folder.fill" : "folder")
-                                .font(.system(size: 12))
-                                .foregroundStyle(dropTargeted ? Color.accentColor : greys.muted)
-                            if renaming {
-                                TextField("Folder name", text: $draftTitle)
-                                    .textFieldStyle(.plain)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .onSubmit {
-                                        BookmarkCard.rename(item.id, draftTitle, in: browser.bookmarks)
-                                        renaming = false
-                                    }
-                                    .onExitCommand { renaming = false }
-                            } else {
-                                Text(item.label)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(Palette.ink)
-                                    .lineLimit(1)
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(greys.muted)
+                        .frame(width: 10)
+                    Image(systemName: dropPlacement == .into ? "folder.fill" : "folder")
+                        .font(.system(size: 12))
+                        .foregroundStyle(dropPlacement == .into ? Color.accentColor : greys.muted)
+                    if renaming {
+                        TextField("Folder name", text: $draftTitle)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12, weight: .medium))
+                            .onSubmit {
+                                BookmarkCard.rename(item.id, draftTitle, in: browser.bookmarks)
+                                renaming = false
                             }
-                            Spacer(minLength: 0)
-                        }
-                        .contentShape(Rectangle())
+                            .onExitCommand { renaming = false }
+                    } else {
+                        Text(item.label)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Palette.ink)
+                            .lineLimit(1)
                     }
-                    .buttonStyle(.plain)
+                    Spacer(minLength: 0)
                 }
                 .padding(.leading, CGFloat(depth) * 12 + 8)
                 .padding(.trailing, 8)
                 .padding(.vertical, 5)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(dropTargeted ? Color.accentColor.opacity(0.18) : (hovering ? greys.hover.opacity(0.65) : .clear))
+                        .fill(dropPlacement == .into ? Color.accentColor.opacity(0.18) : (hovering ? greys.hover.opacity(0.65) : .clear))
                 )
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    guard !renaming else { return }
+                    withAnimation(Motion.quick) { expanded.toggle() }
+                }
                 .onHover { hovering = $0 }
                 .onDrag {
-                    NSItemProvider(object: item.id.uuidString as NSString)
+                    draggingID = item.id
+                    return NSItemProvider(object: item.id.uuidString as NSString)
                 }
-                .onDrop(of: [.text], isTargeted: $dropTargeted) { providers in
-                    guard let first = providers.first else { return false }
-                    _ = first.loadObject(ofClass: NSString.self) { str, _ in
-                        guard let raw = str as? String, let id = UUID(uuidString: raw), id != item.id else { return }
-                        DispatchQueue.main.async {
-                            browser.bookmarks.move(id, into: item.id)
-                            withAnimation(Motion.quick) { expanded = true }
-                        }
-                    }
-                    return true
-                }
+                .onDrop(of: [.plainText, .text], delegate: BookmarkNodeDropDelegate(
+                    targetID: item.id,
+                    isFolder: true,
+                    parentID: parentID,
+                    index: index,
+                    browser: browser,
+                    draggingID: $draggingID,
+                    dropTarget: $dropTarget
+                ))
                 .contextMenu {
                     Button("Rename…") {
                         draftTitle = item.label
@@ -1312,15 +1516,43 @@ private struct BookmarkLibraryNode: View {
                     }
                 }
 
+                if dropPlacement == .after { BookmarkInsertionLine() }
+
                 if expanded, let children = item.children {
-                    ForEach(children) { child in
-                        BookmarkLibraryNode(item: child, browser: browser, depth: depth + 1)
+                    ForEach(Array(children.enumerated()), id: \.element.id) { childIndex, child in
+                        BookmarkLibraryNode(
+                            item: child,
+                            parentID: item.id,
+                            index: childIndex,
+                            browser: browser,
+                            depth: depth + 1,
+                            draggingID: $draggingID,
+                            dropTarget: $dropTarget
+                        )
                     }
                 }
             }
         } else {
-            BookmarkLibraryRow(item: item, browser: browser, canMoveUp: depth > 0)
+            VStack(alignment: .leading, spacing: 2) {
+                if dropPlacement == .before { BookmarkInsertionLine().padding(.leading, CGFloat(depth) * 12) }
+                BookmarkLibraryRow(
+                    item: item,
+                    browser: browser,
+                    canMoveUp: depth > 0,
+                    draggingID: $draggingID
+                )
                 .padding(.leading, CGFloat(depth) * 12)
+                .onDrop(of: [.plainText, .text], delegate: BookmarkNodeDropDelegate(
+                    targetID: item.id,
+                    isFolder: false,
+                    parentID: parentID,
+                    index: index,
+                    browser: browser,
+                    draggingID: $draggingID,
+                    dropTarget: $dropTarget
+                ))
+                if dropPlacement == .after { BookmarkInsertionLine().padding(.leading, CGFloat(depth) * 12) }
+            }
         }
     }
 }
@@ -1329,74 +1561,74 @@ private struct BookmarkLibraryRow: View {
     let item: Bookmark
     let browser: Browser
     var canMoveUp = false
+    @Binding var draggingID: Bookmark.ID?
     @State private var hovering = false
     @State private var renaming = false
     @State private var draftTitle = ""
     @Environment(\.greys) private var greys
 
     var body: some View {
-        Button {
-            if !renaming, let url = item.address { _ = browser.open(url, foreground: true) }
-        } label: {
-            HStack(spacing: 8) {
-                if let url = item.address {
-                    LibraryFavicon(url: url)
-                        .frame(width: 16, height: 16)
+        HStack(spacing: 8) {
+            if let url = item.address {
+                LibraryFavicon(url: url)
+                    .frame(width: 16, height: 16)
+            } else {
+                Image(systemName: "bookmark")
+                    .font(.system(size: 11))
+                    .foregroundStyle(greys.muted)
+                    .frame(width: 16, height: 16)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                if renaming {
+                    TextField("Bookmark name", text: $draftTitle)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12, weight: .medium))
+                        .onSubmit {
+                            BookmarkCard.rename(item.id, draftTitle, in: browser.bookmarks)
+                            renaming = false
+                        }
+                        .onExitCommand { renaming = false }
                 } else {
-                    Image(systemName: "bookmark")
-                        .font(.system(size: 11))
+                    Text(item.label)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(1)
+                }
+                if let host = item.host {
+                    Text(host)
+                        .font(.system(size: 10.5))
                         .foregroundStyle(greys.muted)
-                        .frame(width: 16, height: 16)
-                }
-                VStack(alignment: .leading, spacing: 1) {
-                    if renaming {
-                        TextField("Bookmark name", text: $draftTitle)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 12, weight: .medium))
-                            .onSubmit {
-                                BookmarkCard.rename(item.id, draftTitle, in: browser.bookmarks)
-                                renaming = false
-                            }
-                            .onExitCommand { renaming = false }
-                    } else {
-                        Text(item.label)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Palette.ink)
-                            .lineLimit(1)
-                    }
-                    if let host = item.host {
-                        Text(host)
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(greys.muted)
-                            .lineLimit(1)
-                    }
-                }
-                Spacer(minLength: 0)
-                if hovering, !renaming, let url = item.address {
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
-                    } label: {
-                        Image(systemName: "link")
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(Palette.ink.opacity(0.75))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Copy Address")
+                        .lineLimit(1)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(hovering ? greys.hover.opacity(0.65) : .clear)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            Spacer(minLength: 0)
+            if hovering, !renaming, let url = item.address {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                } label: {
+                    Image(systemName: "link")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Palette.ink.opacity(0.75))
+                }
+                .buttonStyle(.plain)
+                .help("Copy Address")
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(hovering ? greys.hover.opacity(0.65) : .clear)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onTapGesture {
+            if !renaming, let url = item.address { _ = browser.open(url, foreground: true) }
+        }
         .onHover { hovering = $0 }
         .onDrag {
-            NSItemProvider(object: item.id.uuidString as NSString)
+            draggingID = item.id
+            return NSItemProvider(object: item.id.uuidString as NSString)
         }
         .contextMenu {
             if let url = item.address {
