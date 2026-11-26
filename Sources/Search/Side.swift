@@ -88,7 +88,13 @@ struct SideBar: View {
     /// A tab's line: taller with roomier tabs turned on.
     private var rowHeight: CGFloat { prefs.sideRow }
     /// The column's width: the setting, or where the edge is while it is held.
-    private var width: CGFloat { live ?? prefs.columnWidth }
+    private var width: CGFloat {
+        let base = live ?? prefs.columnWidth
+        if browser.librarySection != nil, !icons {
+            return max(base, LibraryDrawer.preferredWidth)
+        }
+        return base
+    }
     private static let gap: CGFloat = 2
     private static let groupInset: CGFloat = 4
     private static let square: CGFloat = 34

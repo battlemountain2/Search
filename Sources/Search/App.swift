@@ -907,7 +907,13 @@ struct ContentView: View {
     private var laidFar: CGFloat { farRoom ?? farGap }
 
     /// The column's width: the setting, or where its edge is while held.
-    private var sideWidth: CGFloat { edges.side ?? browser.prefs.columnWidth }
+    private var sideWidth: CGFloat {
+        let base = edges.side ?? browser.prefs.columnWidth
+        if browser.librarySection != nil, !browser.prefs.iconColumn {
+            return max(base, LibraryDrawer.preferredWidth)
+        }
+        return base
+    }
 
     /// The page as a card on the window's ground: with the tabs down the
     /// side, the column out or folded away, the switch on, and neither the

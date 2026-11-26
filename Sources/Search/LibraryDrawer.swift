@@ -4,7 +4,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum LibrarySection: String, CaseIterable, Identifiable {
-    case downloads, media, history, archive
+    case downloads, media, bookmarks, history, archive
 
     var id: String { rawValue }
 
@@ -12,6 +12,7 @@ enum LibrarySection: String, CaseIterable, Identifiable {
         switch self {
         case .downloads: return "Downloads"
         case .media: return "Media"
+        case .bookmarks: return "Bookmarks"
         case .history: return "History"
         case .archive: return "Archive"
         }
@@ -21,6 +22,7 @@ enum LibrarySection: String, CaseIterable, Identifiable {
         switch self {
         case .downloads: return "arrow.down.circle"
         case .media: return "photo.on.rectangle"
+        case .bookmarks: return "bookmark"
         case .history: return "clock.arrow.circlepath"
         case .archive: return "archivebox"
         }
@@ -28,9 +30,11 @@ enum LibrarySection: String, CaseIterable, Identifiable {
 }
 
 /// Zen / Artemis-inspired sidebar Library drawer: vertical section rail on the
-/// left (Downloads, Media, History, Archive) with a `<` back button at the
-/// bottom, and a searchable, date-grouped list on the right.
+/// left (Downloads, Media, Bookmarks, History, Archive) with a `<` back button
+/// at the bottom, and a searchable, date-grouped list on the right.
 struct LibraryDrawer: View {
+    static let preferredWidth: CGFloat = 340
+
     @ObservedObject var browser: Browser
     @ObservedObject var fetches: Fetches
     @ObservedObject var loot: Loot
@@ -200,6 +204,16 @@ struct LibraryDrawer: View {
                 }
                 .buttonStyle(.plain)
                 .help("Refresh Media")
+            } else if section == .bookmarks {
+                Button { browser.lead(to: InternalPage(.bookmarks)) } label: {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Palette.ink.opacity(0.75))
+                        .frame(width: 28, height: 28)
+                        .background(greys.hover.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .help("Open Bookmarks Manager")
             } else if section == .history {
                 Button { browser.lead(to: InternalPage(.history)) } label: {
                     Image(systemName: "arrow.up.right.square")
@@ -235,6 +249,8 @@ struct LibraryDrawer: View {
                     downloadsList
                 case .media:
                     mediaList
+                case .bookmarks:
+                    bookmarksList
                 case .history:
                     historyList
                 case .archive:
@@ -321,6 +337,44 @@ struct LibraryDrawer: View {
                 }
             }
         }
+    }
+
+    // MARK: - Bookmarks
+
+    @ViewBuilder
+    private var bookmarksList: some View {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let roots = browser.bookmarks.roots
+        if roots.isEmpty {
+            emptyState("No bookmarks yet", icon: "bookmark")
+        } else if !needle.isEmpty {
+            let matches = flattenBookmarks(roots).filter {
+                $0.label.lowercased().contains(needle) || ($0.url?.lowercased().contains(needle) ?? false)
+            }
+            if matches.isEmpty {
+                emptyState("No matching bookmarks", icon: "bookmark")
+            } else {
+                ForEach(matches) { item in
+                    BookmarkLibraryRow(item: item, browser: browser)
+                }
+            }
+        } else {
+            ForEach(roots) { item in
+                BookmarkLibraryNode(item: item, browser: browser, depth: 0)
+            }
+        }
+    }
+
+    private func flattenBookmarks(_ items: [Bookmark]) -> [Bookmark] {
+        var out: [Bookmark] = []
+        for item in items {
+            if item.isFolder {
+                if let children = item.children { out.append(contentsOf: flattenBookmarks(children)) }
+            } else {
+                out.append(item)
+            }
+        }
+        return out
     }
 
     // MARK: - History
@@ -450,12 +504,17 @@ struct LibraryDrawer: View {
         loadingMedia = true
         let downloadsFolder = prefs.downloads
         let picturesFolder = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
+        let documentsFolder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
         DispatchQueue.global(qos: .utility).async {
             let exts: Set<String> = ["png", "jpg", "jpeg", "webp", "gif", "heic", "mp4", "mov", "pdf"]
             let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
             var roots: [(url: URL, source: String)] = [(downloadsFolder, "Downloads")]
-            if let picturesFolder, picturesFolder.standardizedFileURL != downloadsFolder.standardizedFileURL {
+            var seenDirs: Set<URL> = [downloadsFolder.standardizedFileURL]
+            if let picturesFolder, seenDirs.insert(picturesFolder.standardizedFileURL).inserted {
                 roots.append((picturesFolder, "Pictures"))
+            }
+            if let documentsFolder, seenDirs.insert(documentsFolder.standardizedFileURL).inserted {
+                roots.append((documentsFolder, "Documents"))
             }
             var found: [MediaFile] = []
             for root in roots {
@@ -476,7 +535,7 @@ struct LibraryDrawer: View {
                 }
             }
             found.sort { $0.modified > $1.modified }
-            let clipped = Array(found.prefix(100))
+            let clipped = Array(found.prefix(120))
             DispatchQueue.main.async {
                 mediaItems = clipped
                 loadingMedia = false
@@ -732,10 +791,8 @@ private struct HistoryRow: View {
             _ = browser.open(trace.url, foreground: true)
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "globe")
-                    .font(.system(size: 11))
-                    .foregroundStyle(greys.muted)
-                    .frame(width: 18)
+                LibraryFavicon(url: trace.url)
+                    .frame(width: 16, height: 16)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(trace.title.isEmpty ? (trace.url.host() ?? trace.url.absoluteString) : trace.title)
                         .font(.system(size: 12, weight: .medium))
@@ -845,6 +902,156 @@ private struct ArchiveGhostRow: View {
                     browser.openLinkBeside(ghost.url, from: active, onLeft: false)
                 } else {
                     _ = browser.open(ghost.url, foreground: true)
+                }
+            }
+        }
+    }
+}
+
+private struct LibraryFavicon: View {
+    let url: URL
+    @Environment(\.greys) private var greys
+
+    private var icon: NSImage? {
+        if let direct = Favicons.shared.cached(for: url) { return direct }
+        if let host = url.host()?.lowercased() {
+            return Favicons.shared.cached(host) ?? Favicons.shared.cached("www." + host)
+        }
+        return nil
+    }
+
+    var body: some View {
+        if let icon {
+            Image(nsImage: icon)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 15, height: 15)
+                .clipShape(RoundedRectangle(cornerRadius: 3.5, style: .continuous))
+        } else {
+            Image(systemName: "globe")
+                .font(.system(size: 11))
+                .foregroundStyle(greys.muted)
+                .frame(width: 15, height: 15)
+        }
+    }
+}
+
+private struct BookmarkLibraryNode: View {
+    let item: Bookmark
+    let browser: Browser
+    let depth: Int
+    @State private var expanded = false
+    @Environment(\.greys) private var greys
+
+    var body: some View {
+        if item.isFolder {
+            VStack(alignment: .leading, spacing: 2) {
+                Button {
+                    withAnimation(Motion.quick) { expanded.toggle() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundStyle(greys.muted)
+                            .frame(width: 10)
+                        Image(systemName: "folder")
+                            .font(.system(size: 12))
+                            .foregroundStyle(greys.muted)
+                        Text(item.label)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Palette.ink)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, CGFloat(depth) * 12 + 8)
+                    .padding(.trailing, 8)
+                    .padding(.vertical, 5)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if expanded, let children = item.children {
+                    ForEach(children) { child in
+                        BookmarkLibraryNode(item: child, browser: browser, depth: depth + 1)
+                    }
+                }
+            }
+        } else {
+            BookmarkLibraryRow(item: item, browser: browser)
+                .padding(.leading, CGFloat(depth) * 12)
+        }
+    }
+}
+
+private struct BookmarkLibraryRow: View {
+    let item: Bookmark
+    let browser: Browser
+    @State private var hovering = false
+    @Environment(\.greys) private var greys
+
+    var body: some View {
+        Button {
+            if let url = item.address { _ = browser.open(url, foreground: true) }
+        } label: {
+            HStack(spacing: 8) {
+                if let url = item.address {
+                    LibraryFavicon(url: url)
+                        .frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: "bookmark")
+                        .font(.system(size: 11))
+                        .foregroundStyle(greys.muted)
+                        .frame(width: 16, height: 16)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.label)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(1)
+                    if let host = item.host {
+                        Text(host)
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(greys.muted)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+                if hovering, let url = item.address {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                    } label: {
+                        Image(systemName: "link")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.ink.opacity(0.75))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Copy Address")
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(hovering ? greys.hover.opacity(0.65) : .clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .contextMenu {
+            if let url = item.address {
+                Button("Open in New Tab") { _ = browser.open(url, foreground: true) }
+                Button("Open in Split View") {
+                    if let active = browser.active {
+                        browser.openLinkBeside(url, from: active, onLeft: false)
+                    } else {
+                        _ = browser.open(url, foreground: true)
+                    }
+                }
+                Button("Copy Address") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(url.absoluteString, forType: .string)
                 }
             }
         }
