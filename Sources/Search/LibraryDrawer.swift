@@ -4,7 +4,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum LibrarySection: String, CaseIterable, Identifiable {
-    case downloads, media, bookmarks, history, archive
+    case downloads, media, bookmarks, history, spaces, extensions
 
     var id: String { rawValue }
 
@@ -14,7 +14,8 @@ enum LibrarySection: String, CaseIterable, Identifiable {
         case .media: return "Media"
         case .bookmarks: return "Bookmarks"
         case .history: return "History"
-        case .archive: return "Archive"
+        case .spaces: return "Spaces"
+        case .extensions: return "Extensions"
         }
     }
 
@@ -24,14 +25,15 @@ enum LibrarySection: String, CaseIterable, Identifiable {
         case .media: return "photo.on.rectangle"
         case .bookmarks: return "bookmark"
         case .history: return "clock.arrow.circlepath"
-        case .archive: return "archivebox"
+        case .spaces: return "square.stack"
+        case .extensions: return "puzzlepiece.extension"
         }
     }
 }
 
 /// Zen / Artemis-inspired sidebar Library drawer: vertical section rail on the
-/// left (Downloads, Media, Bookmarks, History, Archive) with a `<` back button
-/// at the bottom, and a searchable, date-grouped list on the right.
+/// left (Downloads, Media, Bookmarks, History, Spaces, Extensions) with a `<`
+/// back button at the bottom, and searchable content on the right.
 struct LibraryDrawer: View {
     static let preferredWidth: CGFloat = 390
 
@@ -43,6 +45,7 @@ struct LibraryDrawer: View {
     @State private var query = ""
     @State private var downloadFilter: DownloadFilter = .all
     @State private var mediaFilter: MediaFilter = .all
+    @State private var archiveExpanded = false
     @State private var mediaItems: [MediaFile] = []
     @State private var loadingMedia = false
     @State private var thumbnails: [URL: NSImage] = [:]
@@ -246,16 +249,16 @@ struct LibraryDrawer: View {
                 }
                 .buttonStyle(.plain)
                 .help("Open Full History (⌘Y)")
-            } else if section == .archive, !browser.ghosts.isEmpty {
-                Button { browser.reopen() } label: {
-                    Image(systemName: "arrow.uturn.backward")
+            } else if section == .extensions {
+                Button { browser.lead(to: InternalPage(.settings, "extensions")) } label: {
+                    Image(systemName: "gearshape")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Palette.ink.opacity(0.75))
                         .frame(width: 28, height: 28)
                         .background(greys.hover.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .help("Reopen Last Closed Tab")
+                .help("Extensions Settings")
             }
         }
     }
@@ -275,8 +278,14 @@ struct LibraryDrawer: View {
                     bookmarksList
                 case .history:
                     historyList
-                case .archive:
-                    archiveList
+                case .spaces:
+                    spacesList
+                case .extensions:
+                    if #available(macOS 15.4, *) {
+                        ExtensionsLibraryList(query: query, browser: browser)
+                    } else {
+                        emptyState("Extensions require macOS 15.4+", icon: "puzzlepiece.extension")
+                    }
                 }
             }
             .padding(.bottom, 16)
@@ -415,13 +424,108 @@ struct LibraryDrawer: View {
         return out
     }
 
-    // MARK: - History
+    // MARK: - History (+ Collapsible Archive Dropdown)
 
     @ViewBuilder
     private var historyList: some View {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowerNeedle = needle.lowercased()
+        let ghosts = browser.ghosts.filter {
+            lowerNeedle.isEmpty || $0.title.lowercased().contains(lowerNeedle) || $0.url.absoluteString.lowercased().contains(lowerNeedle)
+        }
+        let sleeping = browser.tabs.filter {
+            $0.asleep && (lowerNeedle.isEmpty || $0.label.lowercased().contains(lowerNeedle))
+        }
+        let archiveCount = ghosts.count + sleeping.count
+
+        if archiveCount > 0 {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Button {
+                        withAnimation(Motion.quick) { archiveExpanded.toggle() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: archiveExpanded ? "chevron.down" : "chevron.right")
+                                .font(.system(size: 9.5, weight: .semibold))
+                                .foregroundStyle(greys.muted)
+                                .frame(width: 10)
+                            Image(systemName: "archivebox")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(Palette.ink.opacity(0.8))
+                            Text("Archived & Sleeping")
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .foregroundStyle(Palette.ink)
+                            Text("\(archiveCount)")
+                                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                                .foregroundStyle(greys.muted)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(greys.hover.opacity(0.7), in: Capsule())
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    Spacer(minLength: 0)
+
+                    if !ghosts.isEmpty {
+                        Button { browser.reopen() } label: {
+                            Text("Restore")
+                                .font(.system(size: 10.5, weight: .medium))
+                                .foregroundStyle(Palette.ink.opacity(0.8))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(greys.hover.opacity(0.75), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Reopen Last Closed Tab")
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(greys.hover.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                if archiveExpanded {
+                    ForEach(Array(ghosts.enumerated()), id: \.offset) { _, ghost in
+                        ArchiveGhostRow(ghost: ghost, browser: browser)
+                    }
+                    ForEach(sleeping) { tab in
+                        Button {
+                            browser.select(tab)
+                            browser.librarySection = nil
+                        } label: {
+                            HStack(spacing: 8) {
+                                if let url = tab.address {
+                                    LibraryFavicon(url: url)
+                                        .frame(width: 16, height: 16)
+                                } else {
+                                    Image(systemName: "moon.zzz")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(greys.muted)
+                                        .frame(width: 16, height: 16)
+                                }
+                                Text(tab.label.isEmpty ? "Sleeping Tab" : tab.label)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Palette.ink.opacity(0.85))
+                                    .lineLimit(1)
+                                Spacer(minLength: 0)
+                                Image(systemName: "moon.zzz")
+                                    .font(.system(size: 9.5))
+                                    .foregroundStyle(greys.muted)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(.bottom, 4)
+        }
+
         let traces = Array(browser.history.everything(matching: needle).prefix(80))
-        if traces.isEmpty {
+        if traces.isEmpty && archiveCount == 0 {
             emptyState("No matching history", icon: "clock.arrow.circlepath")
         } else {
             let grouped = groupByDay(traces, date: \.last)
@@ -434,50 +538,62 @@ struct LibraryDrawer: View {
         }
     }
 
-    // MARK: - Archive
+    // MARK: - Spaces
 
     @ViewBuilder
-    private var archiveList: some View {
+    private var spacesList: some View {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let ghosts = browser.ghosts.filter {
-            needle.isEmpty || $0.title.lowercased().contains(needle) || $0.url.absoluteString.lowercased().contains(needle)
-        }
-        let sleeping = browser.tabs.filter {
-            $0.asleep && (needle.isEmpty || $0.label.lowercased().contains(needle))
-        }
+        let filtered = browser.spaces.filter { needle.isEmpty || $0.name.lowercased().contains(needle) }
 
-        if ghosts.isEmpty && sleeping.isEmpty {
-            emptyState("No archived or sleeping tabs", icon: "archivebox")
+        if filtered.isEmpty {
+            emptyState("No matching spaces", icon: "square.stack")
         } else {
-            if !ghosts.isEmpty {
-                sectionHeading("Recently Closed")
-                ForEach(Array(ghosts.enumerated()), id: \.offset) { _, ghost in
-                    ArchiveGhostRow(ghost: ghost, browser: browser)
-                }
-            }
-            if !sleeping.isEmpty {
-                sectionHeading("Sleeping Tabs")
-                ForEach(sleeping) { tab in
-                    Button {
-                        browser.select(tab)
-                        browser.librarySection = nil
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "moon.zzz")
-                                .font(.system(size: 11))
-                                .foregroundStyle(greys.muted)
-                            Text(tab.label.isEmpty ? "Sleeping Tab" : tab.label)
-                                .font(.system(size: 12))
-                                .foregroundStyle(Palette.ink.opacity(0.75))
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
+            ForEach(filtered) { space in
+                let active = space.id == browser.spaceID
+                let count = active
+                    ? browser.tabs.filter { $0.pin == nil }.count
+                    : (browser.parked[space.id]?.tabs.filter { $0.pin == nil }.count ?? 0)
+                Button {
+                    browser.switchSpace(to: space.id)
+                    withAnimation(Motion.quick) { browser.librarySection = nil }
+                } label: {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill((space.tint ?? Palette.muted).opacity(active ? 0.28 : 0.16))
+                            Image(systemName: space.symbol)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(space.tint ?? Palette.ink)
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .contentShape(Rectangle())
+                        .frame(width: 26, height: 26)
+
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(space.name)
+                                .font(.system(size: 12.5, weight: active ? .semibold : .medium))
+                                .foregroundStyle(Palette.ink)
+                                .lineLimit(1)
+                            Text(count == 1 ? "1 tab" : "\(count) tabs")
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(greys.muted)
+                        }
+
+                        Spacer(minLength: 0)
+
+                        if active {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.accentColor)
+                        }
                     }
-                    .buttonStyle(.plain)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(active ? greys.wash : .clear)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                 }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -933,9 +1049,8 @@ private struct ArchiveGhostRow: View {
             _ = browser.open(ghost.url, foreground: true)
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "arrow.uturn.backward.circle")
-                    .font(.system(size: 12))
-                    .foregroundStyle(greys.muted)
+                LibraryFavicon(url: ghost.url)
+                    .frame(width: 16, height: 16)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(ghost.title.isEmpty ? "Closed Tab" : ghost.title)
                         .font(.system(size: 12, weight: .medium))
@@ -1121,6 +1236,71 @@ private struct BookmarkLibraryRow: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(url.absoluteString, forType: .string)
                 }
+            }
+        }
+    }
+}
+
+@available(macOS 15.4, *)
+private struct ExtensionsLibraryList: View {
+    let query: String
+    let browser: Browser
+    @ObservedObject private var extensions = Extensions.shared
+    @Environment(\.greys) private var greys
+
+    var body: some View {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let items = extensions.installed.filter { needle.isEmpty || $0.name.lowercased().contains(needle) }
+
+        if items.isEmpty {
+            VStack(spacing: 8) {
+                Image(systemName: "puzzlepiece.extension")
+                    .font(.system(size: 20))
+                    .foregroundStyle(greys.muted.opacity(0.6))
+                Text(extensions.installed.isEmpty ? "No extensions installed" : "No matching extensions")
+                    .font(.system(size: 12))
+                    .foregroundStyle(greys.muted)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 36)
+        } else {
+            ForEach(items) { ext in
+                HStack(spacing: 8) {
+                    if let icon = extensions.contexts[ext.id]?.webExtension.icon(for: CGSize(width: 24, height: 24)) {
+                        Image(nsImage: icon)
+                            .resizable()
+                            .interpolation(.high)
+                            .frame(width: 22, height: 22)
+                            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    } else {
+                        Image(systemName: "puzzlepiece.extension")
+                            .font(.system(size: 14))
+                            .foregroundStyle(greys.muted)
+                            .frame(width: 22, height: 22)
+                    }
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(ext.name)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(ext.enabled ? Palette.ink : greys.muted)
+                            .lineLimit(1)
+                        Text("v\(ext.version)")
+                            .font(.system(size: 10))
+                            .foregroundStyle(greys.muted)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Toggle("", isOn: Binding(
+                        get: { ext.enabled },
+                        set: { extensions.setEnabled(ext.id, $0) }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
             }
         }
     }

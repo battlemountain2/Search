@@ -310,7 +310,7 @@ private struct EdgeURLDropStrip: View {
             }
             EdgeURLDropNSView(targeted: $targeted, onDropURL: onDropURL)
         }
-        .frame(width: 44)
+        .frame(width: 24)
         .frame(maxHeight: .infinity)
         .animation(Motion.quick, value: targeted)
     }
@@ -339,7 +339,8 @@ private struct EdgeURLDropNSView: NSViewRepresentable {
         var onDropURL: ((URL) -> Void)?
 
         override func hitTest(_ point: NSPoint) -> NSView? {
-            guard NSEvent.pressedMouseButtons != 0 else { return nil }
+            guard NSEvent.pressedMouseButtons != 0,
+                  NSApp.currentEvent?.type == .leftMouseDragged else { return nil }
             return super.hitTest(point)
         }
 
