@@ -379,8 +379,8 @@ final class SpaceSwipe {
         let point = point(of: event)
         if browser.prefs.sidebar {
             return browser.prefs.sidePosition == .right
-                ? point.x >= window.frame.width - browser.prefs.columnWidth
-                : point.x < browser.prefs.columnWidth
+                ? point.x >= window.frame.width - browser.effectiveColumnWidth
+                : point.x < browser.effectiveColumnWidth
         }
         return point.y > window.frame.height - Metrics.strip
     }

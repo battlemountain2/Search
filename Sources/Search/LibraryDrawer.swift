@@ -71,11 +71,13 @@ struct LibraryDrawer: View {
         case all = "All"
         case pictures = "Pictures"
         case downloads = "Downloads"
-        case documents = "Documents"
-        case imagesOnly = "Images Only"
-        case pdfsOnly = "PDFs Only"
+        case documents = "Docs"
+        case imagesOnly = "Images"
+        case pdfsOnly = "PDFs"
         var id: String { rawValue }
     }
+
+    @State private var draggingSpaceID: UUID? = nil
 
     private var section: LibrarySection {
         browser.librarySection ?? .downloads
@@ -94,6 +96,9 @@ struct LibraryDrawer: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 searchHeader
+                if section == .downloads || section == .media {
+                    filterPills
+                }
                 listBody
             }
             .padding(.leading, 8)
@@ -141,6 +146,55 @@ struct LibraryDrawer: View {
             .buttonStyle(.plain)
             .help("Back to Tabs")
             .padding(.bottom, 6)
+        }
+    }
+
+    // MARK: - Quick Filter Pills
+
+    @ViewBuilder
+    private var filterPills: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 5) {
+                if section == .downloads {
+                    ForEach(DownloadFilter.allCases) { f in
+                        let on = downloadFilter == f
+                        Button {
+                            withAnimation(Motion.quick) { downloadFilter = f }
+                        } label: {
+                            Text(f.rawValue)
+                                .font(.system(size: 10.5, weight: on ? .semibold : .medium))
+                                .foregroundStyle(on ? Palette.ink : greys.muted)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Capsule()
+                                        .fill(on ? greys.wash : greys.hover.opacity(0.45))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } else if section == .media {
+                    let visible: [MediaFilter] = [.all, .pictures, .downloads] + (includeDocuments ? [.documents] : []) + [.imagesOnly, .pdfsOnly]
+                    ForEach(visible) { f in
+                        let on = mediaFilter == f
+                        Button {
+                            withAnimation(Motion.quick) { mediaFilter = f }
+                        } label: {
+                            Text(f.rawValue)
+                                .font(.system(size: 10.5, weight: on ? .semibold : .medium))
+                                .foregroundStyle(on ? Palette.ink : greys.muted)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Capsule()
+                                        .fill(on ? greys.wash : greys.hover.opacity(0.45))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(.horizontal, 2)
         }
     }
 
@@ -266,6 +320,19 @@ struct LibraryDrawer: View {
                 }
                 .buttonStyle(.plain)
                 .help("Open Full History (⌘Y)")
+            } else if section == .spaces {
+                Button {
+                    withAnimation(Motion.quick) { browser.librarySection = nil }
+                    browser.askForSpace()
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Palette.ink.opacity(0.75))
+                        .frame(width: 28, height: 28)
+                        .background(greys.hover.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .help("New Space")
             } else if section == .extensions {
                 Button { browser.lead(to: InternalPage(.settings, "extensions")) } label: {
                     Image(systemName: "gearshape")
@@ -615,57 +682,21 @@ struct LibraryDrawer: View {
     @ViewBuilder
     private var spacesList: some View {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let filtered = browser.spaces.filter { needle.isEmpty || $0.name.lowercased().contains(needle) }
+        let filtered = Array(browser.spaces.enumerated()).filter {
+            needle.isEmpty || $0.element.name.lowercased().contains(needle)
+        }
 
         if filtered.isEmpty {
             emptyState("No matching spaces", icon: "square.stack")
         } else {
-            ForEach(filtered) { space in
-                let active = space.id == browser.spaceID
-                let count = active
-                    ? browser.tabs.filter { $0.pin == nil }.count
-                    : (browser.parked[space.id]?.tabs.filter { $0.pin == nil }.count ?? 0)
-                Button {
-                    browser.switchSpace(to: space.id)
-                    withAnimation(Motion.quick) { browser.librarySection = nil }
-                } label: {
-                    HStack(spacing: 10) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .fill((space.tint ?? Palette.muted).opacity(active ? 0.28 : 0.16))
-                            Image(systemName: space.symbol)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(space.tint ?? Palette.ink)
-                        }
-                        .frame(width: 26, height: 26)
-
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(space.name)
-                                .font(.system(size: 12.5, weight: active ? .semibold : .medium))
-                                .foregroundStyle(Palette.ink)
-                                .lineLimit(1)
-                            Text(count == 1 ? "1 tab" : "\(count) tabs")
-                                .font(.system(size: 10.5))
-                                .foregroundStyle(greys.muted)
-                        }
-
-                        Spacer(minLength: 0)
-
-                        if active {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Color.accentColor)
-                        }
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(active ? greys.wash : .clear)
-                    )
-                    .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                }
-                .buttonStyle(.plain)
+            ForEach(filtered, id: \.element.id) { index, space in
+                SpaceLibraryCard(
+                    space: space,
+                    index: index,
+                    active: space.id == browser.spaceID,
+                    browser: browser,
+                    draggingSpaceID: $draggingSpaceID
+                )
             }
         }
     }
@@ -1686,42 +1717,232 @@ private struct ExtensionsLibraryList: View {
             .padding(.top, 36)
         } else {
             ForEach(items) { ext in
-                HStack(spacing: 8) {
-                    if let icon = extensions.contexts[ext.id]?.webExtension.icon(for: CGSize(width: 24, height: 24)) {
-                        Image(nsImage: icon)
-                            .resizable()
-                            .interpolation(.high)
-                            .frame(width: 22, height: 22)
-                            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-                    } else {
-                        Image(systemName: "puzzlepiece.extension")
-                            .font(.system(size: 14))
-                            .foregroundStyle(greys.muted)
-                            .frame(width: 22, height: 22)
-                    }
+                ExtensionLibraryRow(ext: ext, extensions: extensions, browser: browser)
+            }
+        }
+    }
+}
 
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(ext.name)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(ext.enabled ? Palette.ink : greys.muted)
-                            .lineLimit(1)
-                        Text("v\(ext.version)")
-                            .font(.system(size: 10))
-                            .foregroundStyle(greys.muted)
-                    }
+@available(macOS 15.4, *)
+private struct ExtensionLibraryRow: View {
+    let ext: Installed
+    @ObservedObject var extensions: Extensions
+    let browser: Browser
+    @State private var hovering = false
+    @Environment(\.greys) private var greys
 
-                    Spacer(minLength: 0)
+    private var pinned: Bool { ext.pinned ?? false }
 
-                    Toggle("", isOn: Binding(
-                        get: { ext.enabled },
-                        set: { extensions.setEnabled(ext.id, $0) }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
+    var body: some View {
+        HStack(spacing: 9) {
+            if let icon = extensions.contexts[ext.id]?.webExtension.icon(for: CGSize(width: 28, height: 28)) {
+                Image(nsImage: icon)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 24, height: 24)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .opacity(ext.enabled ? 1 : 0.45)
+            } else {
+                Image(systemName: "puzzlepiece.extension")
+                    .font(.system(size: 14))
+                    .foregroundStyle(greys.muted)
+                    .frame(width: 24, height: 24)
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(ext.name)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(ext.enabled ? Palette.ink : greys.muted)
+                    .lineLimit(1)
+                Text("\(ext.enabled ? "Active" : "Disabled") · v\(ext.version)\(pinned ? " · Pinned" : "")")
+                    .font(.system(size: 10))
+                    .foregroundStyle(greys.muted)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            Button {
+                extensions.setPinned(ext.id, !pinned)
+            } label: {
+                Image(systemName: pinned ? "pin.fill" : "pin")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(pinned ? Color.accentColor : greys.muted)
+                    .frame(width: 22, height: 22)
+                    .background(hovering ? greys.hover.opacity(0.6) : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .help(pinned ? "Unpin from Toolbar" : "Pin to Toolbar")
+
+            Toggle("", isOn: Binding(
+                get: { ext.enabled },
+                set: { extensions.setEnabled(ext.id, $0) }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(hovering ? greys.hover.opacity(0.65) : .clear)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onTapGesture {
+            guard ext.enabled, let context = extensions.contexts[ext.id] else { return }
+            _ = extensions.openPopup(for: context)
+        }
+        .onHover { hovering = $0 }
+        .animation(Motion.quick, value: hovering)
+        .contextMenu {
+            if ext.enabled, let context = extensions.contexts[ext.id] {
+                Button("Open Popup") { _ = extensions.openPopup(for: context) }
+            }
+            Button(pinned ? "Unpin from Toolbar" : "Pin to Toolbar") {
+                extensions.setPinned(ext.id, !pinned)
+            }
+            if ext.enabled {
+                Button("Reload Extension") { extensions.reload(ext.id) }
+            }
+            Button(ext.enabled ? "Disable" : "Enable") {
+                extensions.setEnabled(ext.id, !ext.enabled)
+            }
+            Divider()
+            Button("Remove Extension", role: .destructive) {
+                extensions.remove(ext.id)
+            }
+        }
+    }
+}
+
+private struct SpaceLibraryCard: View {
+    let space: Space
+    let index: Int
+    let active: Bool
+    @ObservedObject var browser: Browser
+    @Binding var draggingSpaceID: UUID?
+    @State private var hovering = false
+    @State private var renaming = false
+    @State private var draftName = ""
+    @State private var dropTargeted = false
+    @Environment(\.greys) private var greys
+
+    private var spaceTabs: [Tab] {
+        let list = active ? browser.tabs : (browser.parked[space.id]?.tabs ?? [])
+        return list.filter { $0.pin == nil }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill((space.tint ?? Palette.muted).opacity(active ? 0.28 : 0.16))
+                    Image(systemName: space.symbol)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(space.tint ?? Palette.ink)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
+                .frame(width: 28, height: 28)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    if renaming {
+                        TextField("Space name", text: $draftName)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .onSubmit {
+                                browser.renameSpace(space.id, to: draftName)
+                                renaming = false
+                            }
+                            .onExitCommand { renaming = false }
+                    } else {
+                        Text(space.name)
+                            .font(.system(size: 12.5, weight: active ? .semibold : .medium))
+                            .foregroundStyle(Palette.ink)
+                            .lineLimit(1)
+                    }
+                    Text(spaceTabs.count == 1 ? "1 tab" : "\(spaceTabs.count) tabs")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(greys.muted)
+                }
+
+                Spacer(minLength: 0)
+
+                if active {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+
+            if !spaceTabs.isEmpty {
+                HStack(spacing: 5) {
+                    ForEach(Array(spaceTabs.prefix(6))) { tab in
+                        if let url = tab.address {
+                            LibraryFavicon(url: url)
+                                .frame(width: 14, height: 14)
+                        }
+                    }
+                    if spaceTabs.count > 6 {
+                        Text("+\(spaceTabs.count - 6)")
+                            .font(.system(size: 9.5, weight: .medium))
+                            .foregroundStyle(greys.muted)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 38)
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(active ? greys.wash : (hovering ? greys.hover.opacity(0.65) : greys.hover.opacity(0.25)))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(dropTargeted ? Color.accentColor : (active ? (space.tint ?? Palette.hairline).opacity(0.55) : Palette.hairline.opacity(0.5)), lineWidth: dropTargeted ? 1.5 : 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .onTapGesture {
+            guard !renaming else { return }
+            browser.switchSpace(to: space.id)
+            withAnimation(Motion.quick) { browser.librarySection = nil }
+        }
+        .onHover { hovering = $0 }
+        .animation(Motion.quick, value: hovering)
+        .onDrag {
+            draggingSpaceID = space.id
+            return NSItemProvider(object: space.id.uuidString as NSString)
+        }
+        .onDrop(of: [.plainText, .text], isTargeted: $dropTargeted) { _ in
+            guard let moved = draggingSpaceID, moved != space.id else { return false }
+            draggingSpaceID = nil
+            withAnimation(Motion.quick) {
+                browser.moveSpace(moved, to: index)
+            }
+            return true
+        }
+        .contextMenu {
+            Button("Switch to Space") {
+                browser.switchSpace(to: space.id)
+                withAnimation(Motion.quick) { browser.librarySection = nil }
+            }
+            Button("Rename…") {
+                draftName = space.name
+                renaming = true
+            }
+            Menu("Colour") {
+                ForEach(Array(Spaces.colourNames.enumerated()), id: \.offset) { idx, label in
+                    Button {
+                        browser.setSpaceColour(space.id, to: idx)
+                    } label: {
+                        HStack {
+                            Text(label)
+                            if space.colour == idx { Image(systemName: "checkmark") }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1733,6 +1954,7 @@ struct MediaPreviewOverlay: View {
     let preview: Browser.MediaPreviewState
     @State private var fullImage: NSImage?
     @State private var modifiedDate: Date?
+    @State private var copied = false
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
@@ -1770,6 +1992,8 @@ struct MediaPreviewOverlay: View {
         .onAppear { loadCurrent() }
         .onChange(of: preview.index) { _, _ in loadCurrent() }
         .onExitCommand { dismiss() }
+        .onKeyPress(.leftArrow) { step(-1); return .handled }
+        .onKeyPress(.rightArrow) { step(1); return .handled }
     }
 
     private var header: some View {
@@ -1840,6 +2064,27 @@ struct MediaPreviewOverlay: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
+
+                if let fullImage {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.writeObjects([fullImage])
+                        copied = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { copied = false }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                                .font(.system(size: 10.5))
+                            Text(copied ? "Copied" : "Copy Image")
+                                .font(.system(size: 11.5, weight: .medium))
+                        }
+                        .foregroundStyle(copied ? Color.accentColor : Palette.ink)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(Palette.wash, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 Button {
                     NSWorkspace.shared.open(url)

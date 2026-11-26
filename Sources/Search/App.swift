@@ -762,6 +762,7 @@ struct ContentView: View {
             .onChange(of: geo.size.height) { _, height in tall = height } } }
         .animation(Motion.glide, value: browser.prefs.sidebar)
         .animation(Motion.glide, value: browser.prefs.sidePosition)
+        .animation(Motion.glide, value: browser.librarySection)
         .onAppear {
             if room == nil { room = chrome }
             if farRoom == nil { farRoom = farGap }
