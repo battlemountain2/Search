@@ -46,11 +46,9 @@ struct LibraryDrawer: View {
     @State private var query = ""
     @State private var downloadFilter: DownloadFilter = .all
     @State private var mediaFilter: MediaFilter = .all
-    @AppStorage("library.media.downloads") private var includeDownloads = true
-    @AppStorage("library.media.pictures") private var includePictures = false
-    @AppStorage("library.media.documents") private var includeDocuments = false
-    @AppStorage("library.media.approvedBuild") private var approvedBuild = ""
-    @AppStorage("library.media.autoScanAlways") private var autoScanAlways = false
+    @AppStorage("library.media.downloads.v2") private var includeDownloads = true
+    @AppStorage("library.media.pictures.v2") private var includePictures = true
+    @AppStorage("library.media.documents.v2") private var includeDocuments = true
     @State private var archiveExpanded = false
     @State private var addingFolder = false
     @State private var newFolderName = ""
@@ -61,18 +59,6 @@ struct LibraryDrawer: View {
     @State private var mediaItems: [MediaFile] = []
     @State private var loadingMedia = false
     @State private var thumbnails: [URL: NSImage] = [:]
-
-    private static let currentBuildStamp: String = {
-        guard let exe = Bundle.main.executableURL,
-              let vals = try? exe.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]),
-              let date = vals.contentModificationDate,
-              let size = vals.fileSize else { return "dev" }
-        return "\(Int(date.timeIntervalSince1970))-\(size)"
-    }()
-
-    private var isMediaBuildAuthorized: Bool {
-        autoScanAlways || approvedBuild == Self.currentBuildStamp
-    }
 
     @Environment(\.greys) private var greys
 
@@ -124,25 +110,15 @@ struct LibraryDrawer: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
-            if section == .media, isMediaBuildAuthorized { loadMedia() }
+            if section == .media { loadMedia() }
         }
         .onChange(of: browser.librarySection) { _, next in
             query = ""
-            if next == .media, isMediaBuildAuthorized { loadMedia() }
+            if next == .media { loadMedia() }
         }
-        .onChange(of: includeDownloads) { _, _ in if section == .media, isMediaBuildAuthorized { loadMedia() } }
-        .onChange(of: includePictures) { _, on in
-            if section == .media, (on || isMediaBuildAuthorized) {
-                approvedBuild = Self.currentBuildStamp
-                loadMedia()
-            }
-        }
-        .onChange(of: includeDocuments) { _, on in
-            if section == .media, (on || isMediaBuildAuthorized) {
-                approvedBuild = Self.currentBuildStamp
-                loadMedia()
-            }
-        }
+        .onChange(of: includeDownloads) { _, _ in if section == .media { loadMedia() } }
+        .onChange(of: includePictures) { _, _ in if section == .media { loadMedia() } }
+        .onChange(of: includeDocuments) { _, _ in if section == .media { loadMedia() } }
         .onChange(of: draggingBookmarkID) { _, id in
             if id == nil {
                 dropTarget = nil
@@ -308,12 +284,8 @@ struct LibraryDrawer: View {
                     Toggle("Include Downloads", isOn: $includeDownloads)
                     Toggle("Include Pictures", isOn: $includePictures)
                     Toggle("Include Documents", isOn: $includeDocuments)
-                    Toggle("Auto-Scan on New Builds", isOn: $autoScanAlways)
                     Divider()
-                    Button("Refresh Media") {
-                        approvedBuild = Self.currentBuildStamp
-                        loadMedia()
-                    }
+                    Button("Refresh Media") { loadMedia() }
                 } label: {
                     Image(systemName: mediaFilter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
                         .font(.system(size: 13))
@@ -490,54 +462,7 @@ struct LibraryDrawer: View {
             }
         }
 
-        if !isMediaBuildAuthorized && mediaItems.isEmpty {
-            VStack(spacing: 10) {
-                Image(systemName: "folder.badge.questionmark")
-                    .font(.system(size: 22))
-                    .foregroundStyle(greys.muted)
-                Text("Allow folder scan for this build")
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(Palette.ink)
-                Text("New ad-hoc builds reset macOS folder permissions. Click below once to scan Downloads.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(greys.muted)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 16)
-                HStack(spacing: 8) {
-                    Button {
-                        Haptics.tap()
-                        includeDownloads = true
-                        approvedBuild = Self.currentBuildStamp
-                        loadMedia()
-                    } label: {
-                        Text("Scan Downloads")
-                            .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(Palette.ink)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(greys.wash, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        Haptics.tap()
-                        includePictures = true
-                        approvedBuild = Self.currentBuildStamp
-                        loadMedia()
-                    } label: {
-                        Text("+ Pictures")
-                            .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(greys.muted)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(greys.hover.opacity(0.6), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 36)
-        } else if loadingMedia && items.isEmpty {
+        if loadingMedia && items.isEmpty {
             HStack {
                 Spacer()
                 ProgressView().controlSize(.small)
@@ -1696,7 +1621,7 @@ private struct BookmarkTreeDropDelegate: DropDelegate {
     }
 
     func dropEntered(info: DropInfo) {
-        guard NSEvent.pressedMouseButtons & 1 != 0 else {
+        guard allows else {
             updateAim(nil)
             return
         }
@@ -1704,7 +1629,7 @@ private struct BookmarkTreeDropDelegate: DropDelegate {
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        guard allows, NSEvent.pressedMouseButtons & 1 != 0 else {
+        guard allows else {
             updateAim(nil)
             return DropProposal(operation: .forbidden)
         }
@@ -1751,7 +1676,7 @@ private struct BookmarkTreeDropDelegate: DropDelegate {
             return true
         }
 
-        guard let provider = info.itemProviders(for: [.plainText, .text]).first else {
+        guard let provider = info.itemProviders(for: [.plainText, .text, .utf8PlainText]).first else {
             draggingID = nil
             return false
         }
@@ -1791,7 +1716,7 @@ private struct BookmarkEndDropZone: View {
             }
         }
         .animation(Motion.quick, value: active)
-        .onDrop(of: [.plainText, .text], delegate: BookmarkEndDropDelegate(
+        .onDrop(of: [.plainText, .text, .utf8PlainText], delegate: BookmarkEndDropDelegate(
             parentID: parentID,
             count: count,
             browser: browser,
@@ -1813,7 +1738,7 @@ private struct BookmarkEndDropDelegate: DropDelegate {
     }
 
     func dropEntered(info: DropInfo) {
-        guard draggingID != nil, NSEvent.pressedMouseButtons & 1 != 0 else {
+        guard draggingID != nil else {
             dropTarget = nil
             return
         }
@@ -1821,10 +1746,11 @@ private struct BookmarkEndDropDelegate: DropDelegate {
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        guard draggingID != nil, NSEvent.pressedMouseButtons & 1 != 0 else {
+        guard draggingID != nil else {
             dropTarget = nil
             return DropProposal(operation: .forbidden)
         }
+        dropTarget = BookmarkDropTarget(targetID: nil, isPlaceholder: false, parentID: parentID, index: count, placement: .after)
         return DropProposal(operation: .move)
     }
 
@@ -1847,7 +1773,7 @@ private struct BookmarkEndDropDelegate: DropDelegate {
             finishMove(movedID)
             return true
         }
-        guard let provider = info.itemProviders(for: [.plainText, .text]).first else {
+        guard let provider = info.itemProviders(for: [.plainText, .text, .utf8PlainText]).first else {
             draggingID = nil
             return false
         }
@@ -1913,6 +1839,19 @@ private struct LibraryBookmarkLineView: View {
         return 1
     }
 
+    private var dragIcon: NSImage? {
+        if item.isFolder {
+            return NSImage(systemSymbolName: "folder.fill", accessibilityDescription: nil)
+        }
+        if let url = item.address {
+            if let direct = Favicons.shared.cached(for: url) { return direct }
+            if let host = url.host()?.lowercased() {
+                return Favicons.shared.cached(host) ?? Favicons.shared.cached("www." + host)
+            }
+        }
+        return NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
+    }
+
     var body: some View {
         if line.isEmptyPlaceholder {
             HStack(spacing: 6) {
@@ -1938,7 +1877,7 @@ private struct LibraryBookmarkLineView: View {
             .contentShape(Rectangle())
             .opacity(rowOpacity)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowHeight = max($0, 1) }
-            .onDrop(of: [.plainText, .text], delegate: BookmarkTreeDropDelegate(
+            .onDrop(of: [.plainText, .text, .utf8PlainText], delegate: BookmarkTreeDropDelegate(
                 targetID: item.id,
                 isFolder: true,
                 isEmptyPlaceholder: true,
@@ -2008,17 +1947,8 @@ private struct LibraryBookmarkLineView: View {
                             .font(.system(size: 11).monospacedDigit())
                             .foregroundStyle(greys.muted)
                     }
-                } else if hovering, !renaming, draggingID == nil, let url = item.address {
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
-                    } label: {
-                        Image(systemName: "link")
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(Palette.ink.opacity(0.75))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Copy Address")
+                } else if hovering, !renaming, draggingID == nil {
+                    Color.clear.frame(width: 16, height: 16)
                 } else if showHostInline, let host = item.host {
                     Text(host)
                         .font(.system(size: 11))
@@ -2047,6 +1977,54 @@ private struct LibraryBookmarkLineView: View {
                     .fill(isTargetedInto ? greys.wash : (hovering && draggingID == nil ? greys.hover.opacity(0.65) : .clear))
             )
             .overlay {
+                if !renaming {
+                    BookmarkDragOverlay(
+                        id: item.id,
+                        label: item.label,
+                        icon: dragIcon,
+                        onTap: {
+                            if item.isFolder {
+                                withAnimation(Motion.quick) {
+                                    if expanded.contains(item.id) {
+                                        expanded.remove(item.id)
+                                    } else {
+                                        expanded.insert(item.id)
+                                    }
+                                }
+                            } else if let url = item.address {
+                                _ = browser.open(url, foreground: true)
+                            }
+                        },
+                        onDragStart: {
+                            draggingID = item.id
+                            settleBookmarkDrag(draggingID: $draggingID, dropTarget: $dropTarget, expandWork: $expandWork)
+                        },
+                        onDragEnd: {
+                            expandWork?.cancel()
+                            expandWork = nil
+                            dropTarget = nil
+                            draggingID = nil
+                        }
+                    )
+                }
+            }
+            .overlay(alignment: .trailing) {
+                if !item.isFolder, hovering, !renaming, draggingID == nil, let url = item.address {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                    } label: {
+                        Image(systemName: "link")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.ink.opacity(0.75))
+                            .frame(width: 20, height: 20)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Copy Address")
+                    .padding(.trailing, 6)
+                }
+            }
+            .overlay {
                 if isTargetedInto {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1)
@@ -2065,52 +2043,11 @@ private struct LibraryBookmarkLineView: View {
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .opacity(rowOpacity)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowHeight = max($0, 1) }
-            .onTapGesture {
-                guard !renaming else { return }
-                if item.isFolder {
-                    withAnimation(Motion.quick) {
-                        if expanded.contains(item.id) {
-                            expanded.remove(item.id)
-                        } else {
-                            expanded.insert(item.id)
-                        }
-                    }
-                } else if let url = item.address {
-                    _ = browser.open(url, foreground: true)
-                }
-            }
             .onHover { hovering = $0 }
             .animation(Motion.quick, value: hovering)
             .animation(Motion.quick, value: dropPlacement)
             .animation(Motion.quick, value: draggingID)
-            .onDrag {
-                draggingID = item.id
-                settleBookmarkDrag(draggingID: $draggingID, dropTarget: $dropTarget, expandWork: $expandWork)
-                return NSItemProvider(object: item.id.uuidString as NSString)
-            } preview: {
-                HStack(spacing: 6) {
-                    if item.isFolder {
-                        Image(systemName: "folder.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Palette.muted)
-                    } else if let url = item.address {
-                        LibraryFavicon(url: url)
-                            .frame(width: 14, height: 14)
-                    }
-                    Text(item.label)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Palette.ink)
-                        .lineLimit(1)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Palette.ground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Palette.hairline, lineWidth: 1)
-                )
-            }
-            .onDrop(of: [.plainText, .text], delegate: BookmarkTreeDropDelegate(
+            .onDrop(of: [.plainText, .text, .utf8PlainText], delegate: BookmarkTreeDropDelegate(
                 targetID: item.id,
                 isFolder: item.isFolder,
                 isEmptyPlaceholder: false,
@@ -2168,6 +2105,134 @@ private struct LibraryBookmarkLineView: View {
                         browser.bookmarks.remove(item.id)
                     }
                 }
+            }
+        }
+    }
+}
+
+/// Native AppKit click + drag bridge for Bookmark & Folder rows so drags never
+/// fail inside `ScrollView`, and drag start/end fire synchronously through AppKit.
+private struct BookmarkDragOverlay: NSViewRepresentable {
+    let id: Bookmark.ID
+    let label: String
+    let icon: NSImage?
+    let onTap: () -> Void
+    let onDragStart: () -> Void
+    let onDragEnd: () -> Void
+
+    func makeNSView(context: Context) -> DragView {
+        let view = DragView()
+        sync(view)
+        return view
+    }
+
+    func updateNSView(_ nsView: DragView, context: Context) {
+        sync(nsView)
+    }
+
+    private func sync(_ view: DragView) {
+        view.bookmarkID = id
+        view.label = label
+        view.icon = icon
+        view.onTap = onTap
+        view.onDragStart = onDragStart
+        view.onDragEnd = onDragEnd
+    }
+
+    final class DragView: NSView, NSDraggingSource {
+        var bookmarkID: Bookmark.ID = UUID()
+        var label: String = ""
+        var icon: NSImage?
+        var onTap: () -> Void = {}
+        var onDragStart: () -> Void = {}
+        var onDragEnd: () -> Void = {}
+
+        private var pressEvent: NSEvent?
+        private var didDrag = false
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let type = NSApp.currentEvent?.type else { return nil }
+            if type == .leftMouseDown { return super.hitTest(point) }
+            if (type == .leftMouseDragged || type == .leftMouseUp), pressEvent != nil {
+                return super.hitTest(point)
+            }
+            return nil
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            pressEvent = event
+            didDrag = false
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            guard let press = pressEvent, !didDrag else { return }
+            let dx = event.locationInWindow.x - press.locationInWindow.x
+            let dy = event.locationInWindow.y - press.locationInWindow.y
+            guard hypot(dx, dy) >= 4 else { return }
+
+            didDrag = true
+            pressEvent = nil
+            onDragStart()
+
+            let preview = makePillPreview()
+            let item = NSDraggingItem(pasteboardWriter: bookmarkID.uuidString as NSString)
+            let local = convert(press.locationInWindow, from: nil)
+            let size = preview.size
+            item.setDraggingFrame(
+                NSRect(x: local.x - 16, y: local.y - size.height / 2, width: size.width, height: size.height),
+                contents: preview
+            )
+            beginDraggingSession(with: [item], event: press, source: self)
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            let wasTap = pressEvent != nil && !didDrag
+            pressEvent = nil
+            didDrag = false
+            if wasTap, bounds.contains(convert(event.locationInWindow, from: nil)) {
+                onTap()
+            }
+        }
+
+        func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+            [.move, .generic]
+        }
+
+        func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+            pressEvent = nil
+            didDrag = false
+            onDragEnd()
+        }
+
+        private func makePillPreview() -> NSImage {
+            let font = NSFont.systemFont(ofSize: 12, weight: .medium)
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: Palette.NS.ink
+            ]
+            let title = label.isEmpty ? "Bookmark" : label
+            let measured = (title as NSString).size(withAttributes: attrs)
+            let textW = min(ceil(measured.width), 170)
+            let iconW: CGFloat = icon != nil ? 18 : 0
+            let size = NSSize(width: 20 + iconW + textW, height: 28)
+
+            return NSImage(size: size, flipped: false) { rect in
+                let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
+                Palette.NS.ground.setFill()
+                path.fill()
+                Palette.NS.hairline.setStroke()
+                path.lineWidth = 1
+                path.stroke()
+
+                var x: CGFloat = 10
+                if let icon = self.icon {
+                    let iconRect = NSRect(x: x, y: (rect.height - 14) / 2, width: 14, height: 14)
+                    icon.draw(in: iconRect)
+                    x += 18
+                }
+                let textRect = NSRect(x: x, y: (rect.height - ceil(measured.height)) / 2, width: textW, height: ceil(measured.height))
+                (title as NSString).draw(in: textRect, withAttributes: attrs)
+                return true
             }
         }
     }
