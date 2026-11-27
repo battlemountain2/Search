@@ -8,8 +8,9 @@ import SecurityInterface
 struct ZenTopBar: View {
     @ObservedObject var browser: Browser
     @ObservedObject var prefs: Preferences
+    var ground = RowGround.own
 
-    static let height: CGFloat = 28
+    static let height: CGFloat = 30
 
     @State private var capsuleHovered = false
     @State private var showToolbox = false
@@ -32,9 +33,18 @@ struct ZenTopBar: View {
             addressCapsule
                 .padding(.horizontal, max(navWidth, extWidth) + 10)
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, ground == .card ? 8 : 6)
         .frame(height: ZenTopBar.height)
         .background(WindowDragBar())
+        .background {
+            if ground == .own, !browser.glassy {
+                ZStack(alignment: .bottom) {
+                    Palette.ground
+                    SpaceWash(look: browser.wash)
+                    Rectangle().fill(Palette.hairline).frame(height: 1)
+                }
+            }
+        }
         .animation(Motion.glide, value: browser.editingInline)
     }
 
@@ -529,6 +539,15 @@ struct UrlToolboxView: View {
                 PopoverMenuRow(title: "Reinstall Desktop App…") {
                     Haptics.tap()
                     PWAInstaller.install(for: tab, browser: browser)
+                    onDismiss()
+                }
+            }
+
+            if !PWAInstaller.installedApps().isEmpty {
+                PopoverMenuRow(title: "Refresh All Installed Apps") {
+                    Haptics.tap()
+                    let count = PWAInstaller.refreshInstalledApps()
+                    browser.announce(count > 0 ? "Refreshed \(count) web app\(count == 1 ? "" : "s")" : "No installed web apps found")
                     onDismiss()
                 }
             }

@@ -446,13 +446,7 @@ struct SearchApp: App {
             }
             CommandMenu("History") {
                 Section("Recently Visited") {
-                    ForEach(browser.recentlyVisited) { trace in
-                        Button {
-                            browser.open(trace.url, foreground: true)
-                        } label: {
-                            MenuLine(title: trace.title.isEmpty ? Address.withoutWWW(trace.address) : trace.title, url: trace.url)
-                        }
-                    }
+                    RecentlyVisited(browser: browser, menu: browser.recentMenu)
                 }
                 if !browser.ghosts.isEmpty {
                     Section("Recently Closed") {
@@ -708,10 +702,10 @@ struct ContentView: View {
                                                      height: chrome.height - roomed.height),
                                       scale: displayScale))
                 .modifier(CardEdge(on: cards && !browser.prefs.splitView, insets: cardInsets,
-                                   corner: cardCorner, scale: displayScale))
+                                   corner: cardCorner, squareTop: rowsInCard, scale: displayScale))
                 // The page's own view cut to the card, on the same frames.
                 .modifier(CardClip(card: cardInsets, corner: cardCorner, scale: displayScale,
-                                   on: cards))
+                                   on: cards, squareTop: rowsInCard))
 
             // An extension's side panel, on the side away from the column
             // (see SidePanel.swift); two pages in Split View share what's left.
@@ -725,28 +719,41 @@ struct ContentView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            // The bookmarks bar, under the strip or beside the column's top —
-            // there on the window's ground above the page's card, and no wider.
-            if barShown {
-                let leadingGap = sideOnRight ? max(farGap, Metrics.cardGap) : (showZenTopBar ? (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap) : chrome.width)
-                let trailingGap = sideOnRight ? (showZenTopBar ? (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap) : chrome.width) : max(farGap, Metrics.cardGap)
-                BookmarksBar(browser: browser, bookmarks: browser.bookmarks, onFrame: cards)
-                    .padding(.leading, leadingGap)
-                    .padding(.trailing, trailingGap)
-                    .padding(.top, showZenTopBar ? (5 + ZenTopBar.height + 2) : (cards ? 5 : band))
-                    .transition(.move(edge: .top).combined(with: .opacity))
+            let side = chrome.width + (browser.folded && browser.prefs.sideHides ? Fold.hiddenEdge : 0)
+
+            if rowsInCard {
+                CardHead(scale: displayScale)
+                    .frame(height: chrome.height - Metrics.cardGap)
+                    .padding(.leading, sideOnRight ? farGap + panelRoom : side)
+                    .padding(.trailing, sideOnRight ? side : farGap + panelRoom)
+                    .padding(.top, Metrics.cardGap)
+                    .transition(.opacity)
             }
 
-            // Zen-style dynamic top navigation bar above the web card
+            // Zen-style dynamic top navigation bar (inside CardHead when carded, edge-to-edge when folded)
             if showZenTopBar {
-                let leadingGap = sideOnRight ? max(farGap, Metrics.cardGap) : (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap)
-                let trailingGap = sideOnRight ? (sidebar ? sideWidth + Metrics.cardGap : Metrics.cardGap) : max(farGap, Metrics.cardGap)
-                ZenTopBar(browser: browser, prefs: browser.prefs)
-                    .padding(.leading, leadingGap)
-                    .padding(.trailing, trailingGap)
-                    .padding(.top, 5)
+                let rowLead = rowsInCard ? (sideOnRight ? farGap + panelRoom : side) : (sideOnRight ? 0 : (sidebar ? sideWidth : 0))
+                let rowTrail = rowsInCard ? (sideOnRight ? side : farGap + panelRoom) : (sideOnRight ? (sidebar ? sideWidth : 0) : 0)
+                ZenTopBar(browser: browser, prefs: browser.prefs, ground: rowGround)
+                    .padding(.leading, rowLead)
+                    .padding(.trailing, rowTrail)
+                    .padding(.top, rowsInCard ? Metrics.cardGap : 0)
                     .zIndex(10)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(.opacity)
+            }
+
+            // The bookmarks bar, under Dynamic Mode or above the page's card.
+            if barShown {
+                let barLead = rowsInCard ? (sideOnRight ? farGap + panelRoom : side) : (showZenTopBar ? (sideOnRight ? 0 : (sidebar ? sideWidth : 0)) : chrome.width)
+                let barTrail = rowsInCard ? (sideOnRight ? side : farGap + panelRoom) : (showZenTopBar ? (sideOnRight ? (sidebar ? sideWidth : 0) : 0) : max(farGap, Metrics.cardGap))
+                let barTop = rowsInCard
+                    ? Metrics.cardGap + (showZenTopBar ? ZenTopBar.height : 0)
+                    : (showZenTopBar ? ZenTopBar.height : (cards ? 5 : band))
+                BookmarksBar(browser: browser, bookmarks: browser.bookmarks, ground: rowGround)
+                    .padding(.leading, barLead)
+                    .padding(.trailing, barTrail)
+                    .padding(.top, barTop)
+                    .transition(.opacity)
             }
 
             if let preview = browser.mediaPreview {
@@ -789,7 +796,7 @@ struct ContentView: View {
             withTransaction(still) {
                 if away, sidebar {
                     // Edge to edge once folded: the whole window, at once.
-                    room = CGSize(width: foldedWidth, height: cards && !barShown ? 0 : roomed.height)
+                    room = CGSize(width: foldedWidth, height: cards && !barShown && !showZenTopBar ? 0 : roomed.height)
                     farRoom = 0
                 } else {
                     room = chrome
@@ -804,9 +811,9 @@ struct ContentView: View {
     @ViewBuilder
     private var stage: some View {
         if browser.prefs.splitView {
-            SplitStage(browser: browser, corner: cardCorner, immersed: fullscreenTab?.id)
+            SplitStage(browser: browser, corner: cardCorner, squareTop: rowsInCard, immersed: fullscreenTab?.id)
         } else if let tab = browser.active {
-            Page(tab: tab, corner: cardCorner, browser: browser)
+            Page(tab: tab, corner: cardCorner, squareTop: rowsInCard, browser: browser)
                 .overlay {
                     if browser.prefs.showsLinks { LinkBubble(status: browser.linkStatus) }
                 }
@@ -842,7 +849,7 @@ struct ContentView: View {
         } else if browser.prefs.homeTheme != .off {
             HomeBackground(theme: browser.prefs.homeTheme, tuning: browser.prefs.homeTuning,
                            image: browser.prefs.homeThemeImage, shuffle: browser.prefs.homeShuffle)
-                .clipShape(RoundedRectangle(cornerRadius: cardCorner, style: .continuous))
+                .clipShape(Metrics.cardOutline(cardCorner, squareTop: rowsInCard))
         } else {
             EmptySpaceStage(browser: browser, corner: cards ? Metrics.cardRadius : 0)
         }
@@ -852,24 +859,34 @@ struct ContentView: View {
         browser.prefs.sidebar && browser.prefs.zenTopBar && fullscreenTab == nil && (!browser.prefs.zenTopBarHidesWithFold || !browser.folded)
     }
 
+    /// True when Dynamic Mode renders inside the page card's rounded top CardHead.
+    private var rowsInCard: Bool {
+        cards && !edgeToEdge && showZenTopBar
+    }
+
+    private var rowGround: RowGround {
+        if rowsInCard { return .card }
+        if !showZenTopBar && cards && !edgeToEdge { return .frame }
+        return .own
+    }
+
     /// What the column and the strip take from the page right now: animated
     /// as they come and go. With the page as a card, the column folded away
     /// still leaves the card's gap, and so does the top, unless the bookmarks
     /// bar is there.
     private var chrome: CGSize {
         let barHeight: CGFloat = BookmarksBar.height
-        let topGap: CGFloat = 5
         let zenHeight: CGFloat = ZenTopBar.height
-        let bottomGap: CGFloat = Metrics.cardGap
 
         if cards {
             let gap = edgeToEdge ? 0 : Metrics.cardGap
             let width = sidebar ? sideWidth + gap : gap
+            let topPad = edgeToEdge ? 0 : gap
             let height: CGFloat
             if showZenTopBar && barShown {
-                height = topGap + zenHeight + 2 + barHeight + gap
+                height = topPad + zenHeight + barHeight
             } else if showZenTopBar {
-                height = topGap + zenHeight + gap
+                height = topPad + zenHeight
             } else if barShown {
                 height = barHeight + gap
             } else {
@@ -879,11 +896,11 @@ struct ContentView: View {
         }
         let height: CGFloat
         if showZenTopBar && barShown {
-            height = topGap + zenHeight + 2 + barHeight + 5
+            height = zenHeight + barHeight
         } else if showZenTopBar {
-            height = topGap + zenHeight + 5
+            height = zenHeight
         } else if barShown {
-            height = topGap + barHeight + 5
+            height = 5 + barHeight + 5
         } else {
             height = band
         }
@@ -2506,3 +2523,23 @@ private struct ImportProgress: View {
         }
     }
 }
+
+/// The History menu's last few places, drawn again when they change
+/// (`Browser.recentMenu`) and not with every change to the window.
+private struct RecentlyVisited: View {
+    let browser: Browser
+    @ObservedObject var menu: RecentMenu
+
+    var body: some View {
+        ForEach(browser.recentlyVisited) { trace in
+            Button {
+                browser.open(trace.url, foreground: true)
+            } label: {
+                MenuLine(title: trace.title.isEmpty ? Address.withoutWWW(trace.address) : trace.title, url: trace.url)
+            }
+        }
+    }
+}
+
+/// See `Browser.recentMenu`.
+final class RecentMenu: ObservableObject {}

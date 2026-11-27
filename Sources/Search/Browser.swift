@@ -2058,6 +2058,10 @@ final class Browser: NSObject, ObservableObject {
         history.recent()
     }
 
+    /// Fires when the History menu's recent items change, avoiding whole-window
+    /// SwiftUI invalidation on every navigation completion.
+    let recentMenu = RecentMenu()
+
     // MARK: - the camera and the microphone
 
     /// A page asking to see or hear you, waiting for an answer. WebKit hands
@@ -3265,14 +3269,13 @@ final class Browser: NSObject, ObservableObject {
             folded = (record ?? Browsers.read().first)?.folded == true
         }
 
-        // The History menu lists the last few places, and the menu is drawn
-        // from this object's changes — so a change to those is passed on,
-        // from the history of whichever space is on screen.
+        // The History menu lists the last few places: notify recentMenu alone
+        // so navigation completions don't redraw the entire sidebar and window.
         $spaceID
             .removeDuplicates()
             .map { Spaces.history(for: $0).recentChanges }
             .switchToLatest()
-            .sink { [weak self] in self?.objectWillChange.send() }
+            .sink { [weak self] in self?.recentMenu.objectWillChange.send() }
             .store(in: &bag)
 
         // A page's passkeys for under its field, arriving while the caret
@@ -4504,7 +4507,8 @@ final class Browser: NSObject, ObservableObject {
                 // Only with Same tabs in every window on: off, the file is
                 // what it always was.
                 twinID: prefs.mirrorsTabs && twinnable(tab) ? tab.twinID : nil,
-                lifted: liftedIDs.contains(tab.id) ? tab.id : nil
+                lifted: liftedIDs.contains(tab.id) ? tab.id : nil,
+                unseen: tab.pin != nil && !tab.looked && !visibleTabIDs.contains(tab.id) ? true : nil
             ))
         }
         // The tab you were on isn't kept — a private one: the one kept just
@@ -7399,7 +7403,7 @@ final class Browser: NSObject, ObservableObject {
             tab.restore(url: url, title: url == saved ? entry.title : url.host ?? "", name: entry.name,
                         state: url == saved ? entry.keepsake?.state : nil)
             // Never later than now: a clock set wrong once would keep the tab forever.
-            if let touched = entry.touched { tab.touch(at: min(touched, Date())) }
+            if let touched = entry.touched { tab.touch(at: min(touched, Date()), looked: entry.unseen != true) }
             tab.letGo = entry.letGo.map { min($0, Date()) }
             tab.muted = entry.muted
             tab.pin = entry.pin
@@ -8161,15 +8165,14 @@ final class Browser: NSObject, ObservableObject {
             if siteChip == nil { pastSearches = nil }
         }
         guard !summoning else {
-            offers = openPages(matching: typed)
+            offers = paletteSuggestions(for: typed)
             // What Return does with words no open page answers to, as a row of
-            // its own after the pages that do: a new tab, so the page ⌘K was
-            // pressed over stays as it was (⌘L is the key for changing it).
-            // Unsaid, Return took the address to that page.
+            // its own after the pages/commands that do: a new tab, so the page ⌘K
+            // was pressed over stays as it was (⌘L is the key for changing it).
             if let row = switcherFallback() { offers.append(row) }
             ending = nil
-            // The most recent page is already chosen, so ⌘K then Return is the
-            // whole gesture.
+            // The top hit (most recent tab or top matched command) is highlighted,
+            // so ⌘K then Return is an instant jump.
             picked = offers.isEmpty ? nil : 0
             return
         }
@@ -8575,6 +8578,39 @@ final class Browser: NSObject, ObservableObject {
             }
     }
 
+    /// True `⌘K` Command Palette suggestions combining Open Tabs, Matching Bookmarks,
+    /// Spaces, Library drawers, PWA actions, and Menu/Settings commands.
+    func paletteSuggestions(for typed: String) -> [Suggestion] {
+        let needle = typed.trimmingCharacters(in: .whitespaces).lowercased()
+        let open = openPages(matching: typed, front: false)
+
+        if needle.isEmpty {
+            let cmds = AddressCommand.paletteOffers("", in: self, limit: 6)
+            return open + cmds
+        }
+
+        // Matching bookmarks (leaf nodes across all folders)
+        let openURLs = Set(open.map(\.url.absoluteString))
+        var bookmarkHits: [Suggestion] = []
+        let words = needle.split(whereSeparator: \.isWhitespace).map(String.init)
+        func walk(_ nodes: [Bookmark]) {
+            for node in nodes {
+                if node.isFolder {
+                    if let kids = node.children { walk(kids) }
+                } else if let str = node.url, let url = URL(string: str), !openURLs.contains(str) {
+                    let hay = "\(node.label.lowercased()) \(Address.pretty(url).lowercased())"
+                    if words.allSatisfy({ hay.contains($0) }) {
+                        bookmarkHits.append(Suggestion(key: node.label, title: Address.pretty(url), url: url, kind: .bookmark))
+                    }
+                }
+            }
+        }
+        walk(bookmarks.roots)
+
+        let cmds = AddressCommand.paletteOffers(typed, in: self, limit: 6)
+        return Array(open.prefix(5)) + Array(bookmarkHits.prefix(4)) + cmds
+    }
+
     /// A row clicked in the list, taken directly rather than through the
     /// keyboard's selection. The pointer and the arrow keys are answering the
     /// same question but must not share an answer: a list that appears under a
@@ -8745,13 +8781,11 @@ final class Browser: NSObject, ObservableObject {
             return
         }
 
-        // The switcher proposes nothing but pages you have open. It still has
-        // to accept an address typed into it, though — the two fields look
-        // alike, and a Return that quietly does nothing is the worst answer
-        // either of them could give.
+        // In Command Palette (⌘K), Return executes whichever tab or command is selected,
+        // even when nothing has been typed yet.
         if summoning {
             summoning = false
-            guard !typed.trimmingCharacters(in: .whitespaces).isEmpty else {
+            if offers.isEmpty {
                 editing = false
                 return
             }
@@ -10318,9 +10352,10 @@ extension Browser: WKDownloadDelegate {
         // failed as "Cannot create file" at zero KB. Asked where instead, as
         // with Ask where to save on: a folder picked there is one it may use.
         var askedInstead = false
-        if chosen == nil, !prefs.asksWhereToSave, let to = file, !Browser.canWrite(in: to.deletingLastPathComponent()) {
+        if chosen == nil, !prefs.asksWhereToSave, let to = file, !(Browser.checksFolderForTest ?? Browser.canWrite)(to.deletingLastPathComponent()) {
             file = askWhere(name)
             askedInstead = true
+            if let file { keepDownloadsFolder(file.deletingLastPathComponent(), for: to.deletingLastPathComponent()) }
         }
         guard let file else {
             if let ended = fetches.destinationCancelled(download) {
@@ -10335,6 +10370,7 @@ extension Browser: WKDownloadDelegate {
         // A retry is numbered afresh from the name asked for, or the one you
         // gave it: never from "report 2.pdf", whose own " 2" is not its name.
         if chosen == nil { fetches.entry(for: download)?.retryName = prefs.asksWhereToSave || askedInstead ? file.lastPathComponent : name }
+        if chosen == nil { fetches.entry(for: download)?.inDefaultFolder = !prefs.asksWhereToSave && !askedInstead }
         completionHandler(file)
         announce("Downloading \(file.lastPathComponent)")
     }
@@ -10432,9 +10468,14 @@ extension Browser: WKDownloadDelegate {
         return askWhere(name)
     }
 
+    static var checksFolderForTest: ((URL) -> Bool)?
+    private static var waitingAfterRefusal: [(Browser, FetchEntry)]?
+    static var picksForTest: ((String) -> URL?)?
+
     /// The save panel, opened at the downloads folder. Nil when cancelled.
     private func askWhere(_ name: String) -> URL? {
         let name = Browser.fileName(name)
+        if let pick = Browser.picksForTest { return pick(name) }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = name
         panel.directoryURL = downloadsFolder
@@ -10495,9 +10536,71 @@ extension Browser: WKDownloadDelegate {
         didFailWithError error: Error,
         resumeData: Data?
     ) {
+        let entry = fetches.entry(for: download)
         guard let ended = fetches.fail(download, error: error, resumeData: resumeData) else { return }
         ended.owner.relinquish(download)
+        if let entry, Browser.movesAfterRefusal(entry, error) {
+            entry.askedAfterRefusal = true
+            DispatchQueue.main.async { [weak self] in self?.moveAfterRefusal(entry) }
+            return
+        }
         if ended.announceFailure { announce("Download failed") }
+    }
+
+    static func movesAfterRefusal(_ entry: FetchEntry, _ error: Error) -> Bool {
+        entry.inDefaultFolder && !entry.askedAfterRefusal && entry.completedBytes == 0
+            && entry.canRetry && FetchEntry.refusedByFolder(error)
+    }
+
+    private func moveAfterRefusal(_ entry: FetchEntry) {
+        guard entry.state == .failed, let refused = entry.destination?.deletingLastPathComponent() else { return }
+        let target: URL
+        if downloadsFolder.standardizedFileURL != refused.standardizedFileURL, Browser.canWrite(in: downloadsFolder) {
+            let taken = Set(fetches.entries.compactMap { $0 === entry ? nil : $0.destination?.standardizedFileURL.path })
+            var name = entry.retryName
+            var file = Self.free(name, in: downloadsFolder)
+            var n = 2
+            while taken.contains(file.standardizedFileURL.path) {
+                let stem = (entry.retryName as NSString).deletingPathExtension
+                let ext = (entry.retryName as NSString).pathExtension
+                name = ext.isEmpty ? "\(stem) \(n)" : "\(stem) \(n).\(ext)"
+                file = Self.free(name, in: downloadsFolder)
+                n += 1
+            }
+            target = file
+        } else {
+            if Browser.waitingAfterRefusal != nil {
+                Browser.waitingAfterRefusal?.append((self, entry))
+                return
+            }
+            Browser.waitingAfterRefusal = []
+            let picked = askWhere(entry.retryName)
+            let waiting = Browser.waitingAfterRefusal ?? []
+            Browser.waitingAfterRefusal = nil
+            guard let picked else {
+                announce("Download failed")
+                return
+            }
+            keepDownloadsFolder(picked.deletingLastPathComponent(), for: refused)
+            target = picked
+            defer { for (browser, other) in waiting { browser.moveAfterRefusal(other) } }
+        }
+        entry.retryName = target.lastPathComponent
+        guard let operation = fetches.beginRetry(entry, destination: { target }),
+              let request = operation.request else { return }
+        operation.webView.startDownload(using: request) { download in
+            self.continueDownload(download, operation)
+        }
+    }
+
+    private func keepDownloadsFolder(_ folder: URL, for refused: URL) {
+        guard folder.standardizedFileURL != refused.standardizedFileURL,
+              downloadsFolder.standardizedFileURL == refused.standardizedFileURL else { return }
+        if prefs.usesSpaces, space.downloads != nil {
+            setSpaceDownloads(space.id, to: folder)
+        } else {
+            prefs.downloads = folder
+        }
     }
 
     /// Whether a file can be made in `folder`, made first if missing: tried

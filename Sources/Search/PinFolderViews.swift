@@ -21,6 +21,7 @@ struct PinFolderHeading: View {
 
     @State private var draft = ""
     @State private var hovering = false
+    @State private var spot = FolderPeek.Spot()
     @FocusState private var focused: Bool
 
     /// Set in by each level, as a group's tabs are under its name.
@@ -38,6 +39,7 @@ struct PinFolderHeading: View {
     private var editing: Bool { interactive && browser.editingPinFolder == folder.id }
 
     var body: some View {
+        let measured = !compact && interactive && !folder.isLive && folder.collapsed
         Group {
             if compact { short } else { long }
         }
@@ -45,7 +47,12 @@ struct PinFolderHeading: View {
             .fill(target ? greys.wash : (hovering ? greys.hover : (compact ? greys.tile : .clear))))
         .contentShape(RoundedRectangle(cornerRadius: compact ? 6 : 9, style: .continuous))
         .onTapGesture { if interactive && !editing { browser.togglePinFolder(folder.id) } }
-        .onHover { hovering = interactive && $0 }
+        .onHover { on in
+            hovering = interactive && on
+            if measured { FolderPeek.hover(on, folder: folder.id, view: spot.view, in: browser) }
+        }
+        .background { if measured { FolderPeek.Holder(spot: spot) } }
+        .onDisappear { if measured { FolderPeek.gone(folder.id, from: browser) } }
         .contextMenu { if interactive { menu } }
         .accessibilityLabel(folder.name)
         .accessibilityHint(folder.collapsed ? "Folded folder" : "Folder")

@@ -57,6 +57,49 @@ struct PWACookie: Codable {
 /// immediately appears in Spotlight, Raycast, Launcher, and the macOS Dock.
 @MainActor
 enum PWAInstaller {
+    static let bundlePrefix = "com.battlemountain2.search.pwa."
+
+    struct InstalledApp: Identifiable, Equatable {
+        var id: String { bundleID }
+        let bundleID: String
+        let name: String
+        let host: String
+        let startURL: URL?
+        let bundleURL: URL
+    }
+
+    /// Resolves a trusted persistent code-signing identity (`Search Local Sign`
+    /// or `Developer ID Application`) when available, falling back to ad-hoc `-`.
+    static func resolvedSignIdentity() -> String {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        proc.arguments = ["find-identity", "-v", "-p", "codesigning"]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = Pipe()
+        guard (try? proc.run()) != nil else { return "-" }
+        proc.waitUntilExit()
+        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        for line in out.split(separator: "\n") {
+            if let q1 = line.firstIndex(of: "\""), let q2 = line[line.index(after: q1)...].firstIndex(of: "\"") {
+                let name = String(line[line.index(after: q1)..<q2])
+                if name.hasPrefix("Developer ID Application:") || name == "Search Local Sign" {
+                    return name
+                }
+            }
+        }
+        return "-"
+    }
+
+    static func codesignBundle(at appURL: URL, identity: String? = nil) {
+        let signIdentity = identity ?? resolvedSignIdentity()
+        let signProcess = Process()
+        signProcess.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        signProcess.arguments = ["--force", "--deep", "--sign", signIdentity, appURL.path]
+        try? signProcess.run()
+        signProcess.waitUntilExit()
+    }
+
     /// Installs the active tab's web app as a native macOS application bundle.
     @discardableResult
     static func install(for tab: Tab, browser: Browser? = nil) -> URL? {
@@ -141,12 +184,8 @@ enum PWAInstaller {
 
             // Asynchronously sync live cookies from the space, then sign and launch
             syncCookies(for: tab, appURL: appBundleURL, writeToBundle: true) {
-                // 6. Ad-hoc codesign
-                let signProcess = Process()
-                signProcess.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-                signProcess.arguments = ["--force", "--deep", "--sign", "-", appBundleURL.path]
-                try? signProcess.run()
-                signProcess.waitUntilExit()
+                // 6. Sign with persistent Code Signing cert when available (fallback "-")
+                codesignBundle(at: appBundleURL)
 
                 // 7. Register with LaunchServices
                 let lsregisterPath = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
@@ -233,6 +272,108 @@ enum PWAInstaller {
                 }
             }
         }
+    }
+
+    /// Finds an installed standalone PWA matching `host` (e.g. "youtube.com", "github.com").
+    static func installedAppURL(forHost host: String) -> URL? {
+        let lower = host.lowercased()
+        return installedApps().first { app in
+            let appHost = app.host.lowercased()
+            return !appHost.isEmpty && (lower == appHost || lower.hasSuffix("." + appHost) || appHost.hasSuffix("." + lower))
+        }?.bundleURL
+    }
+
+    /// Launches a specific URL inside an installed Search PWA bundle and syncs matching Space cookies.
+    static func launch(url: URL, appURL: URL, browser: Browser? = nil) {
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        config.arguments = [url.absoluteString]
+        if let tab = browser?.tabs.first(where: { ($0.address?.host()?.lowercased() ?? "") == (url.host()?.lowercased() ?? "") }) {
+            syncCookies(for: tab, appURL: appURL) {
+                NSWorkspace.shared.openApplication(at: appURL, configuration: config) { _, _ in }
+            }
+        } else {
+            NSWorkspace.shared.openApplication(at: appURL, configuration: config) { _, _ in }
+        }
+    }
+
+    /// Lists all standalone `.app` bundles created by Search in ~/Applications and /Applications.
+    static func installedApps() -> [InstalledApp] {
+        let fm = FileManager.default
+        let dirs = [
+            fm.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true),
+            URL(fileURLWithPath: "/Applications", isDirectory: true)
+        ]
+        var seen = Set<String>()
+        var found: [InstalledApp] = []
+        for dir in dirs {
+            guard let items = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { continue }
+            for item in items where item.pathExtension == "app" {
+                let plistURL = item.appendingPathComponent("Contents/Info.plist")
+                guard let dict = NSDictionary(contentsOf: plistURL),
+                      let bundleID = dict["CFBundleIdentifier"] as? String,
+                      bundleID.hasPrefix(bundlePrefix),
+                      seen.insert(bundleID).inserted else { continue }
+                let name = (dict["CFBundleDisplayName"] as? String)
+                    ?? (dict["CFBundleName"] as? String)
+                    ?? item.deletingPathExtension().lastPathComponent
+                let host = (dict["PWAHost"] as? String) ?? ""
+                let startURL = (dict["PWAStartURL"] as? String).flatMap(URL.init(string:))
+                found.append(InstalledApp(bundleID: bundleID, name: name, host: host, startURL: startURL, bundleURL: item))
+            }
+        }
+        return found.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// Re-syncs the latest `PWARunner` binary, cookies, and Code Signing signature
+    /// across every installed Search `.app` bundle after browser updates.
+    @discardableResult
+    static func refreshInstalledApps(using browsers: [Browser]? = nil) -> Int {
+        let targets = browsers ?? Browsers.all
+        guard let runnerSource = findPWARunnerSource() else { return 0 }
+        let fm = FileManager.default
+        let identity = resolvedSignIdentity()
+        let lsregisterPath = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+        var refreshed = 0
+
+        for app in installedApps() {
+            let contents = app.bundleURL.appendingPathComponent("Contents", isDirectory: true)
+            let plistURL = contents.appendingPathComponent("Info.plist")
+            guard let dict = NSDictionary(contentsOf: plistURL),
+                  let executable = dict["CFBundleExecutable"] as? String else { continue }
+            let destBin = contents.appendingPathComponent("MacOS/\(executable)")
+            do {
+                if fm.fileExists(atPath: destBin.path) {
+                    try fm.removeItem(at: destBin)
+                }
+                try fm.copyItem(at: runnerSource, to: destBin)
+                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destBin.path)
+
+                // Refresh cookies from any open matching tab across active windows
+                if let tab = targets.flatMap(\.tabs).first(where: {
+                    let h = $0.address?.host()?.lowercased() ?? ""
+                    return !h.isEmpty && (h == app.host.lowercased() || h.hasSuffix("." + app.host.lowercased()))
+                }) {
+                    syncCookies(for: tab, appURL: app.bundleURL, writeToBundle: true) {
+                        codesignBundle(at: app.bundleURL, identity: identity)
+                    }
+                } else {
+                    codesignBundle(at: app.bundleURL, identity: identity)
+                }
+
+                if fm.fileExists(atPath: lsregisterPath) {
+                    let ls = Process()
+                    ls.executableURL = URL(fileURLWithPath: lsregisterPath)
+                    ls.arguments = ["-f", app.bundleURL.path]
+                    try? ls.run()
+                    ls.waitUntilExit()
+                }
+                refreshed += 1
+            } catch {
+                NSLog("[PWAInstaller] Failed to refresh \(app.name): \(error)")
+            }
+        }
+        return refreshed
     }
 
     // MARK: - Cookie Synchronization

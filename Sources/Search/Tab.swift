@@ -986,6 +986,8 @@ final class Tab: ObservableObject, Identifiable {
     /// what you were just reading is what you are most likely to want back.
     /// Written into the session, so a tab's time away counts across quits.
     private(set) var touched = Date()
+    /// Whether this pin has actually been viewed in a tab row (for FolderPeek ordering).
+    private(set) var looked = false
     /// When it was last let go of: unpinned, taken out of its group, its
     /// name taken away. Kept apart from `touched`, which says when you last
     /// looked, for ⌃Tab and for where ⌘W on a pin lands; letting go of a
@@ -2237,7 +2239,10 @@ final class Tab: ObservableObject, Identifiable {
         icon = nil
     }
 
-    func touch(at when: Date = Date()) { touched = when }
+    func touch(at when: Date = Date(), looked: Bool = true) {
+        touched = when
+        if looked { self.looked = true }
+    }
 
     /// True when the web view holds nothing — never loaded, or emptied —
     /// while the tab still names a page. The white page, in other words.
@@ -3211,6 +3216,24 @@ final class PageView: WKWebView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         gateTrackingAreas()
+    }
+
+    /// WebKit draws the page in a view of its own, sized with this one, and
+    /// AppKit rounds a view it sizes to the screen's pixels as it is seen at
+    /// that moment. A peek is sized as it grows in (seenScaled), so keep its
+    /// internal view aligned to `bounds` so peek text stays crisp (#1723).
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        for view in subviews where view.autoresizingMask.contains([.width, .height]) && view.frame != bounds {
+            let off = [view.frame.minX - bounds.minX, view.frame.minY - bounds.minY,
+                       view.frame.maxX - bounds.maxX, view.frame.maxY - bounds.maxY]
+            if off.allSatisfy({ abs($0) < 1.5 }), seenScaled { view.frame = bounds }
+        }
+    }
+
+    private var seenScaled: Bool {
+        let seen = convert(bounds, to: nil).size
+        return abs(seen.width - bounds.width) > 0.01 || abs(seen.height - bounds.height) > 0.01
     }
 
     override func viewDidMoveToWindow() {

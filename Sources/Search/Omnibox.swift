@@ -246,8 +246,8 @@ struct Omnibox: View {
                         } else {
                             symbol("magnifyingglass")
                         }
-                    case .command:
-                        symbol("command")
+                    case .command(let command):
+                        symbol(command.symbolName)
                     case .searched:
                         // Words you searched this site for before: yours, not
                         // the site's, so a mark of their own.
@@ -571,7 +571,7 @@ struct AddressField: NSViewRepresentable {
         case .blank: return "Enter a web address"
         case .newTab: return "New tab: enter a web address"
         case .thisTab: return "This tab: enter a web address"
-        case .switcher: return "Switch to an open tab"
+        case .switcher: return "Search tabs, Spaces, bookmarks, or commands…"
         }
     }
 
@@ -582,7 +582,7 @@ struct AddressField: NSViewRepresentable {
         case .blank: return "Address"
         case .newTab: return "Address, new tab"
         case .thisTab: return "Address, this tab"
-        case .switcher: return "Switch to an open tab"
+        case .switcher: return "Search tabs, Spaces, bookmarks, or commands…"
         }
     }
 

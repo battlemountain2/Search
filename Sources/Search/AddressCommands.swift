@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 // The address field doubles as the most basic kind of command line: a
 // handful of words that mean "go here in the app" rather than "go here on
@@ -24,6 +25,17 @@ enum AddressCommand: Equatable {
     case downloads
     case passwords
     case toggleSidebar
+    /// Open a specific Library drawer section (`Downloads`, `Media`, `Bookmarks`, `History`, `Spaces`, `Extensions`).
+    case library(LibrarySection)
+    /// Switch directly to a Space by UUID + name.
+    case space(UUID, String)
+    /// Launch existing desktop PWA for current tab, or install it as a standalone macOS `.app`.
+    case pwaAction
+    /// Sync PWARunner binary, cookies, and code signature across all installed web apps.
+    case refreshPWAs
+    /// Toggle Dynamic Mode top bar (`zenTopBar`) / borderless web canvas (`zenBorderless`).
+    case toggleDynamicBar
+    case toggleBorderless
     /// A menu command, by its id in Command.all.
     case menu(String)
     /// A Settings page, opened on that page.
@@ -32,6 +44,8 @@ enum AddressCommand: Equatable {
     /// The words, which run on Return when typed whole.
     static let allCases: [AddressCommand] = [
         .settings, .newTab, .newPrivateTab, .newSpace, .bookmarks, .history, .downloads, .passwords, .toggleSidebar,
+        .library(.downloads), .library(.media), .library(.bookmarks), .library(.history), .library(.spaces), .library(.extensions),
+        .pwaAction, .refreshPWAs, .toggleDynamicBar, .toggleBorderless,
     ]
 
     /// What you'd type to reach it. The first is what the list shows.
@@ -46,6 +60,12 @@ enum AddressCommand: Equatable {
         case .downloads: return ["downloads"]
         case .passwords: return ["passwords"]
         case .toggleSidebar: return ["toggle sidebar", "sidebar"]
+        case .library(let section): return ["\(section.title) Library", "library \(section.title.lowercased())", section.title.lowercased()]
+        case .space(_, let name): return ["Space: \(name)", "switch to \(name.lowercased())", name.lowercased()]
+        case .pwaAction: return ["Open or Install as App", "install app", "pwa", "desktop app"]
+        case .refreshPWAs: return ["Refresh Installed Web Apps", "refresh pwa", "sync web apps"]
+        case .toggleDynamicBar: return ["Toggle Dynamic Top Bar", "dynamic mode", "top bar"]
+        case .toggleBorderless: return ["Toggle Borderless Canvas", "borderless"]
         case .menu(let id): return [Command.named(id)?.title ?? id]
         case .page(let page): return ["\(page.title) Settings"]
         }
@@ -53,8 +73,31 @@ enum AddressCommand: Equatable {
 
     var title: String {
         switch self {
-        case .menu, .page: return aliases[0]
-        default: return aliases[0].localizedCapitalized
+        case .menu, .page, .library, .space, .pwaAction, .refreshPWAs, .toggleDynamicBar, .toggleBorderless:
+            return aliases[0]
+        default:
+            return aliases[0].localizedCapitalized
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .library: return "Library"
+        case .space: return "Space"
+        case .pwaAction, .refreshPWAs: return "Desktop App"
+        case .toggleDynamicBar, .toggleBorderless: return "Appearance"
+        case .page: return "Settings"
+        default: return ""
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .library(let section): return section.icon
+        case .space: return "square.stack"
+        case .pwaAction, .refreshPWAs: return "arrow.up.forward.app"
+        case .toggleDynamicBar, .toggleBorderless: return "menubar.rectangle"
+        default: return "command"
         }
     }
 
@@ -70,7 +113,7 @@ enum AddressCommand: Equatable {
         case .passwords: return "app.passwords"
         case .toggleSidebar: return "view.sidebar"
         case .menu(let id): return id
-        case .newSpace, .page: return nil
+        case .newSpace, .page, .library, .space, .pwaAction, .refreshPWAs, .toggleDynamicBar, .toggleBorderless: return nil
         }
     }
 
@@ -80,7 +123,9 @@ enum AddressCommand: Equatable {
     /// Some only mean something once the feature behind them is even on.
     func available(in browser: Browser) -> Bool {
         switch self {
-        case .newSpace: return browser.prefs.usesSpaces
+        case .newSpace, .space: return browser.prefs.usesSpaces
+        case .pwaAction: return browser.active?.isWeb == true && browser.active?.address != nil
+        case .refreshPWAs: return !PWAInstaller.installedApps().isEmpty
         case .menu(let id): return Self.offers(id, in: browser)
         case .page(let page): return page != .ai || AI.shipped
         default: return true
@@ -98,6 +143,27 @@ enum AddressCommand: Equatable {
         case .downloads: browser.showDownloads()
         case .passwords: browser.managing = true
         case .toggleSidebar: browser.toggleSidebar()
+        case .library(let section):
+            if browser.folded { browser.toggleFold() }
+            withAnimation(Motion.glide) {
+                browser.librarySection = section
+            }
+        case .space(let id, _):
+            browser.switchSpace(to: id)
+        case .pwaAction:
+            guard let tab = browser.active else { return }
+            if PWAInstaller.isInstalled(for: tab) {
+                PWAInstaller.launch(for: tab)
+            } else {
+                PWAInstaller.install(for: tab, browser: browser)
+            }
+        case .refreshPWAs:
+            let count = PWAInstaller.refreshInstalledApps()
+            browser.announce(count > 0 ? "Refreshed \(count) web app\(count == 1 ? "" : "s")" : "No installed web apps found")
+        case .toggleDynamicBar:
+            withAnimation(Motion.glide) { browser.prefs.zenTopBar.toggle() }
+        case .toggleBorderless:
+            withAnimation(Motion.glide) { browser.prefs.zenBorderless.toggle() }
         case .menu(let id): Command.named(id)?.run(browser)
         case .page(let page):
             browser.settingsPage = page
@@ -197,5 +263,89 @@ enum AddressCommand: Equatable {
             if name.hasPrefix(needle) { first.append(candidate) } else { rest.append(candidate) }
         }
         return Array((first + rest).prefix(limit))
+    }
+
+    /// True `⌘K` Command Palette items: Library drawers, Space switching,
+    /// desktop PWA actions, UI toggles, menu actions, and Settings sections.
+    static func paletteOffers(_ typed: String, in browser: Browser, limit: Int = 8) -> [Suggestion] {
+        let needle = typed.trimmingCharacters(in: .whitespaces).lowercased()
+        let placeholderURL = URL(string: "search://command")!
+        func row(_ cmd: AddressCommand, subtitle: String? = nil) -> Suggestion {
+            Suggestion(
+                key: cmd.title,
+                title: subtitle ?? cmd.subtitle,
+                url: placeholderURL,
+                kind: .command(cmd)
+            )
+        }
+
+        if needle.isEmpty {
+            var defaults: [AddressCommand] = [
+                .library(.media),
+                .library(.bookmarks),
+                .library(.downloads),
+                .library(.history),
+                .pwaAction,
+                .toggleDynamicBar,
+                .toggleSidebar,
+                .settings,
+            ]
+            if browser.prefs.usesSpaces {
+                let otherSpaces = browser.spaces
+                    .filter { $0.id != browser.space.id }
+                    .prefix(3)
+                    .map { AddressCommand.space($0.id, $0.name) }
+                defaults.insert(contentsOf: otherSpaces, at: min(1, defaults.count))
+            }
+            return defaults
+                .filter { $0.available(in: browser) }
+                .prefix(limit)
+                .map { row($0) }
+        }
+
+        let words = needle.split(whereSeparator: \.isWhitespace).map(String.init)
+        var pool: [(cmd: AddressCommand, haystack: String, exactStart: Bool)] = []
+
+        // 1. Dynamic Spaces
+        if browser.prefs.usesSpaces {
+            for space in browser.spaces where space.id != browser.space.id {
+                let cmd = AddressCommand.space(space.id, space.name)
+                let hay = "space \(space.name.lowercased()) switch"
+                pool.append((cmd, hay, space.name.lowercased().hasPrefix(needle)))
+            }
+        }
+
+        // 2. Built-in & fork AddressCommands
+        for cmd in allCases where cmd.available(in: browser) {
+            let hay = (cmd.aliases + [cmd.subtitle]).joined(separator: " ").lowercased()
+            pool.append((cmd, hay, cmd.title.lowercased().hasPrefix(needle)))
+        }
+
+        // 3. Menu commands & Settings pages
+        for id in Command.all.map(\.id) {
+            let cmd = AddressCommand.menu(id)
+            guard cmd.available(in: browser) else { continue }
+            let extra = alsoCalled[id] ?? ""
+            let hay = "\(cmd.title.lowercased()) \(extra)"
+            pool.append((cmd, hay, cmd.title.lowercased().hasPrefix(needle)))
+        }
+        for page in SettingsPanel.Page.allCases {
+            let cmd = AddressCommand.page(page)
+            guard cmd.available(in: browser) else { continue }
+            let hay = "\(page.title.lowercased()) settings preferences"
+            pool.append((cmd, hay, page.title.lowercased().hasPrefix(needle)))
+        }
+
+        var seen = Set<String>()
+        let matched = pool
+            .filter { item in
+                words.allSatisfy { item.haystack.contains($0) }
+            }
+            .sorted { a, b in a.exactStart && !b.exactStart }
+            .compactMap { item -> Suggestion? in
+                guard seen.insert(item.cmd.title).inserted else { return nil }
+                return row(item.cmd)
+            }
+        return Array(matched.prefix(limit))
     }
 }

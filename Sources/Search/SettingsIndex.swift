@@ -157,6 +157,11 @@ enum SettingsIndex {
         .init(id: "downloads.button", group: "downloads", icon: "arrow.down.to.line",
               title: "Always show the downloads button", detail: "Off, it shows only while a file comes in",
               keys: ["downloads.button"]),
+        .init(id: "downloads.screenshots", group: "downloads", icon: "camera.viewfinder",
+              title: "Show screenshots in Downloads", detail: "Screenshots you take with ⇧⌘3, ⇧⌘4 or ⇧⌘5 appear in the list, ready to drag onto a page",
+              more: "Search watches the folder your Mac saves screenshots to (the Desktop, unless you chose another in ⇧⌘5 › Options) and lists each new one as it lands.",
+              keys: [Screenshots.key],
+              words: ["screenshot", "screen shot", "capture", "library", "arc", "desktop", "drag", "upload", "image"]),
         .init(id: "downloads.open", group: "downloads", icon: "tray.and.arrow.down",
               title: "Open Downloads", detail: "From its button, ⇧⌘J and History › Downloads",
               more: "In a tab, as the side panel's card floating by the downloads button, or in the side panel beside the page.",
@@ -578,6 +583,12 @@ enum SettingsIndex {
               words: ["arc", "folder", "folders", "nested", "subfolder", "pinned folder", "pinned tabs", "organise", "organize",
                       "live folder", "feed", "rss", "atom"],
               parent: "pins.list"),
+        .init(id: "pins.folderPeek", group: "pins", icon: "rectangle.stack",
+              title: "Peek into folded folders", detail: "Rest on a folded folder's heading to list its pages",
+              more: "Shows the folder's own pinned pages in a floating list beside the sidebar; clicking one opens it without unfolding the folder.",
+              keys: ["pins.folderPeek"],
+              words: ["peek", "hover", "folder", "folded", "collapsed", "pinned"],
+              parent: "pins.folders"),
         .init(id: "pins.commandNewTab", group: "pins", icon: "command",
               title: "⌘-click on a pin opens a new tab",
               detail: "Opens a tab at the pin's site, or moves a wandered page to loose tabs",
@@ -864,7 +875,8 @@ enum SettingsIndex {
     /// section hides it otherwise; the find field shows it dimmed.
     @MainActor static func applies(_ item: SettingsItem, _ prefs: Preferences) -> Bool {
         switch item.id {
-        case "pages.dusk": return prefs.look != .light
+        // Shown while on whatever the look, so it can always be turned off.
+        case "pages.dusk": return prefs.look != .light || prefs.darkensPages
         case "inspector.dark": return prefs.look != .dark
         case "sidebar.roomy", "sidebar.player", "sidebar.doorsUp", "sidebar.foldButton", "sidebar.narrowIcons": return prefs.sidebar && !prefs.sideIcons
         case "sidebar.hides", "sidebar.slides", "sidebar.topbar", "sidebar.topbarHides", "layout.cards", "pins.list", "pins.asRow": return prefs.sidebar
@@ -878,6 +890,7 @@ enum SettingsIndex {
         // With spaces on they are in the space's Colour…, beside its colour.
         case "window.glass.clear", "window.glass.grain": return prefs.glass && !prefs.usesSpaces
         case "pins.folders": return prefs.sidebar && prefs.listsPins
+        case "pins.folderPeek": return prefs.sidebar && prefs.listsPins && prefs.pinFolders && prefs.pinAsRow
         case "sidebar.foldIcons": return prefs.sidebar && !prefs.sideHides
         case "bookmarks.side": return prefs.sidebar && prefs.bookmarksBar
         case "bookmarks.iconsOnly", "bookmarks.newTabOnly": return prefs.bookmarksBar && !prefs.sideBookmarks
@@ -918,6 +931,7 @@ enum SettingsIndex {
         case "links.peek.stays": return "Only when links or pins open peeks"
         case "launcher.key": return "Only with the address field from any app on"
         case "bookmarks.side": return "Only with the bookmarks bar shown and the tabs down a side"
+        case "pins.folderPeek": return "Only with pinned folders and pinned rows on"
         default: return "Only with the tabs down a side"
         }
     }

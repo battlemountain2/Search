@@ -567,6 +567,14 @@ final class Preferences: ObservableObject {
         didSet { store.set(confirmsQuit, forKey: Preferences.confirmQuitKey) }
     }
     nonisolated static let confirmQuitKey = "quit.confirm"
+    /// The Mac's screenshots listed in Downloads as they are taken
+    /// (Screenshots.swift). Off unless turned on: it reads a folder of yours.
+    @Published var screenshotsInDownloads: Bool {
+        didSet {
+            store.set(screenshotsInDownloads, forKey: Screenshots.key)
+            Screenshots.shared.watch(screenshotsInDownloads)
+        }
+    }
     /// Search a site from the address field: the start of its name, then
     /// Tab (see SiteSearch.swift).
     /// Always on since the Settings rework (Drice, 24 Oct 2026): it only
@@ -1213,6 +1221,11 @@ final class Preferences: ObservableObject {
     @Published var pinFolders: Bool {
         didSet { store.set(pinFolders, forKey: "pins.folders") }
     }
+    /// A folded pin folder's own pages in a small list beside it, when the
+    /// pointer rests on its heading (FolderPeek.swift). Off unless turned on.
+    @Published var pinFolderPeek: Bool {
+        didSet { store.set(pinFolderPeek, forKey: "pins.folderPeek") }
+    }
     /// A pin goes back to the page it was pinned at when it is closed with
     /// ⌘W and when Search opens again, as Arc's pins do, rather than keeping
     /// wherever it was taken since. The other half of "Pins keep their
@@ -1430,6 +1443,7 @@ final class Preferences: ObservableObject {
         sideHides = store.bool(forKey: "sidebar.hides")
         zenTopBar = store.object(forKey: "zen.topbar") as? Bool ?? true
         zenTopBarHidesWithFold = store.object(forKey: "zen.topbar.hidesFold") as? Bool ?? true
+        screenshotsInDownloads = store.bool(forKey: Screenshots.key)
         zenDarkGlass = store.object(forKey: "zen.darkGlass") as? Bool ?? true
         zenBorderless = store.object(forKey: "zen.borderless") as? Bool ?? true
         audioExclusivity = store.object(forKey: "audio.exclusivity") as? Bool ?? true
@@ -1582,6 +1596,7 @@ final class Preferences: ObservableObject {
         pinAsRow = store.bool(forKey: "pins.asRow")
         // On for everyone who never touched it (Drice, 25 Nov 2026).
         pinFolders = store.object(forKey: "pins.folders") as? Bool ?? true
+        pinFolderPeek = store.bool(forKey: "pins.folderPeek")
         pinCommandOpensTab = store.bool(forKey: "pins.commandNewTab")
         pinLinksOpenTabs = store.bool(forKey: "pins.linksNewTab")
         // "Pins keep their site" is one switch over two keys (see

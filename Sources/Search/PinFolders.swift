@@ -227,6 +227,19 @@ enum PinTree {
         }
     }
 
+    /// The pages a folded folder's peek lists (`FolderPeek.swift`).
+    static func peek(_ id: UUID, pins: [(id: UUID, folder: UUID?, looked: Date?)], folders: [PinFolder]) -> [UUID] {
+        guard let folder = sanitized(folders).first(where: { $0.id == id }), folder.collapsed, !folder.isLive else { return [] }
+        return pins.enumerated().filter { $0.element.folder == id }.sorted { a, b in
+            switch (a.element.looked, b.element.looked) {
+            case let (x?, y?) where x != y: return x > y
+            case (.some, nil): return true
+            case (nil, .some): return false
+            default: return a.offset < b.offset
+            }
+        }.map(\.element.id)
+    }
+
     // MARK: - a pin let go among the rows
 
     /// Where a pinned row carried among the folders goes: into `folder`

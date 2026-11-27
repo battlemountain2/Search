@@ -171,6 +171,14 @@ enum Metrics {
     /// this round.
     static let cardGap: CGFloat = 8
     static let cardRadius: CGFloat = 10
+
+    /// The page's outline on its card: round at all four corners, or at the
+    /// bottom two only when Dynamic Mode (`ZenTopBar`) sits inside the card head.
+    static func cardOutline(_ corner: CGFloat, squareTop: Bool = false) -> UnevenRoundedRectangle {
+        let top = squareTop ? 0 : corner
+        return UnevenRoundedRectangle(topLeadingRadius: top, bottomLeadingRadius: corner,
+                                      bottomTrailingRadius: corner, topTrailingRadius: top, style: .continuous)
+    }
     /// Where the first tab starts. The traffic lights run from 19 to 79 —
     /// measured, not guessed — so this leaves them the same air on their right
     /// that the window gives them on their left.
@@ -568,19 +576,15 @@ struct CardEdge: ViewModifier {
     /// clip, ground and edge follow these, animated, and the page doesn't.
     var insets = EdgeInsets()
     var corner: CGFloat = Metrics.cardRadius
+    var squareTop = false
     /// The screen's scale, for the window's page: its edges on whole
     /// pixels, a hairline one pixel wide and no soft shadow around it, so
     /// the white of the page meets the window's grey on a sharp line. Zero
     /// keeps the soft card other cards are (the side panel, downloads).
     var scale: CGFloat = 0
 
-    // One shape of view, on or off: a page whose view were rebuilt as the
-    // card comes and goes (the tabs across the top, a video taking the
-    // screen) would be handed to a new stage just as WebKit takes it to its
-    // full screen window. Off, the clip reaches far past the page and cuts
-    // nothing, and the edge and shadow are clear.
     func body(content: Content) -> some View {
-        let shape = CardShape(on: on, insets: insets, corner: corner, scale: scale)
+        let shape = CardShape(on: on, insets: insets, corner: corner, squareTop: squareTop, scale: scale)
         let crisp = scale > 0
         content
             .clipShape(shape)
@@ -598,7 +602,7 @@ struct CardEdge: ViewModifier {
                     shape
                         .strokeBorder(Color.primary.opacity(on && corner > 0 ? CardEdge.edge : 0),
                                       lineWidth: crisp ? 1 / scale : 1)
-                    if on && corner > 0 {
+                    if on && corner > 0 && !squareTop {
                         shape
                             .strokeBorder(
                                 LinearGradient(
@@ -619,12 +623,44 @@ struct CardEdge: ViewModifier {
     static let edge: Double = 0.10
 }
 
+/// What a row above the page (`ZenTopBar`, `BookmarksBar`) is drawn on.
+enum RowGround {
+    /// Its own ground, with a bottom hairline (edge to edge).
+    case own
+    /// On the window's ground beside the page's card (no separate line).
+    case frame
+    /// Inside the page's card (`CardHead`), sharing the card's rounded top.
+    case card
+}
+
+/// The page card's top chrome container above the web view, rounding only
+/// its top corners and stroking the top & side borders so the toolbar and
+/// page unify into one clean card.
+struct CardHead: View {
+    let scale: CGFloat
+
+    var body: some View {
+        let shape = UnevenRoundedRectangle(topLeadingRadius: Metrics.cardRadius,
+                                           topTrailingRadius: Metrics.cardRadius, style: .continuous)
+        let line = 1 / max(scale, 1)
+        shape
+            .fill(Palette.ground)
+            .overlay {
+                shape
+                    .strokeBorder(Color.primary.opacity(CardEdge.edge), lineWidth: line)
+                    .mask(alignment: .top) { Rectangle().padding(.bottom, line) }
+            }
+            .allowsHitTesting(false)
+    }
+}
+
 /// The card's outline: round at its corners, or, off, a rectangle reaching
 /// far past the page on every side.
 private struct CardShape: InsettableShape {
     let on: Bool
     var insets = EdgeInsets()
     var corner: CGFloat = Metrics.cardRadius
+    var squareTop = false
     var scale: CGFloat = 0
     var inset: CGFloat = 0
 
@@ -643,7 +679,7 @@ private struct CardShape: InsettableShape {
         let card = CGRect(x: pixel(rect.minX + insets.leading), y: pixel(rect.minY + insets.top),
                           width: pixel(rect.width - insets.leading - insets.trailing),
                           height: pixel(rect.height - insets.top - insets.bottom))
-        return RoundedRectangle(cornerRadius: max(0, corner), style: .continuous)
+        return Metrics.cardOutline(max(0, corner), squareTop: squareTop)
             .path(in: card.insetBy(dx: inset, dy: inset))
     }
 
@@ -680,6 +716,7 @@ struct CardClip: ViewModifier, Animatable {
     var corner: CGFloat
     let scale: CGFloat
     let on: Bool
+    var squareTop = false
 
     var animatableData: AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<AnimatablePair<CGFloat, CGFloat>, CGFloat>> {
         get { .init(.init(card.top, card.leading), .init(.init(card.bottom, card.trailing), corner)) }
@@ -693,22 +730,18 @@ struct CardClip: ViewModifier, Animatable {
     func body(content: Content) -> some View {
         func pixel(_ x: CGFloat) -> CGFloat { scale > 0 ? (x * scale).rounded() / scale : x }
         let across = CGSize(width: pixel(card.leading + card.trailing), height: pixel(card.top + card.bottom))
-        return content.background(Rider(across: on ? across : nil, corner: on ? max(0, corner) : 0))
+        return content.background(Rider(across: on ? across : nil, corner: on ? max(0, corner) : 0, squareTop: on && squareTop))
     }
 
-    /// The card, measured in the window: the room it leaves across and
-    /// down, inside this view's own size. Read as the stage lays itself
-    /// out, so the two are always of the same moment: handed a size worked
-    /// out before the stage had grown, the card was cut short for a frame.
     private struct Rider: NSViewRepresentable {
         let across: CGSize?
         let corner: CGFloat
+        let squareTop: Bool
 
         func makeNSView(context: Context) -> NSView { Unseen() }
 
         func updateNSView(_ view: NSView, context: Context) {
             guard let unseen = view as? Unseen, let window = view.window else { return }
-            // The window's stage: two pages' (PaneStage), or the one page's.
             if unseen.stage?.window !== window {
                 unseen.stage = Self.find(in: window.contentView)
             }
@@ -720,7 +753,7 @@ struct CardClip: ViewModifier, Animatable {
             }
             switch unseen.stage {
             case let panes as PaneStage: panes.clip(card: card, corner: corner)
-            case let one as StageView: one.clip(card: card, corner: corner)
+            case let one as StageView: one.clip(card: card, corner: corner, squareTop: squareTop)
             default: break
             }
         }

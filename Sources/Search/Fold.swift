@@ -349,7 +349,69 @@ extension Browser {
         if !prefs.sidebar { return point.y >= size.height - Fold.edge }
         if window.styleMask.contains(.fullScreen), size.height - point.y < Fold.fullScreenCorner { return false }
         let zone = prefs.sideHides ? Fold.hiddenEdge : Fold.edge
-        return right ? point.x >= size.width - zone : point.x < zone
+        guard right ? point.x >= size.width - zone : point.x < zone else { return false }
+        // Off the very edge, over something the page has to press there
+        // (Airtable's / YouTube's left-edge buttons): the page's, hover and
+        // all (idea 1308). Plain page in the band stays covered.
+        if prefs.sideHides, (right ? size.width - point.x : point.x) >= Fold.trueEdge,
+           EdgeAsk.pageHas(window, at: point) == true { return false }
+        return true
+    }
+}
+
+/// What the page under the hidden column's edge band has there, asked as
+/// the pointer comes into the band (idea 1308): the same question the band
+/// along the top asks (PageUnder) — a field, a button, a link, something
+/// with a hand for a pointer, text. One question out at a time; the last
+/// answer is kept for the point it was asked at, and the box it named.
+@MainActor
+enum EdgeAsk {
+    private static var answer: (window: ObjectIdentifier, at: NSPoint, box: NSRect?)?
+    private static var out: (point: NSPoint, since: TimeInterval)?
+    private static var next: (window: NSWindow, point: NSPoint)?
+    private static var ticket = 0
+
+    /// What the page has said of `point` (the window's): true, something of
+    /// its own to press there; false, nothing; nil, not asked or not yet.
+    static func pageHas(_ window: NSWindow, at point: NSPoint) -> Bool? {
+        guard let answer, answer.window == ObjectIdentifier(window) else { return nil }
+        if let box = answer.box { return box.insetBy(dx: -0.5, dy: -0.5).contains(point) ? true : nil }
+        return hypot(answer.at.x - point.x, answer.at.y - point.y) <= 3 ? false : nil
+    }
+
+    /// Asks the page under `point`, unless its answer is in already. Once it
+    /// says it has something there and the pointer is still on it, the page
+    /// is handed the move it was kept from, so it lights up under a pointer
+    /// that hasn't moved since.
+    static func ask(_ window: NSWindow, at point: NSPoint, then: (@MainActor () -> Void)? = nil) {
+        guard pageHas(window, at: point) == nil else { then?(); return }
+        if out != nil, !late { next = (window, point); return }
+        out = (point, ProcessInfo.processInfo.systemUptime)
+        ticket &+= 1
+        let mine = ticket
+        PageUnder.ask(in: window, at: point) { [weak window] web, box in
+            if mine == ticket { out = nil }
+            guard let window else { return }
+            answer = (ObjectIdentifier(window), point, box)
+            if box != nil, let page = web as? PageView, page.covered,
+               let move = NSEvent.mouseEvent(with: .mouseMoved, location: point, modifierFlags: [],
+                                             timestamp: ProcessInfo.processInfo.systemUptime,
+                                             windowNumber: window.windowNumber, context: nil,
+                                             eventNumber: 0, clickCount: 0, pressure: 0) {
+                page.mouseMoved(with: move)
+            }
+            then?()
+            if let waiting = next {
+                next = nil
+                ask(waiting.window, at: waiting.point)
+            }
+        }
+    }
+
+    /// Whether a question has been out longer than the edge waits.
+    static var late: Bool {
+        guard let out else { return false }
+        return ProcessInfo.processInfo.systemUptime - out.since > Fold.askWait
     }
 }
 
@@ -375,8 +437,21 @@ struct Fold: View {
     /// How near the edge the pointer has to be.
     static let edge: CGFloat = 6
     /// For a column hidden for good, which waits for the pointer to settle
-    /// (see dwell): a wider edge to find, as a hand reaches for it (#1279).
-    static let hiddenEdge: CGFloat = 10
+    /// (see dwell): a wider edge to find, as a hand reaches for it (#1583).
+    static let hiddenEdge: CGFloat = 28
+    /// The window's very edge, inside that band. A page's own buttons lie
+    /// in the band too: off this edge, where the page says it has something
+    /// to press (`EdgeAsk`), the band is the page's (`trueEdge` still opens
+    /// the sidebar).
+    static let trueEdge: CGFloat = 4
+    /// How long the edge waits for the page's answer before leaving the band.
+    static let askWait: TimeInterval = 0.25
+
+    static func edgeComes(distance: CGFloat, pageHas: Bool?) -> Bool? {
+        guard distance >= trueEdge else { return true }
+        guard let pageHas else { return nil }
+        return !pageHas
+    }
     /// How far past the window's edge, on the column's side, the pointer
     /// still counts as on it.
     static let overshoot: CGFloat = 48
@@ -721,6 +796,9 @@ struct Fold: View {
             // edge: another app's window over it doesn't bring the column out.
             guard NSWindow.windowNumber(at: screen, belowWindowWithWindowNumber: 0) == window.windowNumber
             else { return pass() }
+            // Off the very edge of a column hidden for good: ask the page
+            // what is there before the dwell is out (idea 1308).
+            if prefs.sidebar, prefs.sideHides, distance >= Fold.trueEdge { EdgeAsk.ask(window, at: point) }
             if arriving == nil { arrive() }
         } else if flung {
             pass()
@@ -787,15 +865,30 @@ struct Fold: View {
     /// The pointer on the edge: out at once, or after the dwell when the
     /// column is folded for good, and always for the strip, whose edge is
     /// the way to the menu bar, and for the pointer just past the edge.
-    private func arrive(resting: Bool = false) {
+    private func arrive(resting: Bool = false, after wait: TimeInterval? = nil) {
         guard resting || !prefs.sidebar || prefs.sideHides else { return peek(true) }
         pass()
+        let delay = wait ?? (prefs.sidebar ? Fold.columnDwell : Fold.dwell)
         let coming = DispatchWorkItem {
             arriving = nil
+            // Off the very edge, over a button of the page's, the band is
+            // the page's: the column comes from the edge itself (idea 1308).
+            if !resting, prefs.sidebar, let window = pointer.window {
+                let point = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+                let distance = onRight ? window.frame.width - point.x : point.x
+                switch Fold.edgeComes(distance: distance, pageHas: EdgeAsk.pageHas(window, at: point)) {
+                case false?: return
+                case nil:
+                    guard !EdgeAsk.late else { return }
+                    EdgeAsk.ask(window, at: point)
+                    return arrive(after: 0.02)
+                case true?: break
+                }
+            }
             peek(true)
         }
         arriving = coming
-        DispatchQueue.main.asyncAfter(deadline: .now() + (prefs.sidebar ? Fold.columnDwell : Fold.dwell), execute: coming)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: coming)
     }
 
     /// The pointer crossed the edge without stopping.
