@@ -46,17 +46,33 @@ struct LibraryDrawer: View {
     @State private var query = ""
     @State private var downloadFilter: DownloadFilter = .all
     @State private var mediaFilter: MediaFilter = .all
-    @AppStorage("library.media.pictures") private var includePictures = true
+    @AppStorage("library.media.downloads") private var includeDownloads = true
+    @AppStorage("library.media.pictures") private var includePictures = false
     @AppStorage("library.media.documents") private var includeDocuments = false
+    @AppStorage("library.media.approvedBuild") private var approvedBuild = ""
+    @AppStorage("library.media.autoScanAlways") private var autoScanAlways = false
     @State private var archiveExpanded = false
     @State private var addingFolder = false
     @State private var newFolderName = ""
+    @State private var expandedFolders: Set<Bookmark.ID> = []
     @State private var draggingBookmarkID: Bookmark.ID? = nil
     @State private var dropTarget: BookmarkDropTarget? = nil
     @State private var folderExpandWork: DispatchWorkItem? = nil
     @State private var mediaItems: [MediaFile] = []
     @State private var loadingMedia = false
     @State private var thumbnails: [URL: NSImage] = [:]
+
+    private static let currentBuildStamp: String = {
+        guard let exe = Bundle.main.executableURL,
+              let vals = try? exe.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]),
+              let date = vals.contentModificationDate,
+              let size = vals.fileSize else { return "dev" }
+        return "\(Int(date.timeIntervalSince1970))-\(size)"
+    }()
+
+    private var isMediaBuildAuthorized: Bool {
+        autoScanAlways || approvedBuild == Self.currentBuildStamp
+    }
 
     @Environment(\.greys) private var greys
 
@@ -108,14 +124,25 @@ struct LibraryDrawer: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
-            if section == .media { loadMedia() }
+            if section == .media, isMediaBuildAuthorized { loadMedia() }
         }
         .onChange(of: browser.librarySection) { _, next in
             query = ""
-            if next == .media { loadMedia() }
+            if next == .media, isMediaBuildAuthorized { loadMedia() }
         }
-        .onChange(of: includePictures) { _, _ in if section == .media { loadMedia() } }
-        .onChange(of: includeDocuments) { _, _ in if section == .media { loadMedia() } }
+        .onChange(of: includeDownloads) { _, _ in if section == .media, isMediaBuildAuthorized { loadMedia() } }
+        .onChange(of: includePictures) { _, on in
+            if section == .media, (on || isMediaBuildAuthorized) {
+                approvedBuild = Self.currentBuildStamp
+                loadMedia()
+            }
+        }
+        .onChange(of: includeDocuments) { _, on in
+            if section == .media, (on || isMediaBuildAuthorized) {
+                approvedBuild = Self.currentBuildStamp
+                loadMedia()
+            }
+        }
         .onChange(of: draggingBookmarkID) { _, id in
             if id == nil {
                 dropTarget = nil
@@ -278,10 +305,15 @@ struct LibraryDrawer: View {
                         }
                     }
                     Divider()
+                    Toggle("Include Downloads", isOn: $includeDownloads)
                     Toggle("Include Pictures", isOn: $includePictures)
                     Toggle("Include Documents", isOn: $includeDocuments)
+                    Toggle("Auto-Scan on New Builds", isOn: $autoScanAlways)
                     Divider()
-                    Button("Refresh Media") { loadMedia() }
+                    Button("Refresh Media") {
+                        approvedBuild = Self.currentBuildStamp
+                        loadMedia()
+                    }
                 } label: {
                     Image(systemName: mediaFilter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
                         .font(.system(size: 13))
@@ -458,7 +490,54 @@ struct LibraryDrawer: View {
             }
         }
 
-        if loadingMedia && items.isEmpty {
+        if !isMediaBuildAuthorized && mediaItems.isEmpty {
+            VStack(spacing: 10) {
+                Image(systemName: "folder.badge.questionmark")
+                    .font(.system(size: 22))
+                    .foregroundStyle(greys.muted)
+                Text("Allow folder scan for this build")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+                Text("New ad-hoc builds reset macOS folder permissions. Click below once to scan Downloads.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(greys.muted)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 16)
+                HStack(spacing: 8) {
+                    Button {
+                        Haptics.tap()
+                        includeDownloads = true
+                        approvedBuild = Self.currentBuildStamp
+                        loadMedia()
+                    } label: {
+                        Text("Scan Downloads")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(Palette.ink)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(greys.wash, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        Haptics.tap()
+                        includePictures = true
+                        approvedBuild = Self.currentBuildStamp
+                        loadMedia()
+                    } label: {
+                        Text("+ Pictures")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(greys.muted)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(greys.hover.opacity(0.6), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 36)
+        } else if loadingMedia && items.isEmpty {
             HStack {
                 Spacer()
                 ProgressView().controlSize(.small)
@@ -538,10 +617,12 @@ struct LibraryDrawer: View {
                 emptyState("No matching bookmarks", icon: "bookmark")
             } else {
                 ForEach(matches) { item in
-                    BookmarkLibraryRow(
-                        item: item,
+                    LibraryBookmarkLineView(
+                        line: LibraryBookmarkLine(item: item, depth: 0, parentID: nil, index: 0, isOpen: false),
+                        hasAnyFolder: false,
+                        showHostInline: true,
                         browser: browser,
-                        canMoveUp: false,
+                        expanded: $expandedFolders,
                         draggingID: $draggingBookmarkID,
                         dropTarget: $dropTarget,
                         expandWork: $folderExpandWork
@@ -549,13 +630,15 @@ struct LibraryDrawer: View {
                 }
             }
         } else {
-            ForEach(Array(roots.enumerated()), id: \.element.id) { index, item in
-                BookmarkLibraryNode(
-                    item: item,
-                    parentID: nil,
-                    index: index,
+            let lines = Self.buildBookmarkLines(roots, expanded: expandedFolders)
+            let hasAnyFolder = roots.contains(where: \.isFolder)
+            ForEach(lines) { line in
+                LibraryBookmarkLineView(
+                    line: line,
+                    hasAnyFolder: hasAnyFolder,
+                    showHostInline: false,
                     browser: browser,
-                    depth: 0,
+                    expanded: $expandedFolders,
                     draggingID: $draggingBookmarkID,
                     dropTarget: $dropTarget,
                     expandWork: $folderExpandWork
@@ -569,6 +652,26 @@ struct LibraryDrawer: View {
                 dropTarget: $dropTarget
             )
         }
+    }
+
+    private static func buildBookmarkLines(
+        _ nodes: [Bookmark],
+        expanded: Set<Bookmark.ID>,
+        depth: Int = 0,
+        parentID: Bookmark.ID? = nil
+    ) -> [LibraryBookmarkLine] {
+        var out: [LibraryBookmarkLine] = []
+        for (idx, node) in nodes.enumerated() {
+            let isOpen = node.isFolder && expanded.contains(node.id)
+            out.append(LibraryBookmarkLine(item: node, depth: depth, parentID: parentID, index: idx, isOpen: isOpen))
+            guard isOpen else { continue }
+            if let kids = node.children, !kids.isEmpty {
+                out.append(contentsOf: buildBookmarkLines(kids, expanded: expanded, depth: depth + 1, parentID: node.id))
+            } else {
+                out.append(LibraryBookmarkLine(item: node, depth: depth, parentID: parentID, index: idx, isOpen: true, isEmptyPlaceholder: true))
+            }
+        }
+        return out
     }
 
     private func flattenBookmarks(_ items: [Bookmark]) -> [Bookmark] {
@@ -780,15 +883,18 @@ struct LibraryDrawer: View {
     private func loadMedia() {
         guard !loadingMedia else { return }
         loadingMedia = true
-        let downloadsFolder = prefs.downloads
-        let picturesFolder = includePictures ? FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first : nil
-        let documentsFolder = includeDocuments ? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first : nil
+            let downloadsFolder = includeDownloads ? prefs.downloads : nil
+            let picturesFolder = includePictures ? FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first : nil
+            let documentsFolder = includeDocuments ? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first : nil
         DispatchQueue.global(qos: .utility).async {
             let exts: Set<String> = ["png", "jpg", "jpeg", "webp", "gif", "heic", "tiff", "tif", "bmp", "mp4", "mov", "pdf"]
             let skipDirs: Set<String> = ["Photos Library.photoslibrary", "Photo Booth Library", "node_modules", ".git", ".build", "Codex", "Image-Line", "Splice Projects"]
             let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey, .isDirectoryKey]
-            var roots: [(url: URL, source: String)] = [(downloadsFolder, "Downloads")]
-            var seenDirs: Set<URL> = [downloadsFolder.standardizedFileURL]
+            var roots: [(url: URL, source: String)] = []
+            var seenDirs: Set<URL> = []
+            if let downloadsFolder, seenDirs.insert(downloadsFolder.standardizedFileURL).inserted {
+                roots.append((downloadsFolder, "Downloads"))
+            }
             if let picturesFolder, seenDirs.insert(picturesFolder.standardizedFileURL).inserted {
                 roots.append((picturesFolder, "Pictures"))
             }
@@ -1459,12 +1565,26 @@ private struct LibraryFavicon: View {
     }
 }
 
+private struct LibraryBookmarkLine: Identifiable {
+    let item: Bookmark
+    let depth: Int
+    let parentID: Bookmark.ID?
+    let index: Int
+    let isOpen: Bool
+    var isEmptyPlaceholder = false
+
+    var id: String {
+        isEmptyPlaceholder ? "empty-\(item.id.uuidString)" : item.id.uuidString
+    }
+}
+
 private enum BookmarkDropPlacement: Equatable {
     case before, into, after
 }
 
 private struct BookmarkDropTarget: Equatable {
     let targetID: Bookmark.ID?
+    let isPlaceholder: Bool
     let parentID: Bookmark.ID?
     let index: Int
     let placement: BookmarkDropPlacement
@@ -1487,32 +1607,69 @@ private func settleBookmarkDrag(
     }
 }
 
-private struct BookmarkNodeDropDelegate: DropDelegate {
+private struct BookmarkTreeDropDelegate: DropDelegate {
     let targetID: Bookmark.ID
     let isFolder: Bool
-    let isExpanded: Bool
-    let parentID: Bookmark.ID?
-    let index: Int
-    let rowHeight: CGFloat
+    let isEmptyPlaceholder: Bool
+    let isOpen: () -> Bool
+    let rowHeight: () -> CGFloat
     let browser: Browser
     @Binding var draggingID: Bookmark.ID?
     @Binding var dropTarget: BookmarkDropTarget?
     @Binding var expandWork: DispatchWorkItem?
     var onSpringOpen: (() -> Void)? = nil
 
+    private static func position(of id: Bookmark.ID, in nodes: [Bookmark], parent: Bookmark.ID? = nil) -> (parent: Bookmark.ID?, index: Int)? {
+        for (idx, node) in nodes.enumerated() {
+            if node.id == id { return (parent, idx) }
+            if let kids = node.children, let found = position(of: id, in: kids, parent: node.id) {
+                return found
+            }
+        }
+        return nil
+    }
+
     private var allows: Bool {
         guard let moved = draggingID else { return false }
+        if isEmptyPlaceholder {
+            return moved != targetID && !(browser.bookmarks.path(to: targetID) ?? []).contains { $0.id == moved }
+        }
         return moved != targetID && !(browser.bookmarks.path(to: targetID) ?? []).contains { $0.id == moved }
     }
 
-    private func placement(for info: DropInfo) -> BookmarkDropPlacement {
-        let part = info.location.y / max(rowHeight, 1)
+    private func placement(for info: DropInfo) -> BookmarkDropPlacement? {
+        guard allows else { return nil }
+        if isEmptyPlaceholder { return .into }
+
+        let open = isOpen()
+        let h = max(rowHeight(), 1)
+        let part = info.location.y / h
+        let raw: BookmarkDropPlacement
         if isFolder {
-            if part < 0.25 { return .before }
-            if part > 0.75 { return .after }
-            return .into
+            if part < 0.25 { raw = .before }
+            else if part > 0.75 { raw = .after }
+            else { raw = .into }
+        } else {
+            raw = part < 0.5 ? .before : .after
         }
-        return part < 0.5 ? .before : .after
+
+        guard let moved = draggingID,
+              let movedPos = Self.position(of: moved, in: browser.bookmarks.roots),
+              let targetPos = Self.position(of: targetID, in: browser.bookmarks.roots)
+        else { return raw }
+
+        // Suppress redundant no-op lines adjacent to the item's own slot
+        if raw == .before, movedPos.parent == targetPos.parent, targetPos.index == movedPos.index + 1 {
+            return nil
+        }
+        if raw == .after {
+            if isFolder && open {
+                if movedPos.parent == targetID && movedPos.index == 0 { return nil }
+            } else if movedPos.parent == targetPos.parent, targetPos.index == movedPos.index - 1 {
+                return nil
+            }
+        }
+        return raw
     }
 
     private func updateAim(_ target: BookmarkDropTarget?) {
@@ -1520,24 +1677,30 @@ private struct BookmarkNodeDropDelegate: DropDelegate {
         dropTarget = target
         expandWork?.cancel()
         expandWork = nil
-        if let target, target.placement == .into, isFolder, !isExpanded, let onSpringOpen {
+        if let target, target.placement == .into, isFolder, !isOpen(), let onSpringOpen {
             let work = DispatchWorkItem { onSpringOpen() }
             expandWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.65, execute: work)
         }
     }
 
+    private func currentTarget(for info: DropInfo) -> BookmarkDropTarget? {
+        guard let place = placement(for: info),
+              let pos = Self.position(of: targetID, in: browser.bookmarks.roots)
+        else { return nil }
+        return BookmarkDropTarget(targetID: targetID, isPlaceholder: isEmptyPlaceholder, parentID: pos.parent, index: pos.index, placement: place)
+    }
+
     func validateDrop(info: DropInfo) -> Bool {
-        guard allows else { return false }
-        return draggingID != nil || info.hasItemsConforming(to: [.plainText, .text])
+        allows
     }
 
     func dropEntered(info: DropInfo) {
-        guard allows, NSEvent.pressedMouseButtons & 1 != 0 else {
+        guard NSEvent.pressedMouseButtons & 1 != 0 else {
             updateAim(nil)
             return
         }
-        updateAim(BookmarkDropTarget(targetID: targetID, parentID: parentID, index: index, placement: placement(for: info)))
+        updateAim(currentTarget(for: info))
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
@@ -1545,22 +1708,22 @@ private struct BookmarkNodeDropDelegate: DropDelegate {
             updateAim(nil)
             return DropProposal(operation: .forbidden)
         }
-        updateAim(BookmarkDropTarget(targetID: targetID, parentID: parentID, index: index, placement: placement(for: info)))
+        updateAim(currentTarget(for: info))
         return DropProposal(operation: .move)
     }
 
     func dropExited(info: DropInfo) {
-        if dropTarget?.targetID == targetID {
+        if dropTarget?.targetID == targetID && dropTarget?.isPlaceholder == isEmptyPlaceholder {
             updateAim(nil)
         }
     }
 
     func performDrop(info: DropInfo) -> Bool {
         let place = placement(for: info)
-        let allowed = allows
+        let targetPos = Self.position(of: targetID, in: browser.bookmarks.roots)
         updateAim(nil)
         dropTarget = nil
-        guard allowed else {
+        guard let place, let targetPos else {
             draggingID = nil
             return false
         }
@@ -1573,11 +1736,11 @@ private struct BookmarkNodeDropDelegate: DropDelegate {
                 case .into:
                     browser.bookmarks.move(movedID, into: targetID, at: nil)
                 case .before:
-                    browser.bookmarks.move(movedID, into: parentID, at: index)
-                case .after where isFolder && isExpanded:
+                    browser.bookmarks.move(movedID, into: targetPos.parent, at: targetPos.index)
+                case .after where isFolder && isOpen():
                     browser.bookmarks.move(movedID, into: targetID, at: 0)
                 case .after:
-                    browser.bookmarks.move(movedID, into: parentID, at: index + 1)
+                    browser.bookmarks.move(movedID, into: targetPos.parent, at: targetPos.index + 1)
                 }
             }
         }
@@ -1654,7 +1817,7 @@ private struct BookmarkEndDropDelegate: DropDelegate {
             dropTarget = nil
             return
         }
-        dropTarget = BookmarkDropTarget(targetID: nil, parentID: parentID, index: count, placement: .after)
+        dropTarget = BookmarkDropTarget(targetID: nil, isPlaceholder: false, parentID: parentID, index: count, placement: .after)
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
@@ -1714,220 +1877,115 @@ private struct BookmarkInsertionLine: View {
     }
 }
 
-private struct BookmarkLibraryNode: View {
-    let item: Bookmark
-    let parentID: Bookmark.ID?
-    let index: Int
+private struct LibraryBookmarkLineView: View {
+    let line: LibraryBookmarkLine
+    let hasAnyFolder: Bool
+    let showHostInline: Bool
     let browser: Browser
-    let depth: Int
+    @Binding var expanded: Set<Bookmark.ID>
     @Binding var draggingID: Bookmark.ID?
     @Binding var dropTarget: BookmarkDropTarget?
     @Binding var expandWork: DispatchWorkItem?
-    @State private var expanded = false
+
     @State private var hovering = false
     @State private var renaming = false
     @State private var draftTitle = ""
     @State private var rowHeight: CGFloat = 28
     @Environment(\.greys) private var greys
 
+    private var item: Bookmark { line.item }
+
     private var dropPlacement: BookmarkDropPlacement? {
-        draggingID != nil && dropTarget?.targetID == item.id ? dropTarget?.placement : nil
+        guard draggingID != nil,
+              dropTarget?.targetID == item.id,
+              dropTarget?.isPlaceholder == line.isEmptyPlaceholder
+        else { return nil }
+        return dropTarget?.placement
+    }
+
+    private var isTargetedInto: Bool {
+        dropPlacement == .into
     }
 
     private var rowOpacity: Double {
-        if draggingID == item.id { return 0.24 }
-        if draggingID != nil && dropPlacement == nil { return 0.56 }
+        if draggingID == item.id && !line.isEmptyPlaceholder { return 0.22 }
+        if draggingID != nil && dropPlacement == nil { return 0.42 }
         return 1
     }
 
     var body: some View {
-        if item.isFolder {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 6) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .foregroundStyle(greys.muted)
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
-                        .frame(width: 10)
-                    Image(systemName: dropPlacement == .into ? "folder.fill" : "folder")
-                        .font(.system(size: 12))
-                        .foregroundStyle(dropPlacement == .into ? Color.accentColor : greys.muted)
-                    if renaming {
-                        TextField("Folder name", text: $draftTitle)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 12.5, weight: .medium))
-                            .onSubmit {
-                                BookmarkCard.rename(item.id, draftTitle, in: browser.bookmarks)
-                                renaming = false
-                            }
-                            .onExitCommand { renaming = false }
-                    } else {
-                        Text(item.label)
-                            .font(.system(size: 12.5, weight: .medium))
-                            .foregroundStyle(Palette.ink)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                    if let kids = item.children, !kids.isEmpty {
-                        Text("\(Bookmarks.count(kids))")
-                            .font(.system(size: 11).monospacedDigit())
-                            .foregroundStyle(greys.muted)
-                    }
-                }
-                .padding(.leading, CGFloat(depth) * 14 + 8)
-                .padding(.trailing, 8)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(dropPlacement == .into ? greys.wash : (hovering ? greys.hover.opacity(0.65) : .clear))
-                )
-                .overlay {
-                    if dropPlacement == .into {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .overlay(alignment: dropPlacement == .before ? .top : .bottom) {
-                    if dropPlacement == .before || dropPlacement == .after {
-                        BookmarkInsertionLine()
-                            .padding(.leading, CGFloat(depth + (dropPlacement == .after && expanded ? 1 : 0)) * 14)
-                            .offset(y: dropPlacement == .before ? -1 : 1)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .contentShape(Rectangle())
-                .opacity(rowOpacity)
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowHeight = max($0, 1) }
-                .onTapGesture {
-                    guard !renaming else { return }
-                    withAnimation(Motion.quick) { expanded.toggle() }
-                }
-                .onHover { hovering = $0 }
-                .animation(Motion.quick, value: hovering)
-                .animation(Motion.quick, value: dropPlacement)
-                .animation(Motion.quick, value: draggingID)
-                .onDrag {
-                    draggingID = item.id
-                    settleBookmarkDrag(draggingID: $draggingID, dropTarget: $dropTarget, expandWork: $expandWork)
-                    return NSItemProvider(object: item.id.uuidString as NSString)
-                }
-                .onDrop(of: [.plainText, .text], delegate: BookmarkNodeDropDelegate(
-                    targetID: item.id,
-                    isFolder: true,
-                    isExpanded: expanded,
-                    parentID: parentID,
-                    index: index,
-                    rowHeight: rowHeight,
-                    browser: browser,
-                    draggingID: $draggingID,
-                    dropTarget: $dropTarget,
-                    expandWork: $expandWork,
-                    onSpringOpen: {
-                        withAnimation(Motion.settle) { expanded = true }
-                    }
-                ))
-                .contextMenu {
-                    Button("Rename…") {
-                        draftTitle = item.label
-                        renaming = true
-                    }
-                    if depth > 0 {
-                        Button("Move to Top Level") {
-                            browser.bookmarks.move(item.id, into: nil)
-                        }
-                    }
-                    Divider()
-                    Button("Delete Folder", role: .destructive) {
-                        browser.bookmarks.remove(item.id)
-                    }
-                }
-
-                if expanded, let children = item.children {
-                    ForEach(Array(children.enumerated()), id: \.element.id) { childIndex, child in
-                        BookmarkLibraryNode(
-                            item: child,
-                            parentID: item.id,
-                            index: childIndex,
-                            browser: browser,
-                            depth: depth + 1,
-                            draggingID: $draggingID,
-                            dropTarget: $dropTarget,
-                            expandWork: $expandWork
-                        )
-                    }
-                }
+        if line.isEmptyPlaceholder {
+            HStack(spacing: 6) {
+                Text("Empty folder")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(isTargetedInto ? Color.accentColor : greys.muted.opacity(0.75))
+                Spacer(minLength: 0)
             }
-        } else {
-            BookmarkLibraryRow(
-                item: item,
-                browser: browser,
-                canMoveUp: depth > 0,
-                isDropTarget: dropPlacement != nil,
-                draggingID: $draggingID,
-                dropTarget: $dropTarget,
-                expandWork: $expandWork
+            .padding(.leading, CGFloat(line.depth + 1) * 16 + (hasAnyFolder ? 18 : 0) + 8)
+            .padding(.trailing, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isTargetedInto ? greys.wash : .clear)
             )
-            .padding(.leading, CGFloat(depth) * 14)
-            .overlay(alignment: dropPlacement == .before ? .top : .bottom) {
-                if dropPlacement == .before || dropPlacement == .after {
-                    BookmarkInsertionLine()
-                        .padding(.leading, CGFloat(depth) * 14)
-                        .offset(y: dropPlacement == .before ? -1 : 1)
+            .overlay {
+                if isTargetedInto {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1)
                         .allowsHitTesting(false)
                 }
             }
+            .contentShape(Rectangle())
+            .opacity(rowOpacity)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowHeight = max($0, 1) }
-            .onDrop(of: [.plainText, .text], delegate: BookmarkNodeDropDelegate(
+            .onDrop(of: [.plainText, .text], delegate: BookmarkTreeDropDelegate(
                 targetID: item.id,
-                isFolder: false,
-                isExpanded: false,
-                parentID: parentID,
-                index: index,
-                rowHeight: rowHeight,
+                isFolder: true,
+                isEmptyPlaceholder: true,
+                isOpen: { true },
+                rowHeight: { rowHeight },
                 browser: browser,
                 draggingID: $draggingID,
                 dropTarget: $dropTarget,
                 expandWork: $expandWork
             ))
             .animation(Motion.quick, value: dropPlacement)
-        }
-    }
-}
+            .animation(Motion.quick, value: draggingID)
+        } else {
+            HStack(spacing: 8) {
+                if hasAnyFolder {
+                    if item.isFolder {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(greys.muted)
+                            .rotationEffect(.degrees(line.isOpen ? 90 : 0))
+                            .frame(width: 10)
+                    } else {
+                        Spacer().frame(width: 10)
+                    }
+                }
 
-private struct BookmarkLibraryRow: View {
-    let item: Bookmark
-    let browser: Browser
-    var canMoveUp = false
-    var isDropTarget = false
-    @Binding var draggingID: Bookmark.ID?
-    @Binding var dropTarget: BookmarkDropTarget?
-    @Binding var expandWork: DispatchWorkItem?
-    @State private var hovering = false
-    @State private var renaming = false
-    @State private var draftTitle = ""
-    @Environment(\.greys) private var greys
+                if item.isFolder {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(isTargetedInto ? Color.accentColor.opacity(0.2) : greys.hover.opacity(0.85))
+                        .frame(width: 18, height: 18)
+                        .overlay(
+                            Image(systemName: "folder.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(isTargetedInto ? Color.accentColor : greys.muted)
+                        )
+                } else if let url = item.address {
+                    LibraryFavicon(url: url)
+                        .frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: "bookmark")
+                        .font(.system(size: 11))
+                        .foregroundStyle(greys.muted)
+                        .frame(width: 16, height: 16)
+                }
 
-    private var rowOpacity: Double {
-        if draggingID == item.id { return 0.24 }
-        if draggingID != nil && !isDropTarget { return 0.56 }
-        return 1
-    }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            if let url = item.address {
-                LibraryFavicon(url: url)
-                    .frame(width: 16, height: 16)
-            } else {
-                Image(systemName: "bookmark")
-                    .font(.system(size: 11))
-                    .foregroundStyle(greys.muted)
-                    .frame(width: 16, height: 16)
-            }
-            VStack(alignment: .leading, spacing: 1) {
                 if renaming {
-                    TextField("Bookmark name", text: $draftTitle)
+                    TextField(item.isFolder ? "Folder name" : "Bookmark name", text: $draftTitle)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12.5, weight: .medium))
                         .onSubmit {
@@ -1941,73 +1999,175 @@ private struct BookmarkLibraryRow: View {
                         .foregroundStyle(Palette.ink)
                         .lineLimit(1)
                 }
-                if let host = item.host {
+
+                Spacer(minLength: 6)
+
+                if item.isFolder {
+                    if let kids = item.children, !kids.isEmpty {
+                        Text("\(Bookmarks.count(kids))")
+                            .font(.system(size: 11).monospacedDigit())
+                            .foregroundStyle(greys.muted)
+                    }
+                } else if hovering, !renaming, draggingID == nil, let url = item.address {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                    } label: {
+                        Image(systemName: "link")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Palette.ink.opacity(0.75))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Copy Address")
+                } else if showHostInline, let host = item.host {
                     Text(host)
                         .font(.system(size: 11))
                         .foregroundStyle(greys.muted)
                         .lineLimit(1)
                 }
             }
-            Spacer(minLength: 0)
-            if hovering, !renaming, draggingID == nil, let url = item.address {
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(url.absoluteString, forType: .string)
-                } label: {
-                    Image(systemName: "link")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(Palette.ink.opacity(0.75))
+            .padding(.leading, CGFloat(line.depth) * 16 + 8)
+            .padding(.trailing, 8)
+            .padding(.vertical, 5)
+            .background(alignment: .leading) {
+                if line.depth > 0 {
+                    HStack(spacing: 15) {
+                        ForEach(0..<line.depth, id: \.self) { _ in
+                            Rectangle()
+                                .fill(Palette.hairline.opacity(0.6))
+                                .frame(width: 1)
+                        }
+                    }
+                    .padding(.leading, 14)
+                    .allowsHitTesting(false)
                 }
-                .buttonStyle(.plain)
-                .help("Copy Address")
             }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(hovering && draggingID == nil ? greys.hover.opacity(0.65) : .clear)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .opacity(rowOpacity)
-        .onTapGesture {
-            if !renaming, let url = item.address { _ = browser.open(url, foreground: true) }
-        }
-        .onHover { hovering = $0 }
-        .animation(Motion.quick, value: hovering)
-        .animation(Motion.quick, value: draggingID)
-        .onDrag {
-            draggingID = item.id
-            settleBookmarkDrag(draggingID: $draggingID, dropTarget: $dropTarget, expandWork: $expandWork)
-            return NSItemProvider(object: item.id.uuidString as NSString)
-        }
-        .contextMenu {
-            if let url = item.address {
-                Button("Open in New Tab") { _ = browser.open(url, foreground: true) }
-                Button("Open in Split View") {
-                    if let active = browser.active {
-                        browser.openLinkBeside(url, from: active, onLeft: false)
-                    } else {
-                        _ = browser.open(url, foreground: true)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isTargetedInto ? greys.wash : (hovering && draggingID == nil ? greys.hover.opacity(0.65) : .clear))
+            )
+            .overlay {
+                if isTargetedInto {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.6), lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: dropPlacement == .before ? .top : .bottom) {
+                if dropPlacement == .before || dropPlacement == .after {
+                    let indentLevel = line.depth + (item.isFolder && line.isOpen && dropPlacement == .after ? 1 : 0)
+                    BookmarkInsertionLine()
+                        .padding(.leading, CGFloat(indentLevel) * 16)
+                        .offset(y: dropPlacement == .before ? -1 : 1)
+                        .allowsHitTesting(false)
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .opacity(rowOpacity)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowHeight = max($0, 1) }
+            .onTapGesture {
+                guard !renaming else { return }
+                if item.isFolder {
+                    withAnimation(Motion.quick) {
+                        if expanded.contains(item.id) {
+                            expanded.remove(item.id)
+                        } else {
+                            expanded.insert(item.id)
+                        }
+                    }
+                } else if let url = item.address {
+                    _ = browser.open(url, foreground: true)
+                }
+            }
+            .onHover { hovering = $0 }
+            .animation(Motion.quick, value: hovering)
+            .animation(Motion.quick, value: dropPlacement)
+            .animation(Motion.quick, value: draggingID)
+            .onDrag {
+                draggingID = item.id
+                settleBookmarkDrag(draggingID: $draggingID, dropTarget: $dropTarget, expandWork: $expandWork)
+                return NSItemProvider(object: item.id.uuidString as NSString)
+            } preview: {
+                HStack(spacing: 6) {
+                    if item.isFolder {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.muted)
+                    } else if let url = item.address {
+                        LibraryFavicon(url: url)
+                            .frame(width: 14, height: 14)
+                    }
+                    Text(item.label)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Palette.ground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Palette.hairline, lineWidth: 1)
+                )
+            }
+            .onDrop(of: [.plainText, .text], delegate: BookmarkTreeDropDelegate(
+                targetID: item.id,
+                isFolder: item.isFolder,
+                isEmptyPlaceholder: false,
+                isOpen: { expanded.contains(item.id) },
+                rowHeight: { rowHeight },
+                browser: browser,
+                draggingID: $draggingID,
+                dropTarget: $dropTarget,
+                expandWork: $expandWork,
+                onSpringOpen: item.isFolder ? {
+                    withAnimation(Motion.settle) { _ = expanded.insert(item.id) }
+                } : nil
+            ))
+            .contextMenu {
+                if item.isFolder {
+                    Button("Rename…") {
+                        draftTitle = item.label
+                        renaming = true
+                    }
+                    if line.depth > 0 {
+                        Button("Move to Top Level") {
+                            browser.bookmarks.move(item.id, into: nil)
+                        }
+                    }
+                    Divider()
+                    Button("Delete Folder", role: .destructive) {
+                        browser.bookmarks.remove(item.id)
+                    }
+                } else {
+                    if let url = item.address {
+                        Button("Open in New Tab") { _ = browser.open(url, foreground: true) }
+                        Button("Open in Split View") {
+                            if let active = browser.active {
+                                browser.openLinkBeside(url, from: active, onLeft: false)
+                            } else {
+                                _ = browser.open(url, foreground: true)
+                            }
+                        }
+                        Button("Copy Address") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                        }
+                        Divider()
+                    }
+                    Button("Rename…") {
+                        draftTitle = item.label
+                        renaming = true
+                    }
+                    if line.depth > 0 {
+                        Button("Move to Top Level") {
+                            browser.bookmarks.move(item.id, into: nil)
+                        }
+                    }
+                    Button("Remove Bookmark", role: .destructive) {
+                        browser.bookmarks.remove(item.id)
                     }
                 }
-                Button("Copy Address") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(url.absoluteString, forType: .string)
-                }
-                Divider()
-            }
-            Button("Rename…") {
-                draftTitle = item.label
-                renaming = true
-            }
-            if canMoveUp {
-                Button("Move to Top Level") {
-                    browser.bookmarks.move(item.id, into: nil)
-                }
-            }
-            Button("Remove Bookmark", role: .destructive) {
-                browser.bookmarks.remove(item.id)
             }
         }
     }
